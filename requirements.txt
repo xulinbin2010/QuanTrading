@@ -1,0 +1,13 @@
+ib_insync
+pymysql
+pyarrow
+yfinance
+numpy
+pandas
+requests
+lxml
+html5lib
+fastapi
+uvicorn[standard]
+apscheduler
+python-dotenv

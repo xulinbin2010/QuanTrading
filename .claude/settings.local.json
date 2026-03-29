@@ -1,0 +1,27 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(pip install:*)",
+      "Bash(python:*)",
+      "Bash(for year:*)",
+      "Bash(do echo:*)",
+      "Bash(done)",
+      "Bash(source .venv/bin/activate)",
+      "Bash(source /Users/xulinbin/aiProject/QuanTrading/.venv/bin/activate)",
+      "Bash(pip freeze:*)",
+      "Bash(python3.12 --version)",
+      "Bash(rm -rf .venv)",
+      "Bash(python3.12 -m venv .venv)",
+      "Bash(grep -v \"^$\")",
+      "Bash(python -c \":*)",
+      "Bash(ls -la /Users/xulinbin/aiProject/QuanTrading/*.pkl)",
+      "Bash(find /Users/xulinbin/aiProject/QuanTrading -name factors* -o -name *factor*)",
+      "Bash(npm create:*)",
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(chmod:*)",
+      "Bash(.venv/bin/python -c \"import config; print\\(''MAX_POSITIONS:'', config.MAX_POSITIONS\\); print\\(''POSITION_PCT:'', config.POSITION_PCT\\); print\\(''CASH_RESERVE_PCT:'', config.CASH_RESERVE_PCT\\); print\\(''STOP_LOSS_PCT:'', config.STOP_LOSS_PCT\\); print\\(''DENY_INDUSTRIES:'', config.DENY_INDUSTRIES\\)\")",
+      "Bash(.venv/bin/python -c \"import config; print\\('DENY_INDUSTRIES:', config.DENY_INDUSTRIES, type\\(config.DENY_INDUSTRIES\\)\\); print\\('all OK'\\)\")"
+    ]
+  }
+}

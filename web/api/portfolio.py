@@ -1,0 +1,44 @@
+"""持仓总览 API 路由"""
+from fastapi import APIRouter, HTTPException, Query
+from web.services import portfolio_svc
+
+router = APIRouter(prefix='/api/portfolio', tags=['portfolio'])
+
+
+@router.get('/ib-status')
+def ib_status():
+    return portfolio_svc.get_ib_status()
+
+
+@router.get('/balance')
+def balance():
+    try:
+        return portfolio_svc.get_balance()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@router.get('/positions')
+def positions():
+    try:
+        return portfolio_svc.get_positions()
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+
+
+@router.get('/orders')
+def orders(symbol: str = Query(None), limit: int = Query(50, le=500)):
+    return portfolio_svc.get_orders(symbol=symbol, limit=limit)
+
+
+@router.get('/account-history')
+def account_history(limit: int = Query(90, le=500)):
+    return portfolio_svc.get_account_history(limit=limit)
+
+
+@router.get('/signals')
+def signals(universe: str = Query('sp500')):
+    try:
+        return portfolio_svc.get_signals(universe=universe)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

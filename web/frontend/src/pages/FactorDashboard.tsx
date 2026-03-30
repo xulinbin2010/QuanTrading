@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getFactorRegistry, updateFactor, scanFactors } from '../api/client'
+import { getFactorRegistry, updateFactor, scanFactors, previewFactorSignals } from '../api/client'
 
 // ── RSMomentum 策略买入/卖出条件定义（静态说明） ──────────
 const BUY_CONDITIONS = [
@@ -83,9 +83,33 @@ function FactorCard({ factor, onToggle }: { factor: any; onToggle: (key: string,
   )
 }
 
+const UNIVERSES = ['sp500', 'nasdaq100', 'russell2000']
+
+// ── 信号标签列表 ───────────────────────────────────────────
+function SignalTags({ signals, color }: { signals: any[]; color: 'green' | 'red' }) {
+  const cls = color === 'green'
+    ? 'bg-green-900/50 text-green-300 border-green-800'
+    : 'bg-red-900/50 text-red-300 border-red-800'
+  if (signals.length === 0) return <span className="text-xs text-slate-600">无</span>
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {signals.map((r: any) => (
+        <span key={r.symbol} className={`px-2 py-0.5 rounded text-xs border font-mono ${cls}`}>
+          {r.symbol}
+          {r.rs_score != null && (
+            <span className="ml-1 opacity-60">{(r.rs_score * 100).toFixed(0)}%</span>
+          )}
+        </span>
+      ))}
+    </div>
+  )
+}
+
 // ── 主页面 ────────────────────────────────────────────────
 export default function FactorDashboard() {
   const [showRegistry, setShowRegistry] = useState(true)
+  const [universe, setUniverse] = useState('sp500')
+  const [previewResult, setPreviewResult] = useState<any>(null)
   const queryClient = useQueryClient()
 
   // 因子注册表
@@ -95,15 +119,21 @@ export default function FactorDashboard() {
     staleTime: 300_000,
   })
 
-  // 最新扫描结果（仅取买入信号，不触发自动扫描）
+  // 已启用的技术因子 key 列表
+  const enabledTechFactors: string[] = (registry as any[])
+    .filter((f: any) => f.data_type === 'technical' && f.enabled)
+    .map((f: any) => f.key)
+
+  // 最新扫描结果（仅读缓存，不触发自动扫描）
   const { data: scanResult } = useQuery({
-    queryKey: ['factors-scan', 'sp500'],
-    queryFn: () => scanFactors('sp500', 100),
-    staleTime: 3_600_000,
-    gcTime: 3_600_000,
+    queryKey: ['factors-scan', universe],
+    queryFn: () => scanFactors(universe, 100),
+    staleTime: Infinity,
+    gcTime: 24 * 3_600_000,
+    enabled: false,
   })
   const rows: any[] = Array.isArray(scanResult) ? scanResult : (scanResult?.rows ?? [])
-  const buySignals = rows.filter((r: any) => r.signal === 1)
+  const buySignals  = rows.filter((r: any) => r.signal === 1)
   const sellSignals = rows.filter((r: any) => r.signal === -1)
 
   // 按分类分组
@@ -117,14 +147,32 @@ export default function FactorDashboard() {
   const { mutate: toggleFactor } = useMutation({
     mutationFn: ({ key, enabled }: { key: string; enabled: boolean }) =>
       updateFactor(key, { enabled }),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['factor-registry'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['factor-registry'] })
+      setPreviewResult(null)   // 因子变化后清除上次预览
+    },
+  })
+
+  // 预览信号 mutation
+  const { mutate: runPreview, isPending: previewing } = useMutation({
+    mutationFn: () => previewFactorSignals(universe, enabledTechFactors),
+    onSuccess: (data) => setPreviewResult(data),
   })
 
   const enabledCount = (registry as any[]).filter((f: any) => f.enabled).length
 
   return (
     <div className="space-y-5">
-      <h1 className="text-lg font-semibold text-white">因子看板</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold text-white">因子看板</h1>
+        <select
+          className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none"
+          value={universe}
+          onChange={e => { setUniverse(e.target.value); setPreviewResult(null) }}
+        >
+          {UNIVERSES.map(u => <option key={u} value={u}>{u}</option>)}
+        </select>
+      </div>
 
       {/* 策略概览 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -168,40 +216,22 @@ export default function FactorDashboard() {
             </div>
           </div>
 
-          {/* 当前信号摘要 */}
+          {/* 当前信号摘要（RSMomentum 生产扫描缓存） */}
           <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
             <div className="text-sm font-medium text-slate-300 mb-3">
-              当前信号（上次扫描）
+              生产信号（RSMomentum · 上次市场扫描）
             </div>
             {rows.length === 0 ? (
               <div className="text-xs text-slate-500">暂无数据，请前往「市场扫描」执行扫描</div>
             ) : (
               <div className="space-y-2">
                 <div>
-                  <div className="text-xs text-slate-400 mb-1.5">买入信号 {buySignals.length} 只</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {buySignals.length === 0
-                      ? <span className="text-xs text-slate-600">无</span>
-                      : buySignals.map((r: any) => (
-                        <span key={r.symbol} className="px-2 py-0.5 rounded text-xs bg-green-900/50 text-green-300 border border-green-800 font-mono">
-                          {r.symbol}
-                        </span>
-                      ))
-                    }
-                  </div>
+                  <div className="text-xs text-slate-400 mb-1.5">买入 {buySignals.length} 只</div>
+                  <SignalTags signals={buySignals} color="green" />
                 </div>
                 <div>
-                  <div className="text-xs text-slate-400 mb-1.5">卖出信号 {sellSignals.length} 只</div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {sellSignals.length === 0
-                      ? <span className="text-xs text-slate-600">无</span>
-                      : sellSignals.map((r: any) => (
-                        <span key={r.symbol} className="px-2 py-0.5 rounded text-xs bg-red-900/50 text-red-300 border border-red-800 font-mono">
-                          {r.symbol}
-                        </span>
-                      ))
-                    }
-                  </div>
+                  <div className="text-xs text-slate-400 mb-1.5">卖出 {sellSignals.length} 只</div>
+                  <SignalTags signals={sellSignals} color="red" />
                 </div>
               </div>
             )}
@@ -259,9 +289,75 @@ export default function FactorDashboard() {
                 </div>
               </div>
             )}
+
+            {/* 预览信号按钮 */}
+            <div className="border-t border-slate-700 pt-4 flex items-center gap-4 flex-wrap">
+              <button
+                onClick={() => runPreview()}
+                disabled={previewing || enabledTechFactors.length < 1}
+                className="px-4 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded font-medium transition-colors flex items-center gap-2"
+              >
+                {previewing
+                  ? <><span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />扫描中（约 10-30 秒）...</>
+                  : '▶ 预览当前因子组合信号'}
+              </button>
+              {enabledTechFactors.length > 0 && !previewing && (
+                <span className="text-xs text-slate-500">
+                  已启用：{enabledTechFactors.join(', ')}
+                </span>
+              )}
+              {enabledTechFactors.length === 0 && (
+                <span className="text-xs text-amber-500">请至少启用一个技术因子</span>
+              )}
+            </div>
           </div>
         )}
       </div>
+
+      {/* 预览结果 */}
+      {previewResult && (
+        <div className="bg-slate-800 rounded-lg border border-blue-700/50 p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="text-sm font-medium text-blue-300 flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-blue-400 inline-block" />
+              预览结果（自定义因子组合）
+              <span className="text-xs text-slate-500 font-normal">
+                共扫描 {previewResult.total} 只
+              </span>
+            </div>
+            <button onClick={() => setPreviewResult(null)} className="text-slate-500 hover:text-slate-300 text-sm">✕</button>
+          </div>
+
+          <div className="text-xs text-slate-500">
+            因子组合：{previewResult.factors?.join(' + ')}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <div className="text-xs text-slate-400 mb-2">
+                买入信号 <span className="text-green-400 font-medium">{previewResult.buy_count}</span> 只
+              </div>
+              <SignalTags
+                signals={previewResult.rows?.filter((r: any) => r.signal === 1) ?? []}
+                color="green"
+              />
+            </div>
+            <div>
+              <div className="text-xs text-slate-400 mb-2">
+                卖出信号 <span className="text-red-400 font-medium">{previewResult.sell_count}</span> 只
+              </div>
+              <SignalTags
+                signals={previewResult.rows?.filter((r: any) => r.signal === -1) ?? []}
+                color="red"
+              />
+            </div>
+          </div>
+
+          <div className="text-xs text-slate-600 border-t border-slate-700 pt-2">
+            仅供研究参考，实盘交易使用「市场扫描」中的 RSMomentum 生产信号
+          </div>
+        </div>
+      )}
     </div>
   )
 }

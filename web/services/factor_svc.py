@@ -136,6 +136,27 @@ def get_factor_params_from_db(key: str) -> dict:
     return params
 
 
+# ── 公共数据加载 ───────────────────────────────────────────
+
+def _load_price_map(universe: str):
+    """加载股票池价格数据，返回 (tickers, price_map, spy_close, stock_info)"""
+    from core.data_store import DataStore
+    from core.universe import get_tickers, get_stock_info
+
+    tickers = get_tickers(universe)
+    end_date = date.today().strftime('%Y-%m-%d')
+    start_date = (date.today() - timedelta(days=300)).strftime('%Y-%m-%d')
+
+    store = DataStore()
+    price_map = store.get(tickers + ['SPY'], start=start_date, end=end_date,
+                          min_rows=60, auto_update=True)
+
+    spy_df = price_map.get('SPY')
+    spy_close = spy_df['close'] if spy_df is not None else None
+    stock_info = get_stock_info(tickers)
+    return tickers, price_map, spy_close, stock_info
+
+
 # ── 扫描全股票池因子 ───────────────────────────────────────
 
 def scan_factors(universe: str = 'sp500', top: int = 50, force: bool = False) -> dict:
@@ -153,13 +174,7 @@ def scan_factors(universe: str = 'sp500', top: int = 50, force: bool = False) ->
     if not force and _cache_valid(universe):
         return _scan_cache[universe]['data']
 
-    from core.data_store import DataStore
-    from core.universe import get_tickers, get_stock_info
     from strategies.rs_momentum import RSMomentum
-    from strategies.factors.fundamental import (
-        compute_revenue_growth, compute_earnings_growth,
-        compute_roe, compute_fcf_yield, compute_pe_ratio, compute_pb_ratio,
-    )
     import config
 
     # 读取基本面因子启用状态
@@ -172,22 +187,11 @@ def scan_factors(universe: str = 'sp500', top: int = 50, force: bool = False) ->
         for k in fundamental_keys
     }
 
-    tickers = get_tickers(universe)
-    end_date = date.today().strftime('%Y-%m-%d')
-    start_date = (date.today() - timedelta(days=300)).strftime('%Y-%m-%d')
-
-    store = DataStore()
-    price_map = store.get(tickers + ['SPY'], start=start_date, end=end_date,
-                          min_rows=60, auto_update=True)
-
-    spy_df = price_map.get('SPY')
-    spy_close = spy_df['close'] if spy_df is not None else None
+    tickers, price_map, spy_close, stock_info = _load_price_map(universe)
 
     strategy = RSMomentum()
     if spy_close is not None:
         strategy.set_spy(spy_close)
-
-    stock_info = get_stock_info(tickers)
 
     rows = []
     total_scanned = 0
@@ -255,6 +259,82 @@ def scan_factors(universe: str = 'sp500', top: int = 50, force: bool = False) ->
 
     _scan_cache[universe] = {'ts': time.time(), 'data': data}
     return data
+
+
+# ── 自定义因子组合信号预览 ─────────────────────────────────
+
+def preview_signals(universe: str, factors: list[str], top: int = 100) -> dict:
+    """
+    用 DynamicFactorStrategy(factors) 扫描股票池，返回各股当日信号。
+    不缓存（预览是临时实验），不影响生产 RSMomentum 缓存。
+
+    返回格式：
+    {
+        'rows': [{'symbol', 'close', 'signal', 'rs_score', ...}, ...],
+        'factors': [...],   # 实际使用的因子列表
+        'buy_count': N,
+        'sell_count': N,
+        'total': N,
+    }
+    """
+    from strategies.dynamic_factor import DynamicFactorStrategy
+
+    tickers, price_map, spy_close, _ = _load_price_map(universe)
+
+    strategy = DynamicFactorStrategy(factors)
+    if spy_close is not None:
+        strategy.set_spy(spy_close)
+
+    rows = []
+    for sym in tickers:
+        df = price_map.get(sym)
+        if df is None or len(df) < 60:
+            continue
+        try:
+            sig_df = strategy.generate_signals(df)
+            last = sig_df.iloc[-1]
+
+            # 动态提取所有因子列（只取数值/布尔，跳过 OHLCV）
+            skip = {'open', 'high', 'low', 'close', 'volume', 'signal',
+                    'vol_ma20', 'ma50', 'ma200', 'atr14', 'prev_high'}
+            factor_vals: dict = {}
+            for col in sig_df.columns:
+                if col in skip:
+                    continue
+                v = last.get(col)
+                if v is None:
+                    continue
+                try:
+                    fv = v.item() if hasattr(v, 'item') else v
+                    if isinstance(fv, float) and fv != fv:   # NaN
+                        fv = None
+                    factor_vals[col] = fv
+                except Exception:
+                    pass
+
+            rows.append({
+                'symbol':   sym,
+                'close':    round(float(last['close']), 2),
+                'signal':   int(last.get('signal', 0)),
+                **factor_vals,
+            })
+        except Exception:
+            continue
+
+    # 排序：买入优先，其次按 rs_score
+    rows.sort(key=lambda r: (-(r.get('signal', 0)), -float(r.get('rs_score') or 0)))
+    top_rows = rows[:top] if top else rows
+
+    buy_count  = sum(1 for r in rows if r['signal'] == 1)
+    sell_count = sum(1 for r in rows if r['signal'] == -1)
+
+    return {
+        'rows':       top_rows,
+        'factors':    factors,
+        'buy_count':  buy_count,
+        'sell_count': sell_count,
+        'total':      len(rows),
+    }
 
 
 def _compute_fcf_yield(info: dict) -> float | None:

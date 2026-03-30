@@ -205,11 +205,14 @@ export default function MarketScan() {
   const [showCoverage, setShowCoverage] = useState(false)
   const queryClient = useQueryClient()
 
+  // 进入页面不自动触发扫描（日线策略每天只需跑一次）
+  // 只读已有缓存；手动点"重新扫描"才真正执行
   const { data: scanResult, isFetching, dataUpdatedAt } = useQuery({
     queryKey: ['factors-scan', universe],
     queryFn: () => scanFactors(universe, 100),
-    staleTime: 3_600_000,
-    gcTime: 3_600_000,
+    staleTime: Infinity,   // 缓存永不过期，不自动重新请求
+    gcTime: 24 * 3_600_000, // 保留24小时内存缓存
+    enabled: false,         // 禁止自动执行，只读缓存
   })
 
   // 兼容新格式 {rows, coverage, total} 和旧格式 []
@@ -224,7 +227,9 @@ export default function MarketScan() {
     })
   }
 
-  const lastScan = dataUpdatedAt ? new Date(dataUpdatedAt).toLocaleTimeString('zh-CN') : '-'
+  const lastScan = dataUpdatedAt
+    ? new Date(dataUpdatedAt).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    : null
 
   // 显示哪些基本面列（若有数据的话）
   const fundamentalCols = [
@@ -250,7 +255,10 @@ export default function MarketScan() {
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-white">市场扫描</h1>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-400">上次扫描：{lastScan}</span>
+          {lastScan
+            ? <span className="text-xs text-slate-400">上次扫描：{lastScan}</span>
+            : <span className="text-xs text-slate-500">尚未扫描（每日收盘后自动执行，或手动触发）</span>
+          }
           {totalScanned > 0 && <span className="text-xs text-slate-500">{rows.length}/{totalScanned} 只</span>}
           <select
             className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none"

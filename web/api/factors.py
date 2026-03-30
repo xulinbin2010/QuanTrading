@@ -2,7 +2,7 @@
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
-from typing import Optional
+from typing import Optional, List
 from web.services import factor_svc
 from core.universe import get_tickers
 
@@ -78,3 +78,24 @@ def clear_cache(universe: str = Query(None)):
     """手动清除因子缓存"""
     factor_svc.invalidate_cache(universe)
     return {'status': 'ok'}
+
+
+class PreviewRequest(BaseModel):
+    universe: str = 'sp500'
+    factors: List[str]
+    top: int = 100
+
+
+@router.post('/preview')
+def preview_signals(body: PreviewRequest):
+    """用自定义因子组合预览当日信号（不缓存，不影响生产扫描）"""
+    if not body.factors:
+        raise HTTPException(status_code=400, detail='至少选择一个因子')
+    try:
+        return factor_svc.preview_signals(
+            universe=body.universe,
+            factors=body.factors,
+            top=body.top,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

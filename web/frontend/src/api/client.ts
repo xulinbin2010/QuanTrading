@@ -34,6 +34,8 @@ export const getFactorRegistry = () =>
   api.get('/factors/registry').then(r => r.data)
 export const updateFactor = (key: string, body: { enabled?: boolean; params?: Record<string, any> }) =>
   api.put(`/factors/registry/${key}`, body).then(r => r.data)
+export const previewFactorSignals = (universe: string, factors: string[], top = 100) =>
+  api.post('/factors/preview', { universe, factors, top }).then(r => r.data)
 
 // ── 策略回测 ──────────────────────────────────────────────
 
@@ -59,6 +61,17 @@ export const getBacktestResult = (taskId: string) =>
   api.get(`/backtest/result/${taskId}`).then(r => r.data)
 export const getBacktestHistory = () =>
   api.get('/backtest/history').then(r => r.data)
+
+// ── 因子优化器 ────────────────────────────────────────────
+
+export const runOptimizer        = (params: object) =>
+  api.post('/optimizer/run', params).then(r => r.data)
+export const getOptimizerStatus  = (taskId: string) =>
+  api.get(`/optimizer/status/${taskId}`).then(r => r.data)
+export const getOptimizerResult  = (taskId: string) =>
+  api.get(`/optimizer/result/${taskId}`).then(r => r.data)
+export const getOptimizerHistory = () =>
+  api.get('/optimizer/history').then(r => r.data)
 
 // ── 系统配置 ──────────────────────────────────────────────
 

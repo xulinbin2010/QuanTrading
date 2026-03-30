@@ -18,6 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 import uuid
 import time
+import json
 import threading
 from datetime import date, timedelta
 from itertools import combinations
@@ -28,6 +29,62 @@ from typing import Optional
 # ── 内存任务存储 ───────────────────────────────────────────
 _tasks: dict[str, dict] = {}
 _lock = threading.Lock()
+_history_loaded = False
+
+_RESULTS_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    'data', 'optimizer_results'
+)
+
+
+# ── 文件持久化 ─────────────────────────────────────────────
+
+def _save_task(task_id: str, task: dict):
+    """将已完成的任务写入磁盘"""
+    os.makedirs(_RESULTS_DIR, exist_ok=True)
+    path = os.path.join(_RESULTS_DIR, f'{task_id}.json')
+    payload = {
+        'task_id':    task_id,
+        'status':     task['status'],
+        'created_at': task['created_at'],
+        'params':     task['params'],
+        'result':     task['result'],
+    }
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
+def _load_history_from_disk():
+    """首次调用时从磁盘加载历史记录到内存"""
+    global _history_loaded
+    with _lock:
+        if _history_loaded:
+            return
+        _history_loaded = True
+    if not os.path.exists(_RESULTS_DIR):
+        return
+    for fname in sorted(os.listdir(_RESULTS_DIR)):
+        if not fname.endswith('.json'):
+            continue
+        try:
+            with open(os.path.join(_RESULTS_DIR, fname), encoding='utf-8') as f:
+                data = json.load(f)
+            task_id = data['task_id']
+            with _lock:
+                if task_id not in _tasks:
+                    _tasks[task_id] = {
+                        'status':        data['status'],
+                        'progress':      1.0,
+                        'current':       0,
+                        'total':         0,
+                        'current_combo': [],
+                        'result':        data['result'],
+                        'error':         None,
+                        'created_at':    data['created_at'],
+                        'params':        data.get('params', {}),
+                    }
+        except Exception:
+            pass
 
 
 # ── 工具函数 ───────────────────────────────────────────────
@@ -63,17 +120,17 @@ def _get_tech_factor_keys() -> list[str]:
     """从注册表获取所有技术因子 key（注册顺序）"""
     from strategies.factors.registry import get_registry
     registry = get_registry()
-    return [k for k, m in registry.items() if m.data_type == 'technical']
+    return [k for k, m in registry.items() if m.data_type == 'technical' and not m.is_dependency]
 
 
 def _run_one(combo: list[str], start: str, end: str, universe: str,
-             top_n: int, min_cap_b: float | None, max_cap_b: float | None) -> dict:
-    """跑单次回测，返回 summary 或空 dict（出错时）"""
+             bt_top: int, min_cap_b: float | None, max_cap_b: float | None) -> dict:
+    """跑单次回测，返回 summary 或 {'_error': ...}（出错时）"""
     from tests.backtest_rs import run_backtest
     try:
         result = run_backtest(
             start=start, end=end, period=None,
-            universe=universe, top_n=top_n,
+            universe=universe, top=bt_top,  # run_backtest 参数名是 top，不是 top_n
             min_cap_b=min_cap_b, max_cap_b=max_cap_b,
             factors=combo,
         )
@@ -130,7 +187,7 @@ def _run(task_id: str, params: dict):
 
         def _submit(combo):
             train_s = _run_one(combo, train_start, train_end, universe, bt_top_n, min_cap_b, max_cap_b)
-            test_s  = _run_one(combo, test_start,  test_end,  universe, bt_top_n, min_cap_b, max_cap_b)
+            test_s  = _run_one(combo, test_start,  test_end,  universe, bt_top_n,  min_cap_b, max_cap_b)
             return combo, train_s, test_s
 
         done = 0
@@ -146,6 +203,9 @@ def _run(task_id: str, params: dict):
 
                 # 过滤：有报错 / 测试期交易不足 5 笔
                 if '_error' in train_s or '_error' in test_s:
+                    err = train_s.get('_error') or test_s.get('_error', '')
+                    with _lock:
+                        _tasks[task_id].setdefault('last_error', err)
                     continue
                 if test_s.get('total_trades', 0) < 5:
                     continue
@@ -205,6 +265,7 @@ def _run(task_id: str, params: dict):
             }
             _tasks[task_id]['status']   = 'completed'
             _tasks[task_id]['progress'] = 1.0
+            _save_task(task_id, _tasks[task_id])
 
     except Exception as e:
         with _lock:
@@ -247,10 +308,12 @@ def get_status(task_id: str) -> Optional[dict]:
             'total':         task['total'],
             'current_combo': task['current_combo'],
             'error':         task.get('error'),
+            'last_error':    task.get('last_error'),   # 首个组合级别的报错（调试用）
         }
 
 
 def get_result(task_id: str) -> Optional[dict]:
+    _load_history_from_disk()
     task = _tasks.get(task_id)
     if task is None or task['status'] != 'completed':
         return None
@@ -259,6 +322,7 @@ def get_result(task_id: str) -> Optional[dict]:
 
 
 def get_history() -> list[dict]:
+    _load_history_from_disk()
     with _lock:
         items = []
         for tid, task in _tasks.items():

@@ -23,6 +23,7 @@ class FactorMeta:
     signal_type: str                  # "score"（连续，越高越好）| "filter"（布尔，True=通过）
     params: dict                      # {param_name: (default, type, 描述)}
     default_enabled: bool = True      # 默认是否启用
+    is_dependency: bool = False       # 纯依赖项（不作为独立信号，不出现在优化器/UI 可选列表）
 
 
 # ── 延迟导入避免循环依赖 ─────────────────────────────────────────
@@ -63,6 +64,7 @@ def _build_registry() -> dict[str, FactorMeta]:
             output_columns=["vol_ma20"], signal_column="vol_ma20",
             signal_type="score",
             params={"period": (20, int, "成交量均线窗口（交易日）")},
+            is_dependency=True,   # 纯基础计算，供 volume_surge/volume_divergence 使用，不作为独立信号
         ),
         "volume_surge": FactorMeta(
             key="volume_surge", name="量能突破", category="volume",

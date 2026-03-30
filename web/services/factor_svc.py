@@ -57,7 +57,8 @@ def get_factor_registry() -> list[dict]:
             'signal_type':  meta.signal_type,
             'output_columns': meta.output_columns,
             'params':       params_info,
-            'enabled':      enabled,
+            'enabled':       enabled,
+            'is_dependency': meta.is_dependency,
         })
     return result
 

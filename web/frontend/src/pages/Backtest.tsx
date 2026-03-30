@@ -359,7 +359,7 @@ export default function Backtest() {
     staleTime: 300_000,
   })
   // 只显示技术因子（基本面因子无法参与时序回测）
-  const techFactors = (registry as any[]).filter((f: any) => f.data_type === 'technical')
+  const techFactors = (registry as any[]).filter((f: any) => f.data_type === 'technical' && !f.is_dependency)
 
   const toggleFactor = (key: string) => {
     setSelectedFactors(prev =>

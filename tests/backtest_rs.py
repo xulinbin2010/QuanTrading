@@ -18,18 +18,9 @@ import config
 
 warnings.filterwarnings('ignore')
 
-# 风控参数（统一定义在 config.py）
-MAX_POSITIONS           = config.MAX_POSITIONS
-POSITION_PCT            = config.POSITION_PCT
-CASH_RESERVE_PCT        = config.CASH_RESERVE_PCT
-STOP_LOSS_PCT           = config.STOP_LOSS_PCT
-INITIAL_CASH            = config.INITIAL_CASH
-MAX_PER_SECTOR          = config.MAX_PER_SECTOR
-VOL_SHRINK_RATIO        = config.VOL_SHRINK_RATIO
-TRAIL_STOP_ACTIVATE_PCT = config.TRAIL_STOP_ACTIVATE_PCT
-TRAIL_STOP_PCT          = config.TRAIL_STOP_PCT
-SPY_BRAKE_PERIOD        = config.SPY_BRAKE_PERIOD
-SPY_BRAKE_PCT           = config.SPY_BRAKE_PCT
+# 注意：不在模块级缓存风控参数，run_backtest() 每次调用时从 config 实时读取，
+# 确保 Web UI 修改系统配置后立即对回测/优化器生效。
+# CLI 入口同样实时读取，行为一致。
 
 
 # ── IBKR 阶梯手续费模型 ───────────────────────────────────────
@@ -93,6 +84,19 @@ def run_backtest(
         'daily_holdings': [...],
     }
     """
+    # 每次调用时从 config 实时读取，确保 Web UI 修改后立即生效
+    MAX_POSITIONS           = config.MAX_POSITIONS
+    POSITION_PCT            = config.POSITION_PCT
+    CASH_RESERVE_PCT        = config.CASH_RESERVE_PCT
+    STOP_LOSS_PCT           = config.STOP_LOSS_PCT
+    INITIAL_CASH            = config.INITIAL_CASH
+    MAX_PER_SECTOR          = config.MAX_PER_SECTOR
+    VOL_SHRINK_RATIO        = config.VOL_SHRINK_RATIO
+    TRAIL_STOP_ACTIVATE_PCT = config.TRAIL_STOP_ACTIVATE_PCT
+    TRAIL_STOP_PCT          = config.TRAIL_STOP_PCT
+    SPY_BRAKE_PERIOD        = config.SPY_BRAKE_PERIOD
+    SPY_BRAKE_PCT           = config.SPY_BRAKE_PCT
+
     if min_cap_b is None:
         min_cap_b = config.MIN_CAP_B
     if max_cap_b is None:

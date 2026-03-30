@@ -99,13 +99,17 @@ def get_positions() -> list[dict]:
         raise RuntimeError("IB Gateway 未连接")
     positions = []
     for item in _ib.portfolio():
+        avg_cost = float(item.averageCost)
+        market_price = float(item.marketPrice)
+        unrealized_pnl_pct = (market_price - avg_cost) / avg_cost if avg_cost else 0
         positions.append({
             "symbol": item.contract.symbol,
             "qty": float(item.position),
-            "avg_cost": float(item.averageCost),
-            "market_price": float(item.marketPrice),
+            "avg_cost": avg_cost,
+            "market_price": market_price,
             "market_value": float(item.marketValue),
             "unrealized_pnl": float(item.unrealizedPNL),
+            "unrealized_pnl_pct": unrealized_pnl_pct,
             "realized_pnl": float(item.realizedPNL),
         })
     return positions

@@ -127,7 +127,7 @@ export default function Portfolio() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-slate-400 text-xs border-b border-slate-700">
-                  {['股票', '数量', '均价', '市值', '浮盈'].map(h => (
+                  {['股票', '数量', '均价', '现价', '市值', '浮盈', '浮盈%'].map(h => (
                     <th key={h} className="px-4 py-2 text-left font-medium">{h}</th>
                   ))}
                 </tr>
@@ -137,10 +137,14 @@ export default function Portfolio() {
                   <tr key={p.symbol} className="border-b border-slate-700/50 hover:bg-slate-700/30">
                     <td className="px-4 py-2 font-mono text-white">{p.symbol}</td>
                     <td className="px-4 py-2">{p.qty}</td>
-                    <td className="px-4 py-2">${p.avg_cost.toFixed(2)}</td>
+                    <td className="px-4 py-2 font-mono">${p.avg_cost.toFixed(2)}</td>
+                    <td className="px-4 py-2 font-mono">${p.market_price.toFixed(2)}</td>
                     <td className="px-4 py-2">{fmt(p.market_value)}</td>
-                    <td className={`px-4 py-2 ${p.unrealized_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                    <td className={`px-4 py-2 font-mono ${p.unrealized_pnl >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {fmt(p.unrealized_pnl)}
+                    </td>
+                    <td className={`px-4 py-2 font-mono font-medium ${p.unrealized_pnl_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                      {p.unrealized_pnl_pct >= 0 ? '+' : ''}{(p.unrealized_pnl_pct * 100).toFixed(2)}%
                     </td>
                   </tr>
                 ))}

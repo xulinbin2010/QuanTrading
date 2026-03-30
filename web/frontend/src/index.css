@@ -28,3 +28,34 @@ body {
   background: #475569;
   border-radius: 3px;
 }
+
+/* ── 浅色主题：通过覆盖 Tailwind v4 CSS 变量实现，无需改动各页面组件 ── */
+html.light {
+  color-scheme: light;
+
+  /* 背景色：深灰 → 浅灰 */
+  --color-slate-950: #e2e8f0;
+  --color-slate-900: #f8fafc;
+  --color-slate-800: #f0f4f8;
+  --color-slate-700: #e2e8f0;
+  --color-slate-600: #c8d3df;
+
+  /* 文字色：浅 → 深 */
+  --color-slate-500: #64748b;
+  --color-slate-400: #475569;
+  --color-slate-300: #1e293b;
+  --color-slate-200: #0f172a;
+  --color-slate-100: #0a1120;
+  --color-slate-50:  #020617;
+
+  /* white → 深色文字（text-white 在浅色背景上不可见，统一改为深色） */
+  --color-white: #0f172a;
+}
+
+html.light body {
+  background-color: #f8fafc;
+  color: #0f172a;
+}
+
+html.light ::-webkit-scrollbar-track { background: #e2e8f0; }
+html.light ::-webkit-scrollbar-thumb { background: #94a3b8; }

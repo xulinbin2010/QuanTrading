@@ -137,7 +137,7 @@ export default function FactorDashboard() {
   const sellSignals = rows.filter((r: any) => r.signal === -1)
 
   // 按分类分组
-  const techFactors = (registry as any[]).filter((f: any) => f.data_type === 'technical')
+  const techFactors = (registry as any[]).filter((f: any) => f.data_type === 'technical' && !f.is_dependency)
   const fundFactors = (registry as any[]).filter((f: any) => f.data_type === 'fundamental')
   const grouped = techFactors.reduce((acc: any, f: any) => {
     ;(acc[f.category] = acc[f.category] || []).push(f)

@@ -24,7 +24,10 @@
       "Bash(.venv/bin/python -c \"import config; print\\('DENY_INDUSTRIES:', config.DENY_INDUSTRIES, type\\(config.DENY_INDUSTRIES\\)\\); print\\('all OK'\\)\")",
       "Bash(node:*)",
       "Bash(sed -i '' 's/export default function FactorDashboard/export default function MarketScan/' /Users/xulinbin/aiProject/QuanTrading/web/frontend/src/pages/MarketScan.tsx)",
-      "Bash(sed -i '' \"s/<h1 className=\"\"text-lg font-semibold text-white\"\">因子看板<\\\\/h1>/<h1 className=\"\"text-lg font-semibold text-white\"\">市场扫描<\\\\/h1>/\" /Users/xulinbin/aiProject/QuanTrading/web/frontend/src/pages/MarketScan.tsx)"
+      "Bash(sed -i '' \"s/<h1 className=\"\"text-lg font-semibold text-white\"\">因子看板<\\\\/h1>/<h1 className=\"\"text-lg font-semibold text-white\"\">市场扫描<\\\\/h1>/\" /Users/xulinbin/aiProject/QuanTrading/web/frontend/src/pages/MarketScan.tsx)",
+      "Bash(grep:*)",
+      "Bash(.venv/bin/python -:*)",
+      "Bash(.venv/bin/python -c \"from tests.backtest_rs import run_backtest; print\\(''OK''\\)\")"
     ]
   }
 }

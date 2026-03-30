@@ -117,11 +117,7 @@ class SchedulerService:
         parts = cron_expr.split()
         if len(parts) != 5:
             return
-        mn, hr, dm, mo, dw = parts
-        trigger = CronTrigger(
-            minute=mn, hour=hr, day=dm, month=mo, day_of_week=dw,
-            timezone='Asia/Shanghai',
-        )
+        trigger = CronTrigger.from_crontab(cron_expr, timezone='Asia/Shanghai')
         self.scheduler.add_job(
             func=self._execute_task,
             trigger=trigger,

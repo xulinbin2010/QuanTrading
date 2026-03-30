@@ -68,11 +68,7 @@ def cron_preview(expr: str = Query(...), count: int = Query(5, le=10)):
         parts = expr.strip().split()
         if len(parts) != 5:
             return {'times': [], 'error': '需要5个字段的 cron 表达式'}
-        mn, hr, dm, mo, dw = parts
-        trigger = CronTrigger(
-            minute=mn, hour=hr, day=dm, month=mo, day_of_week=dw,
-            timezone='Asia/Shanghai',
-        )
+        trigger = CronTrigger.from_crontab(expr.strip(), timezone='Asia/Shanghai')
         cst = ZoneInfo('Asia/Shanghai')
         t = datetime.now(tz=timezone.utc)
         times = []

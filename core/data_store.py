@@ -143,7 +143,7 @@ class DataStore:
             dl_from = requested_start                            # 完全没有数据
         elif earliest is not None and earliest > start_date:
             dl_from = requested_start                            # 历史不够，向前补
-        elif latest >= min(end_date, last_trading) - timedelta(days=7):
+        elif latest >= min(end_date, last_trading):
             return None                                          # 已经足够新
         else:
             next_day = (latest + timedelta(days=1)).strftime('%Y-%m-%d')

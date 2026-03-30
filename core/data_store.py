@@ -157,11 +157,13 @@ class DataStore:
 
     def _download_and_save(self, symbols: list[str], start: str, end: str) -> int:
         """批量下载并 append-save 到个股 parquet 文件。"""
+        # yfinance end 是左闭右开，需要 +1 天才能包含 end 当天的数据
+        end_exclusive = (date.fromisoformat(end) + timedelta(days=1)).strftime('%Y-%m-%d')
         try:
             raw = yf.download(
                 symbols,
                 start=start,
-                end=end,
+                end=end_exclusive,
                 auto_adjust=True,
                 progress=True,
                 group_by='ticker',

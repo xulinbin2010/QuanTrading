@@ -36,6 +36,7 @@ _PERIOD_DAYS = {'1mo': 60, '3mo': 120, '6mo': 210, '1y': 400, '2y': 760}
 
 def run_scanner(
     held_positions: list[str] = None,
+    avg_costs: dict[str, float] = None,   # {symbol: avg_cost}，用于移动止损检查
     top_n: int = 15,
     period: str = '1y',
     universe: str = 'sp500',
@@ -46,6 +47,7 @@ def run_scanner(
 ):
     held_positions = [s.upper() for s in (held_positions or [])]
     extra_tickers  = [s.upper() for s in (extra or [])]
+    avg_costs      = {k.upper(): v for k, v in (avg_costs or {}).items()}
 
     # ── 获取股票池 ────────────────────────────────────────────
     all_extra = list(set(held_positions + extra_tickers))
@@ -110,20 +112,29 @@ def run_scanner(
                     'breakout':      latest['breakout'],
                     'insider_score': insider_score,
                 })
-            # 持仓报警：无论信号是否为 -1，只要是持仓就检查背离
+            # 持仓报警：量价背离 + 移动止损
             if symbol in held_positions:
-                div = latest['at_new_high'] if 'at_new_high' in latest.index else (
-                    latest['vol_shrink'] and latest['close'] >= result['close'].rolling(20).max().iloc[-1]
-                )
+                cur_close = float(latest['close'])
+                vol_ratio = latest['volume'] / latest['vol_ma20'] if latest['vol_ma20'] > 0 else 0
                 if sig == -1:
                     sell_alerts.append({
-                        'symbol':    symbol,
-                        'close':     latest['close'],
-                        'rs_score':  rs,
-                        'vol_ratio': latest['volume'] / latest['vol_ma20']
-                                     if latest['vol_ma20'] > 0 else 0,
-                        'reason':    '量价背离（新高缩量）',
+                        'symbol': symbol, 'close': cur_close,
+                        'rs_score': rs, 'vol_ratio': vol_ratio,
+                        'reason': '量价背离（新高缩量）',
                     })
+                # 移动止损：需要 avg_cost
+                if symbol in avg_costs:
+                    avg_cost = avg_costs[symbol]
+                    peak     = float(result['close'].max())
+                    peak_ret = (peak - avg_cost) / avg_cost
+                    trail_ret = (cur_close - peak) / peak
+                    if (peak_ret >= config.TRAIL_STOP_ACTIVATE_PCT
+                            and trail_ret <= config.TRAIL_STOP_PCT):
+                        sell_alerts.append({
+                            'symbol': symbol, 'close': cur_close,
+                            'rs_score': rs, 'vol_ratio': vol_ratio,
+                            'reason': f'移动止损（峰值 ${peak:.2f} +{peak_ret:.1%}，回撤 {trail_ret:.1%}）',
+                        })
         except Exception:
             pass
 
@@ -256,6 +267,8 @@ def main():
     parser = argparse.ArgumentParser(description='RS 动量选股扫描器（独立运行，无需 IB）')
     parser.add_argument('--top',      type=int, default=15,  help='显示前 N 名买入信号')
     parser.add_argument('--held',     nargs='+', default=[], help='当前持仓，用于卖出报警')
+    parser.add_argument('--avg-cost', nargs='+', default=[], metavar='SYM:COST',
+                        help='持仓均价，用于移动止损检查，如 NVDA:850 AMD:115')
     parser.add_argument('--extra',    nargs='+', default=[], help='追加自选股（如 TSLA BTC-USD）')
     parser.add_argument('--period',       default='1y',    help='历史数据跨度（默认 1y）')
     parser.add_argument('--universe',     default='sp500', help='股票池：sp500 / nasdaq100 / russell2000')
@@ -265,8 +278,17 @@ def main():
                         help=f'内部人买入观察窗口（天），默认 {config.INSIDER_DAYS} 天')
     args = parser.parse_args()
 
+    avg_costs = {}
+    for item in args.avg_cost:
+        try:
+            sym, cost = item.split(':')
+            avg_costs[sym.upper()] = float(cost)
+        except ValueError:
+            print(f'  [警告] --avg-cost 格式错误（期望 SYM:COST）：{item}')
+
     run_scanner(
         held_positions=args.held,
+        avg_costs=avg_costs if avg_costs else None,
         top_n=args.top,
         period=args.period,
         universe=args.universe,

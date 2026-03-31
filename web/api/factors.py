@@ -86,6 +86,21 @@ class PreviewRequest(BaseModel):
     top: int = 100
 
 
+class PositionItem(BaseModel):
+    symbol: str
+    avg_cost: float
+
+
+@router.post('/trail-stop-check')
+def trail_stop_check(positions: List[PositionItem]):
+    """对传入的持仓列表检查移动止损状态"""
+    try:
+        return factor_svc.check_trail_stops([{'symbol': p.symbol.upper(), 'avg_cost': p.avg_cost}
+                                             for p in positions])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.post('/preview')
 def preview_signals(body: PreviewRequest):
     """用自定义因子组合预览当日信号（不缓存，不影响生产扫描）"""

@@ -36,6 +36,8 @@ export const updateFactor = (key: string, body: { enabled?: boolean; params?: Re
   api.put(`/factors/registry/${key}`, body).then(r => r.data)
 export const previewFactorSignals = (universe: string, factors: string[], top = 100) =>
   api.post('/factors/preview', { universe, factors, top }).then(r => r.data)
+export const checkTrailStops = (positions: { symbol: string; avg_cost: number }[]) =>
+  api.post('/factors/trail-stop-check', positions).then(r => r.data)
 
 // ── 策略回测 ──────────────────────────────────────────────
 

@@ -42,14 +42,40 @@ warnings.filterwarnings('ignore')
 #  风控参数（统一定义在 config.py）
 # ══════════════════════════════════════════════════════
 
-MAX_POSITIONS    = config.MAX_POSITIONS
-POSITION_PCT     = config.POSITION_PCT
-CASH_RESERVE_PCT = config.CASH_RESERVE_PCT
-STOP_LOSS_PCT    = config.STOP_LOSS_PCT
-MAX_PER_SECTOR   = config.MAX_PER_SECTOR
+MAX_POSITIONS           = config.MAX_POSITIONS
+POSITION_PCT            = config.POSITION_PCT
+CASH_RESERVE_PCT        = config.CASH_RESERVE_PCT
+STOP_LOSS_PCT           = config.STOP_LOSS_PCT
+MAX_PER_SECTOR          = config.MAX_PER_SECTOR
+TRAIL_STOP_ACTIVATE_PCT = config.TRAIL_STOP_ACTIVATE_PCT
+TRAIL_STOP_PCT          = config.TRAIL_STOP_PCT
 
 # 仓位计算：5 × 15% = 75% 持仓 + 25% 现金保留
 SELL_ON_ALERT    = True   # 量价背离时是否自动卖出（False = 只报警）
+
+
+def _peak_price(sym: str, avg_cost: float, db) -> float:
+    """从 DataStore 计算该持仓自建仓以来的峰值收盘价。
+    入场日期从 orders 表查最近一笔 BUY 成交记录；若无记录则以 avg_cost 为峰值。
+    """
+    from core.data_store import DataStore
+    # orders 列：id, symbol, action, order_type, qty, price, filled_price, status, order_id, created_at
+    rows = db.get_orders(symbol=sym, limit=50)
+    entry_date = None
+    for r in rows:
+        if r[2] == 'BUY' and r[6] is not None:   # action=BUY, filled_price 有值
+            entry_date = r[9]                      # created_at (datetime)
+            break
+    if entry_date is None:
+        return avg_cost
+
+    start = (entry_date.date() if hasattr(entry_date, 'date') else entry_date).strftime('%Y-%m-%d')
+    end   = date.today().strftime('%Y-%m-%d')
+    data  = DataStore().get([sym], start=start, end=end, auto_update=False)
+    df    = data.get(sym)
+    if df is None or df.empty:
+        return avg_cost
+    return max(float(df['close'].max()), avg_cost)
 
 # 现金等价 ETF：占仓时计入现金、不占槽位、跳过止损和信号扫描
 CASH_EQUIV = {'SGOV', 'BIL', 'USFR'}
@@ -316,6 +342,54 @@ def execute(signals: dict, dry_run: bool = True):
                 print(f"  → [dry-run] 将下止损单 {tif_label}{floor_str} 卖出 {s['qty']} 股")
     else:
         print(f"  无止损触发")
+        print(f"{'='*54}")
+
+    # ── 移动止损检查 ──────────────────────────────────────────
+    already_hard_stop = {s['symbol'] for s in stop_loss_list}
+    trail_stop_list   = []
+    for sym, pos in stock_positions.items():
+        if sym in already_hard_stop or sym in CASH_EQUIV:
+            continue
+        avg_cost  = pos.avgCost
+        qty       = int(pos.position)
+        cur_price = signals.get('_prices', {}).get(sym)
+        if avg_cost <= 0 or qty <= 0 or cur_price is None:
+            continue
+        peak      = _peak_price(sym, avg_cost, db)
+        peak_ret  = (peak - avg_cost) / avg_cost
+        trail_ret = (cur_price - peak) / peak
+        if peak_ret >= TRAIL_STOP_ACTIVATE_PCT and trail_ret <= TRAIL_STOP_PCT:
+            trail_stop_list.append({
+                'symbol': sym, 'qty': qty,
+                'avg_cost': avg_cost, 'cur_price': cur_price,
+                'peak': peak, 'peak_ret': peak_ret, 'trail_ret': trail_ret,
+            })
+
+    print(f"\n{'='*54}")
+    if trail_stop_list:
+        print(f"  移动止损触发（浮盈>{TRAIL_STOP_ACTIVATE_PCT:.0%}后从峰值回撤>{abs(TRAIL_STOP_PCT):.0%}）：{len(trail_stop_list)} 只")
+        print(f"{'='*54}")
+        for s in trail_stop_list:
+            print(f"  [{s['symbol']}]  均价 ${s['avg_cost']:.2f}  峰值 ${s['peak']:.2f}"
+                  f"（+{s['peak_ret']:.1%}）→ 现价 ${s['cur_price']:.2f}  回撤 {s['trail_ret']:.1%}")
+            if not dry_run:
+                _cancel_existing(s['symbol'], 'SELL')
+                if tif == 'OPG':
+                    floor = round(s['cur_price'] * 0.95, 2)
+                    trade = trader.limit_sell(s['symbol'], s['qty'], price=floor, tif='OPG')
+                    label = f"限价 OPG 移动止损（下限 ${floor:.2f}）"
+                else:
+                    trade = trader.market_sell(s['symbol'], s['qty'], tif=tif)
+                    label = tif_label
+                if trade is None:
+                    print(f"  → [ERROR] {s['symbol']} 移动止损单提交失败，请手动处理！")
+                else:
+                    print(f"  → 已下移动止损单 [{label}] 卖出 {s['qty']} 股")
+            else:
+                floor_str = f"（限价下限 ${s['cur_price']*0.95:.2f}）" if tif == 'OPG' else ""
+                print(f"  → [dry-run] 将下移动止损单 {tif_label}{floor_str} 卖出 {s['qty']} 股")
+    else:
+        print(f"  无移动止损触发")
         print(f"{'='*54}")
 
     # ── 卖出报警（量价背离）──────────────────────────────────

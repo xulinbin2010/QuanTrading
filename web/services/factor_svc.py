@@ -425,3 +425,60 @@ def get_stock_factors(symbol: str, days: int = 120) -> dict:
         "factors": factors_list,
         "fundamental": fundamental,
     }
+
+
+# ── 移动止损检查 ───────────────────────────────────────────
+
+def check_trail_stops(positions: list[dict]) -> list[dict]:
+    """
+    对持仓列表检查移动止损状态。
+    positions: [{'symbol': 'NVDA', 'avg_cost': 850.0}, ...]
+    返回每只股票的止损分析结果。
+    """
+    import config
+    from core.data_store import DataStore
+    from datetime import date, timedelta
+
+    ACTIVATE = config.TRAIL_STOP_ACTIVATE_PCT
+    TRAIL    = config.TRAIL_STOP_PCT
+
+    symbols  = [p['symbol'] for p in positions]
+    start    = (date.today() - timedelta(days=400)).strftime('%Y-%m-%d')
+    end      = date.today().strftime('%Y-%m-%d')
+    store    = DataStore()
+    all_data = store.get(symbols, start=start, end=end, auto_update=False)
+
+    results = []
+    for pos in positions:
+        sym      = pos['symbol']
+        avg_cost = float(pos['avg_cost'])
+        df       = all_data.get(sym)
+
+        if df is None or df.empty:
+            results.append({'symbol': sym, 'avg_cost': avg_cost,
+                            'status': 'no_data', 'trigger': False})
+            continue
+
+        cur_price = float(df['close'].iloc[-1])
+        peak      = float(df['close'].max())
+        ret       = (cur_price - avg_cost) / avg_cost
+        peak_ret  = (peak - avg_cost) / avg_cost
+        trail_ret = (cur_price - peak) / peak
+        trigger   = peak_ret >= ACTIVATE and trail_ret <= TRAIL
+
+        results.append({
+            'symbol':    sym,
+            'avg_cost':  round(avg_cost, 2),
+            'cur_price': round(cur_price, 2),
+            'peak':      round(peak, 2),
+            'ret':       round(ret, 4),
+            'peak_ret':  round(peak_ret, 4),
+            'trail_ret': round(trail_ret, 4),
+            'activate':  ACTIVATE,
+            'trail':     TRAIL,
+            'trigger':   trigger,
+            'status':    'triggered' if trigger else (
+                         'watching' if peak_ret >= ACTIVATE else 'not_activated'),
+        })
+
+    return results

@@ -1,10 +1,18 @@
 """任务调度 API 路由"""
+import re
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from web.services.scheduler_svc import get_scheduler
 from apscheduler.triggers.cron import CronTrigger
 from datetime import datetime, timezone, timedelta
 from zoneinfo import ZoneInfo
+
+
+def _posix_dow_to_aps(dw: str) -> str:
+    """POSIX cron 星期编号（0/7=周日, 1=周一..6=周六）→ APScheduler（0=周一..6=周日）"""
+    if dw == '*':
+        return dw
+    return re.sub(r'\d+', lambda m: str((int(m.group()) - 1) % 7), dw)
 
 router = APIRouter(prefix='/api/scheduler', tags=['scheduler'])
 
@@ -68,7 +76,12 @@ def cron_preview(expr: str = Query(...), count: int = Query(5, le=10)):
         parts = expr.strip().split()
         if len(parts) != 5:
             return {'times': [], 'error': '需要5个字段的 cron 表达式'}
-        trigger = CronTrigger.from_crontab(expr.strip(), timezone='Asia/Shanghai')
+        mn, hr, dm, mo, dw = parts
+        trigger = CronTrigger(
+            minute=mn, hour=hr, day=dm, month=mo,
+            day_of_week=_posix_dow_to_aps(dw),
+            timezone='Asia/Shanghai',
+        )
         cst = ZoneInfo('Asia/Shanghai')
         t = datetime.now(tz=timezone.utc)
         times = []

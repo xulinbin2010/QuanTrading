@@ -151,9 +151,14 @@ export default function Layout() {
     <div className="flex h-screen bg-slate-900 text-slate-200 overflow-hidden">
       {/* 侧边栏 */}
       <aside className="w-48 flex-shrink-0 bg-slate-800 border-r border-slate-700 flex flex-col">
-        <div className="px-4 py-5 border-b border-slate-700">
-          <div className="text-sm font-bold text-slate-200">QuanTrading</div>
-          <div className="text-xs text-slate-400 mt-0.5">量化交易平台</div>
+        <div className="px-4 py-4 border-b border-slate-700">
+          <div className="flex items-center gap-2.5">
+            <img src="/logo.png" alt="logo" className="w-8 h-8 rounded-lg object-contain flex-shrink-0" />
+            <div>
+              <div className="text-sm font-bold text-slate-200">QuanTrading</div>
+              <div className="text-xs text-slate-400 mt-0.5">量化交易平台</div>
+            </div>
+          </div>
         </div>
         <nav className="flex-1 py-3">
           {NAV.map(item => (

@@ -75,6 +75,9 @@ def get_balance() -> dict:
         _connect_ib()
     if not _ib or not _ib.isConnected():
         raise RuntimeError("IB Gateway 未连接")
+    # 主动请求最新账户数据
+    _ib.reqAccountUpdates(True, '')
+    _ib.sleep(0.5)
     from core.account import Account
     acc = Account(_ib)
 
@@ -97,6 +100,9 @@ def get_positions() -> list[dict]:
         _connect_ib()
     if not _ib or not _ib.isConnected():
         raise RuntimeError("IB Gateway 未连接")
+    # 主动向 IB 请求最新持仓，而不是读本地缓存
+    _ib.reqPositions()
+    _ib.sleep(0.5)
     positions = []
     for item in _ib.portfolio():
         avg_cost = float(item.averageCost)

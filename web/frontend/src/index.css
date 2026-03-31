@@ -4,6 +4,21 @@
   box-sizing: border-box;
 }
 
+button {
+  cursor: pointer;
+  user-select: none;
+  transition: transform 0.1s ease, opacity 0.12s ease;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+button:not(:disabled):active {
+  transform: scale(0.95);
+  opacity: 0.75;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;

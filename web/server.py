@@ -89,7 +89,10 @@ if os.path.isdir(_dist):
 
     @app.get('/{full_path:path}', include_in_schema=False)
     def spa_fallback(full_path: str):
-        """所有非 API 路由返回 index.html（SPA 路由）"""
+        """dist 根目录下的静态文件直接返回，其余返回 index.html（SPA 路由）"""
+        candidate = os.path.join(_dist, full_path)
+        if full_path and os.path.isfile(candidate):
+            return FileResponse(candidate)
         return FileResponse(os.path.join(_dist, 'index.html'))
 
 

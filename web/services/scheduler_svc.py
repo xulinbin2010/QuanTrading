@@ -1,5 +1,6 @@
 """任务调度服务层：APScheduler + subprocess 执行器"""
 from __future__ import annotations
+import re
 import sys
 import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -117,7 +118,12 @@ class SchedulerService:
         parts = cron_expr.split()
         if len(parts) != 5:
             return
-        trigger = CronTrigger.from_crontab(cron_expr, timezone='Asia/Shanghai')
+        mn, hr, dm, mo, dw = parts
+        trigger = CronTrigger(
+            minute=mn, hour=hr, day=dm, month=mo,
+            day_of_week=re.sub(r'\d+', lambda m: str((int(m.group()) - 1) % 7), dw) if dw != '*' else dw,
+            timezone='Asia/Shanghai',
+        )
         self.scheduler.add_job(
             func=self._execute_task,
             trigger=trigger,

@@ -337,18 +337,30 @@ const CATEGORY_LABELS: Record<string, string> = {
   momentum: '动量', volume: '成交量', trend: '趋势', growth: '成长', quality: '质量', value: '估值',
 }
 
+const DEFAULT_PARAMS = {
+  period: '3mo', start: '', end: '',
+  universe: 'sp500', top_n: 6,
+  min_cap_b: 10, max_cap_b: 5000,
+  deny_industries: [] as string[],
+  useCustomDate: false,
+}
+
+function loadStored<T>(key: string, fallback: T): T {
+  try {
+    const s = localStorage.getItem(key)
+    return s ? JSON.parse(s) : fallback
+  } catch { return fallback }
+}
+
 export default function Backtest() {
-  const [params, setParams] = useState({
-    period: '3mo', start: '', end: '',
-    universe: 'sp500', top_n: 6,
-    min_cap_b: 10, max_cap_b: 5000,
-    deny_industries: [] as string[],
-    useCustomDate: false,
-  })
+  const [params, setParams] = useState(() => loadStored('bt_params', DEFAULT_PARAMS))
   const [activeTask, setActiveTask] = useState<string | null>(null)
   const [showHistory, setShowHistory] = useState(false)
   const [showFactors, setShowFactors] = useState(false)
-  const [selectedFactors, setSelectedFactors] = useState<string[]>([])  // 空 = 使用默认 RSMomentum
+  const [selectedFactors, setSelectedFactors] = useState<string[]>(() => loadStored('bt_factors', []))
+
+  useEffect(() => { localStorage.setItem('bt_params', JSON.stringify(params)) }, [params])
+  useEffect(() => { localStorage.setItem('bt_factors', JSON.stringify(selectedFactors)) }, [selectedFactors])  // 空 = 使用默认 RSMomentum
   const queryClient = useQueryClient()
 
   // 拉取因子注册表

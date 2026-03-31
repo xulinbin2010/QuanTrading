@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getFactorRegistry, updateFactor, scanFactors, previewFactorSignals } from '../api/client'
+import { getFactorRegistry, updateFactor, scanFactors, previewFactorSignals, checkTrailStops } from '../api/client'
 
 // ── RSMomentum 策略买入/卖出条件定义（静态说明） ──────────
 const BUY_CONDITIONS = [
@@ -110,6 +110,11 @@ export default function FactorDashboard() {
   const [showRegistry, setShowRegistry] = useState(true)
   const [universe, setUniverse] = useState('sp500')
   const [previewResult, setPreviewResult] = useState<any>(null)
+  const [showTrailStop, setShowTrailStop] = useState(false)
+  const [trailInput, setTrailInput] = useState('')      // "NVDA:850 AMD:115"
+  const [trailResults, setTrailResults] = useState<any[]>([])
+  const [trailLoading, setTrailLoading] = useState(false)
+  const [trailError, setTrailError] = useState('')
   const queryClient = useQueryClient()
 
   // 因子注册表
@@ -358,6 +363,101 @@ export default function FactorDashboard() {
           </div>
         </div>
       )}
+
+      {/* ── 移动止损检查 ─────────────────────────────────── */}
+      <div className="bg-slate-800 rounded-lg border border-slate-700">
+        <button
+          onClick={() => setShowTrailStop(s => !s)}
+          className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-slate-300 hover:text-white"
+        >
+          <span>🔒 持仓移动止损检查</span>
+          <span className={`text-slate-500 transition-transform ${showTrailStop ? 'rotate-180' : ''}`}>▾</span>
+        </button>
+
+        {showTrailStop && (
+          <div className="px-4 pb-4 space-y-3 border-t border-slate-700 pt-3">
+            <div className="text-xs text-slate-400">
+              输入持仓均价，检查是否触发移动止损（浮盈超阈值后从峰值回撤）。格式：<span className="font-mono text-slate-300">NVDA:850 AMD:115</span>
+            </div>
+            <div className="flex gap-2">
+              <input
+                className="flex-1 bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-sm font-mono text-white focus:outline-none focus:border-blue-500"
+                placeholder="NVDA:850 AMD:115 TSLA:200"
+                value={trailInput}
+                onChange={e => setTrailInput(e.target.value)}
+              />
+              <button
+                onClick={async () => {
+                  setTrailError('')
+                  const pairs = trailInput.trim().split(/\s+/).filter(Boolean)
+                  const positions: { symbol: string; avg_cost: number }[] = []
+                  for (const p of pairs) {
+                    const [sym, cost] = p.split(':')
+                    if (!sym || !cost || isNaN(+cost)) {
+                      setTrailError(`格式错误：${p}`)
+                      return
+                    }
+                    positions.push({ symbol: sym.toUpperCase(), avg_cost: +cost })
+                  }
+                  if (!positions.length) return
+                  setTrailLoading(true)
+                  try {
+                    const res = await checkTrailStops(positions)
+                    setTrailResults(res)
+                  } catch (e: any) {
+                    setTrailError(e?.response?.data?.detail ?? '检查失败')
+                  } finally {
+                    setTrailLoading(false)
+                  }
+                }}
+                disabled={trailLoading || !trailInput.trim()}
+                className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-sm rounded"
+              >
+                {trailLoading ? '检查中...' : '检查'}
+              </button>
+            </div>
+            {trailError && <div className="text-xs text-red-400">{trailError}</div>}
+            {trailResults.length > 0 && (
+              <div className="space-y-2">
+                {trailResults.map((r: any) => {
+                  const triggered = r.status === 'triggered'
+                  const watching  = r.status === 'watching'
+                  const noData    = r.status === 'no_data'
+                  return (
+                    <div key={r.symbol}
+                      className={`rounded-lg border px-3 py-2 text-xs ${
+                        triggered ? 'border-red-700 bg-red-900/20'
+                        : watching ? 'border-yellow-700 bg-yellow-900/10'
+                        : 'border-slate-700 bg-slate-700/30'
+                      }`}
+                    >
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-mono font-medium text-white">{r.symbol}</span>
+                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                          triggered ? 'bg-red-700 text-red-100'
+                          : watching ? 'bg-yellow-700 text-yellow-100'
+                          : noData ? 'bg-slate-600 text-slate-300'
+                          : 'bg-slate-700 text-slate-400'
+                        }`}>
+                          {triggered ? '⚠ 触发止损' : watching ? '监控中' : noData ? '无数据' : '未激活'}
+                        </span>
+                      </div>
+                      {!noData && (
+                        <div className="flex gap-4 text-slate-400">
+                          <span>均价 <span className="text-white">${r.avg_cost}</span></span>
+                          <span>峰值 <span className="text-white">${r.peak}</span>（+{(r.peak_ret * 100).toFixed(1)}%）</span>
+                          <span>现价 <span className="text-white">${r.cur_price}</span></span>
+                          <span>峰值回撤 <span className={r.trail_ret <= r.trail ? 'text-red-400' : 'text-slate-300'}>{(r.trail_ret * 100).toFixed(1)}%</span></span>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
     </div>
   )
 }

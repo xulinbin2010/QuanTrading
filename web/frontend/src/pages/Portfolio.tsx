@@ -52,6 +52,8 @@ function EquityChart({ data }: { data: { snapshot_at: string; net_liquidation: n
 
 export default function Portfolio() {
   const [orderSymbol, setOrderSymbol] = useState('')
+  const [refreshMsg, setRefreshMsg] = useState<'ok' | 'error' | null>(null)
+  const [spinning, setSpinning] = useState(false)
 
   const { data: balance, isError: balanceErr } = useQuery({
     queryKey: ['balance'],
@@ -60,9 +62,10 @@ export default function Portfolio() {
     retry: false,
   })
 
-  const { data: positions, isError: posErr } = useQuery({
+  const { data: positions, isError: posErr, refetch: refetchPositions } = useQuery({
     queryKey: ['positions'],
     queryFn: getPositions,
+    refetchInterval: 60_000,
     retry: false,
   })
 
@@ -115,8 +118,33 @@ export default function Portfolio() {
 
       {/* 持仓表格 */}
       <div className="bg-slate-800 rounded-lg border border-slate-700">
-        <div className="px-4 py-3 border-b border-slate-700 text-sm font-medium text-slate-300">
-          当前持仓 {positions ? `（${positions.length} 只）` : ''}
+        <div className="px-4 py-3 border-b border-slate-700 text-sm font-medium text-slate-300 flex items-center justify-between">
+          <span>当前持仓 {positions ? `（${positions.length} 只）` : ''}</span>
+          <div className="flex items-center gap-2">
+            {refreshMsg && (
+              <span className={`text-xs ${refreshMsg === 'ok' ? 'text-green-400' : 'text-red-400'}`}>
+                {refreshMsg === 'ok' ? '已刷新' : 'IB 未连接'}
+              </span>
+            )}
+            <button
+              onClick={async () => {
+                setSpinning(true)
+                setRefreshMsg(null)
+                const [result] = await Promise.all([
+                  refetchPositions(),
+                  new Promise(r => setTimeout(r, 600)),
+                ])
+                setSpinning(false)
+                setRefreshMsg(result.status === 'error' ? 'error' : 'ok')
+                setTimeout(() => setRefreshMsg(null), 2500)
+              }}
+              disabled={spinning}
+              className="flex items-center gap-1 text-xs text-slate-400 hover:text-white disabled:opacity-40 transition-colors"
+            >
+              <span className={spinning ? 'animate-spin inline-block' : 'inline-block'}>↻</span>
+              {spinning ? '刷新中...' : '刷新'}
+            </button>
+          </div>
         </div>
         {!positions || positions.length === 0 ? (
           <div className="px-4 py-6 text-slate-500 text-sm text-center">

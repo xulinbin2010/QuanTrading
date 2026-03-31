@@ -27,7 +27,8 @@
       "Bash(sed -i '' \"s/<h1 className=\"\"text-lg font-semibold text-white\"\">因子看板<\\\\/h1>/<h1 className=\"\"text-lg font-semibold text-white\"\">市场扫描<\\\\/h1>/\" /Users/xulinbin/aiProject/QuanTrading/web/frontend/src/pages/MarketScan.tsx)",
       "Bash(grep:*)",
       "Bash(.venv/bin/python -:*)",
-      "Bash(.venv/bin/python -c \"from tests.backtest_rs import run_backtest; print\\(''OK''\\)\")"
+      "Bash(.venv/bin/python -c \"from tests.backtest_rs import run_backtest; print\\(''OK''\\)\")",
+      "Bash(python3 -c \":*)"
     ]
   }
 }

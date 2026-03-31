@@ -302,7 +302,7 @@ export default function Scheduler() {
                 )}
                 {cronTimes.length > 0 && (
                   <div className="mt-1.5 space-y-0.5">
-                    <div className="text-xs text-slate-500">最近5次执行时间（北京）：</div>
+                    <div className="text-xs text-slate-500">未来5次执行时间（北京）：</div>
                     {cronTimes.map((t, i) => (
                       <div key={i} className="text-xs font-mono text-slate-400 pl-2">
                         {i + 1}. {t}

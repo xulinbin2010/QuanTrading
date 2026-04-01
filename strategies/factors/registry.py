@@ -77,7 +77,7 @@ def _build_registry() -> dict[str, FactorMeta]:
             key="volume_divergence", name="量价背离", category="volume",
             data_type="technical", compute_fn=compute_volume_divergence,
             output_columns=["at_new_high", "vol_shrink"], signal_column="vol_shrink",
-            signal_type="filter",
+            signal_type="sell_alert",
             params={
                 "breakout_period": (50, int, "判断新高的回看窗口"),
                 "shrink_ratio": (0.7, float, "缩量阈值（低于均量×此比例触发）"),

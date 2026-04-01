@@ -598,7 +598,7 @@ export default function Backtest() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-slate-400 border-b border-slate-700">
-                  {['时间', '股票池', '区间', '总收益', 'Sharpe', '状态', '操作'].map(h => (
+                  {['时间', '因子组合', '区间', '总收益', 'Sharpe', '状态', '操作'].map(h => (
                     <th key={h} className="px-3 py-2 text-left font-medium">{h}</th>
                   ))}
                 </tr>
@@ -607,7 +607,13 @@ export default function Backtest() {
                 {history.map((h: any) => (
                   <tr key={h.task_id} className="border-b border-slate-700/50 hover:bg-slate-700/30">
                     <td className="px-3 py-2 text-slate-400">{h.created_at}</td>
-                    <td className="px-3 py-2">{h.universe}</td>
+                    <td className="px-3 py-2 max-w-[220px]">
+                      {h.factors?.length > 0
+                        ? <span className="text-slate-300 font-mono text-xs">{h.factors.join(', ')}</span>
+                        : <span className="text-slate-500 italic">RSMomentum（默认）</span>
+                      }
+                      <span className="text-slate-600 ml-1.5 text-xs">{h.universe}</span>
+                    </td>
                     <td className="px-3 py-2 text-slate-400">{h.bt_start} ~ {h.bt_end}</td>
                     <td className={`px-3 py-2 font-mono ${(h.total_return ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {h.total_return != null ? pct(h.total_return) : '-'}

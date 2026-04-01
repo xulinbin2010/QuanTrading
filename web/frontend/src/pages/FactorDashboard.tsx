@@ -1,19 +1,39 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getFactorRegistry, updateFactor, scanFactors, previewFactorSignals, checkTrailStops } from '../api/client'
+import { getFactorRegistry, updateFactor, scanFactors, previewFactorSignals, checkTrailStops, getPositions } from '../api/client'
 
-// ── RSMomentum 策略买入/卖出条件定义（静态说明） ──────────
-const BUY_CONDITIONS = [
-  { icon: '📈', label: 'RS 跑赢 SPY', desc: '个股 63 日收益率 - SPY 63 日收益率 > 0', param: 'rs_period=63', factorKey: 'rs_momentum' },
-  { icon: '🚀', label: '价格突破 50 日高点', desc: '收盘价 > 前 50 日最高收盘价（排除当天）', param: 'breakout_period=50', factorKey: 'breakout_50' },
-  { icon: '🔊', label: '放量确认', desc: '当日成交量 > 20 日均量 × 1.5', param: 'vol_multiplier=1.5', factorKey: 'vol_surge' },
-  { icon: '🛡️', label: '崩跌过滤', desc: '距 52 周高点跌幅 ≤ 30%', param: 'max_drawdown=-30%', factorKey: 'not_crashed' },
-  { icon: '🌊', label: '趋势向上', desc: 'MA50 > MA200（黄金交叉过滤）', param: 'MA50 > MA200', factorKey: 'uptrend' },
+// ── RSMomentum 策略买入条件模板（desc/param 由注册表参数动态填充） ──
+const BUY_CONDITION_TEMPLATES = [
+  {
+    icon: '📈', label: 'RS 跑赢 SPY', registryKey: 'rs_score',
+    buildDesc: (p: any) => `个股 ${p.period} 日收益率 - SPY ${p.period} 日收益率 > 0`,
+    buildParam: (p: any) => `period=${p.period}`,
+  },
+  {
+    icon: '🚀', label: '价格突破高点', registryKey: 'breakout',
+    buildDesc: (p: any) => `收盘价 > 前 ${p.period} 日最高收盘价（排除当天）`,
+    buildParam: (p: any) => `period=${p.period}`,
+  },
+  {
+    icon: '🔊', label: '量能突破', registryKey: 'volume_surge',
+    buildDesc: (p: any) => `当日成交量 > ${p.ma_period ?? 20} 日均量 × ${p.multiplier}`,
+    buildParam: (p: any) => `multiplier=${p.multiplier}`,
+  },
+  {
+    icon: '🛡️', label: '崩跌过滤', registryKey: 'drawdown_filter',
+    buildDesc: (p: any) => `距 ${p.lookback} 日高点跌幅 ≤ ${Math.abs(p.max_drawdown * 100).toFixed(0)}%`,
+    buildParam: (p: any) => `max_drawdown=${(p.max_drawdown * 100).toFixed(0)}%`,
+  },
+  {
+    icon: '🌊', label: '趋势过滤', registryKey: 'trend_filter',
+    buildDesc: (p: any) => `MA${p.fast} > MA${p.slow}（金叉过滤）`,
+    buildParam: (p: any) => `MA${p.fast} > MA${p.slow}`,
+  },
 ]
 
 const SELL_CONDITIONS = [
-  { icon: '⚠️', label: '量价背离（顶部信号）', desc: '价格创 50 日新高但成交量低于均量' },
-  { icon: '🔴', label: '硬止损', desc: '跌破入场价 -15% 强制卖出' },
+  { icon: '⚠️', label: '量价背离', key: 'volume_divergence', desc: '价格创新高但成交量低于均量（顶部信号）' },
+  { icon: '🔴', label: '硬止损', key: 'STOP_LOSS_PCT', desc: '跌破入场价 -15% 强制卖出' },
 ]
 
 const CATEGORY_LABELS: Record<string, string> = {
@@ -22,8 +42,9 @@ const CATEGORY_LABELS: Record<string, string> = {
 }
 
 const SIGNAL_TYPE_LABELS: Record<string, { label: string; color: string }> = {
-  filter: { label: '过滤', color: 'bg-orange-900/50 text-orange-300 border-orange-700' },
-  score:  { label: '评分', color: 'bg-blue-900/50 text-blue-300 border-blue-700' },
+  filter:     { label: '买入过滤', color: 'bg-orange-900/50 text-orange-300 border-orange-700' },
+  score:      { label: '评分',     color: 'bg-blue-900/50 text-blue-300 border-blue-700' },
+  sell_alert: { label: '卖出信号', color: 'bg-red-900/50 text-red-300 border-red-700' },
 }
 
 // ── 因子卡片（注册表中的每个因子） ────────────────────────
@@ -110,8 +131,6 @@ export default function FactorDashboard() {
   const [showRegistry, setShowRegistry] = useState(true)
   const [universe, setUniverse] = useState('sp500')
   const [previewResult, setPreviewResult] = useState<any>(null)
-  const [showTrailStop, setShowTrailStop] = useState(false)
-  const [trailInput, setTrailInput] = useState('')      // "NVDA:850 AMD:115"
   const [trailResults, setTrailResults] = useState<any[]>([])
   const [trailLoading, setTrailLoading] = useState(false)
   const [trailError, setTrailError] = useState('')
@@ -124,9 +143,47 @@ export default function FactorDashboard() {
     staleTime: 300_000,
   })
 
-  // 已启用的技术因子 key 列表
+  // 持仓数据（IB 不可用时返回空数组，不报错）
+  const { data: positions = [], isLoading: positionsLoading, refetch: refetchPositions } = useQuery({
+    queryKey: ['positions'],
+    queryFn: getPositions,
+    staleTime: 60_000,
+    retry: false,
+  })
+  const stockPositions = (positions as any[]).filter((p: any) => p.qty > 0 && !['SGOV','BIL','USFR'].includes(p.symbol))
+
+  const runTrailCheck = async (pos: any[]) => {
+    if (!pos.length) return
+    setTrailLoading(true)
+    setTrailError('')
+    try {
+      const res = await checkTrailStops(pos.map((p: any) => ({ symbol: p.symbol, avg_cost: p.avg_cost })))
+      setTrailResults(res)
+    } catch (e: any) {
+      setTrailError(e?.response?.data?.detail ?? '检查失败，请确认 IB Gateway 已连接')
+    } finally {
+      setTrailLoading(false)
+    }
+  }
+
+  // 从注册表动态构建买入条件（参数实时反映注册表配置）
+  const registryMap = Object.fromEntries((registry as any[]).map((f: any) => [f.key, f]))
+  const volMaParams = registryMap['volume_ma']?.params ?? {}
+  const buyConditions = BUY_CONDITION_TEMPLATES.map(t => {
+    const factor = registryMap[t.registryKey]
+    // 取注册表 params 的 default 值，加上 volume_surge 需要的 ma_period
+    const params = factor
+      ? Object.fromEntries(Object.entries(factor.params).map(([k, v]: [string, any]) => [k, v.default]))
+      : {}
+    if (t.registryKey === 'volume_surge') {
+      params.ma_period = (volMaParams as any).period?.default ?? 20
+    }
+    return { icon: t.icon, label: t.label, registryKey: t.registryKey, desc: t.buildDesc(params), param: t.buildParam(params) }
+  })
+
+  // 已启用的技术因子 key 列表（排除依赖项，如 volume_ma）
   const enabledTechFactors: string[] = (registry as any[])
-    .filter((f: any) => f.data_type === 'technical' && f.enabled)
+    .filter((f: any) => f.data_type === 'technical' && !f.is_dependency && f.enabled)
     .map((f: any) => f.key)
 
   // 最新扫描结果（仅读缓存，不触发自动扫描）
@@ -188,11 +245,14 @@ export default function FactorDashboard() {
             买入信号（5 个条件同时满足）
           </div>
           <div className="space-y-2">
-            {BUY_CONDITIONS.map(c => (
-              <div key={c.factorKey} className="flex items-start gap-2">
+            {buyConditions.map(c => (
+              <div key={c.label} className="flex items-start gap-2">
                 <span className="text-base shrink-0">{c.icon}</span>
                 <div>
-                  <div className="text-sm text-white">{c.label}</div>
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-sm text-white">{c.label}</span>
+                    <span className="text-xs font-mono text-slate-600">{c.registryKey}</span>
+                  </div>
                   <div className="text-xs text-slate-500">{c.desc}</div>
                   <div className="text-xs font-mono text-slate-600 mt-0.5">{c.param}</div>
                 </div>
@@ -213,7 +273,10 @@ export default function FactorDashboard() {
                 <div key={c.label} className="flex items-start gap-2">
                   <span className="text-base shrink-0">{c.icon}</span>
                   <div>
-                    <div className="text-sm text-white">{c.label}</div>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-sm text-white">{c.label}</span>
+                      <span className="text-xs font-mono text-slate-600">{c.key}</span>
+                    </div>
                     <div className="text-xs text-slate-500">{c.desc}</div>
                   </div>
                 </div>
@@ -242,6 +305,72 @@ export default function FactorDashboard() {
             )}
           </div>
         </div>
+      </div>
+
+      {/* ── 持仓移动止损检查 ───────────────────────────────── */}
+      <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
+        <div className="flex items-center justify-between mb-3">
+          <div className="text-sm font-medium text-slate-300">🔒 持仓移动止损</div>
+          <button
+            onClick={async () => { await refetchPositions(); runTrailCheck(stockPositions) }}
+            disabled={trailLoading || positionsLoading}
+            className="px-3 py-1 text-xs bg-slate-700 hover:bg-slate-600 disabled:opacity-40 text-slate-300 rounded transition-colors"
+          >
+            {trailLoading || positionsLoading ? '检查中...' : '刷新'}
+          </button>
+        </div>
+
+        {trailError && <div className="text-xs text-red-400 mb-2">{trailError}</div>}
+
+        {stockPositions.length === 0 && !positionsLoading && !trailError && (
+          <div className="text-xs text-slate-500">无持仓（或 IB Gateway 未连接）</div>
+        )}
+
+        {stockPositions.length > 0 && trailResults.length === 0 && !trailLoading && (
+          <div className="text-xs text-slate-500">
+            检测到 {stockPositions.length} 只持仓，
+            <button onClick={() => runTrailCheck(stockPositions)} className="text-blue-400 hover:text-blue-300 ml-1">点击检查</button>
+          </div>
+        )}
+
+        {trailResults.length > 0 && (
+          <div className="space-y-2">
+            {trailResults.map((r: any) => {
+              const triggered = r.status === 'triggered'
+              const watching  = r.status === 'watching'
+              const noData    = r.status === 'no_data'
+              return (
+                <div key={r.symbol}
+                  className={`rounded-lg border px-3 py-2 text-xs ${
+                    triggered ? 'border-red-700 bg-red-900/20'
+                    : watching ? 'border-yellow-700 bg-yellow-900/10'
+                    : 'border-slate-700 bg-slate-700/30'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-mono font-medium text-white">{r.symbol}</span>
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${
+                      triggered ? 'bg-red-700 text-red-100'
+                      : watching ? 'bg-yellow-700 text-yellow-100'
+                      : noData ? 'bg-slate-600 text-slate-300'
+                      : 'bg-slate-700 text-slate-400'
+                    }`}>
+                      {triggered ? '⚠ 触发止损' : watching ? '监控中' : noData ? '无数据' : '未激活'}
+                    </span>
+                  </div>
+                  {!noData && (
+                    <div className="flex flex-wrap gap-x-4 gap-y-1 text-slate-400">
+                      <span>均价 <span className="text-white">${r.avg_cost}</span></span>
+                      <span>现价 <span className="text-white">${r.cur_price}</span></span>
+                      <span>峰值 <span className="text-white">${r.peak}</span>（+{(r.peak_ret * 100).toFixed(1)}%）</span>
+                      <span>峰值回撤 <span className={r.trail_ret <= r.trail ? 'text-red-400' : 'text-slate-300'}>{(r.trail_ret * 100).toFixed(1)}%</span></span>
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       {/* 因子注册表 */}
@@ -364,100 +493,6 @@ export default function FactorDashboard() {
         </div>
       )}
 
-      {/* ── 移动止损检查 ─────────────────────────────────── */}
-      <div className="bg-slate-800 rounded-lg border border-slate-700">
-        <button
-          onClick={() => setShowTrailStop(s => !s)}
-          className="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-slate-300 hover:text-white"
-        >
-          <span>🔒 持仓移动止损检查</span>
-          <span className={`text-slate-500 transition-transform ${showTrailStop ? 'rotate-180' : ''}`}>▾</span>
-        </button>
-
-        {showTrailStop && (
-          <div className="px-4 pb-4 space-y-3 border-t border-slate-700 pt-3">
-            <div className="text-xs text-slate-400">
-              输入持仓均价，检查是否触发移动止损（浮盈超阈值后从峰值回撤）。格式：<span className="font-mono text-slate-300">NVDA:850 AMD:115</span>
-            </div>
-            <div className="flex gap-2">
-              <input
-                className="flex-1 bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-sm font-mono text-white focus:outline-none focus:border-blue-500"
-                placeholder="NVDA:850 AMD:115 TSLA:200"
-                value={trailInput}
-                onChange={e => setTrailInput(e.target.value)}
-              />
-              <button
-                onClick={async () => {
-                  setTrailError('')
-                  const pairs = trailInput.trim().split(/\s+/).filter(Boolean)
-                  const positions: { symbol: string; avg_cost: number }[] = []
-                  for (const p of pairs) {
-                    const [sym, cost] = p.split(':')
-                    if (!sym || !cost || isNaN(+cost)) {
-                      setTrailError(`格式错误：${p}`)
-                      return
-                    }
-                    positions.push({ symbol: sym.toUpperCase(), avg_cost: +cost })
-                  }
-                  if (!positions.length) return
-                  setTrailLoading(true)
-                  try {
-                    const res = await checkTrailStops(positions)
-                    setTrailResults(res)
-                  } catch (e: any) {
-                    setTrailError(e?.response?.data?.detail ?? '检查失败')
-                  } finally {
-                    setTrailLoading(false)
-                  }
-                }}
-                disabled={trailLoading || !trailInput.trim()}
-                className="px-4 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white text-sm rounded"
-              >
-                {trailLoading ? '检查中...' : '检查'}
-              </button>
-            </div>
-            {trailError && <div className="text-xs text-red-400">{trailError}</div>}
-            {trailResults.length > 0 && (
-              <div className="space-y-2">
-                {trailResults.map((r: any) => {
-                  const triggered = r.status === 'triggered'
-                  const watching  = r.status === 'watching'
-                  const noData    = r.status === 'no_data'
-                  return (
-                    <div key={r.symbol}
-                      className={`rounded-lg border px-3 py-2 text-xs ${
-                        triggered ? 'border-red-700 bg-red-900/20'
-                        : watching ? 'border-yellow-700 bg-yellow-900/10'
-                        : 'border-slate-700 bg-slate-700/30'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="font-mono font-medium text-white">{r.symbol}</span>
-                        <span className={`px-2 py-0.5 rounded text-xs font-medium ${
-                          triggered ? 'bg-red-700 text-red-100'
-                          : watching ? 'bg-yellow-700 text-yellow-100'
-                          : noData ? 'bg-slate-600 text-slate-300'
-                          : 'bg-slate-700 text-slate-400'
-                        }`}>
-                          {triggered ? '⚠ 触发止损' : watching ? '监控中' : noData ? '无数据' : '未激活'}
-                        </span>
-                      </div>
-                      {!noData && (
-                        <div className="flex gap-4 text-slate-400">
-                          <span>均价 <span className="text-white">${r.avg_cost}</span></span>
-                          <span>峰值 <span className="text-white">${r.peak}</span>（+{(r.peak_ret * 100).toFixed(1)}%）</span>
-                          <span>现价 <span className="text-white">${r.cur_price}</span></span>
-                          <span>峰值回撤 <span className={r.trail_ret <= r.trail ? 'text-red-400' : 'text-slate-300'}>{(r.trail_ret * 100).toFixed(1)}%</span></span>
-                        </div>
-                      )}
-                    </div>
-                  )
-                })}
-              </div>
-            )}
-          </div>
-        )}
-      </div>
     </div>
   )
 }

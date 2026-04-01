@@ -66,12 +66,13 @@ def get_history() -> list[dict]:
     items = []
     for tid, task in _tasks.items():
         summary = task.get('result', {}).get('summary', {}) if task['result'] else {}
+        factors = task['params'].get('factors') or []
         items.append({
             'task_id': tid,
             'status': task['status'],
             'created_at': task['created_at'],
-            'params': task['params'],
             'universe': summary.get('universe', task['params'].get('universe', '')),
+            'factors': factors,          # 空列表 = 默认 RSMomentum
             'total_return': summary.get('total_return'),
             'sharpe': summary.get('sharpe'),
             'bt_start': summary.get('bt_start'),

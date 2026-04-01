@@ -460,7 +460,8 @@ def check_trail_stops(positions: list[dict]) -> list[dict]:
             continue
 
         cur_price = float(df['close'].iloc[-1])
-        peak      = float(df['close'].max())
+        # 只取入场价以上的峰值，避免买前历史高点干扰
+        peak      = float(df['close'][df['close'] >= avg_cost].max()) if (df['close'] >= avg_cost).any() else avg_cost
         ret       = (cur_price - avg_cost) / avg_cost
         peak_ret  = (peak - avg_cost) / avg_cost
         trail_ret = (cur_price - peak) / peak

@@ -355,7 +355,7 @@ function loadStored<T>(key: string, fallback: T): T {
 export default function Backtest() {
   const [params, setParams] = useState(() => loadStored('bt_params', DEFAULT_PARAMS))
   const [activeTask, setActiveTask] = useState<string | null>(null)
-  const [showHistory, setShowHistory] = useState(false)
+  const [tab, setTab] = useState<'config' | 'history'>('config')
   const [showFactors, setShowFactors] = useState(false)
   const [selectedFactors, setSelectedFactors] = useState<string[]>(() => loadStored('bt_factors', []))
 
@@ -367,11 +367,11 @@ export default function Backtest() {
   const { data: registry = [] } = useQuery({
     queryKey: ['factor-registry'],
     queryFn: getFactorRegistry,
-    enabled: showFactors,
     staleTime: 300_000,
   })
   // 只显示技术因子（基本面因子无法参与时序回测）
   const techFactors = (registry as any[]).filter((f: any) => f.data_type === 'technical' && !f.is_dependency)
+  const registryMap: Record<string, any> = Object.fromEntries((registry as any[]).map((f: any) => [f.key, f]))
 
   const toggleFactor = (key: string) => {
     setSelectedFactors(prev =>
@@ -393,22 +393,39 @@ export default function Backtest() {
     }),
     onSuccess: (data) => {
       setActiveTask(data.task_id)
+      setTab('config')
       queryClient.invalidateQueries({ queryKey: ['bt-history'] })
     },
   })
 
-  const { data: history = [] } = useQuery({
+  const { data: history = [], refetch: refetchHistory } = useQuery({
     queryKey: ['bt-history'],
     queryFn: getBacktestHistory,
-    enabled: showHistory,
+    enabled: tab === 'history',
   })
 
   return (
     <div className="space-y-5">
-      <h1 className="text-lg font-semibold text-white">策略回测</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-lg font-semibold text-white">策略回测</h1>
+      </div>
 
-      {/* 参数表单 */}
-      <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
+      {/* Tab 导航 */}
+      <div className="flex gap-1 border-b border-slate-700">
+        {[
+          { key: 'config',  label: '回测配置' },
+          { key: 'history', label: '历史记录' },
+        ].map(t => (
+          <button key={t.key}
+            onClick={() => { setTab(t.key as any); if (t.key === 'history') refetchHistory() }}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors
+              ${tab === t.key ? 'border-blue-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+          >{t.label}</button>
+        ))}
+      </div>
+
+      {/* ── 回测配置 Tab ─────────────────────────────────────── */}
+      {tab === 'config' && <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
         <div className="text-sm font-medium text-slate-300 mb-4">回测参数</div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {/* 股票池 */}
@@ -550,8 +567,9 @@ export default function Backtest() {
                             className="hidden"
                           />
                           {f.name}
-                          <span className="text-slate-500 text-xs">
-                            {f.signal_type === 'filter' ? '✓过滤' : '↑分数'}
+                          <span className="font-mono opacity-50">{f.key}</span>
+                          <span className="text-slate-500">
+                            {f.signal_type === 'sell_alert' ? '卖出' : f.signal_type === 'filter' ? '✓过滤' : '↑分数'}
                           </span>
                         </label>
                       )
@@ -579,63 +597,67 @@ export default function Backtest() {
             disabled={isPending}
             className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded font-medium transition-colors"
           >
-            {isPending ? '提交中...' : '▶ 运行回测'}
-          </button>
-          <button
-            onClick={() => setShowHistory(s => !s)}
-            className="px-4 py-2 border border-slate-600 text-slate-400 hover:text-white hover:border-slate-400 text-sm rounded transition-colors"
-          >
-            历史记录
+            {isPending ? '提交中...' : '▶ 回测'}
           </button>
         </div>
-      </div>
+      </div>}
 
-      {/* 历史记录 */}
-      {showHistory && (
+      {/* 回测结果（config tab 下方） */}
+      {tab === 'config' && activeTask && <BacktestResult taskId={activeTask} />}
+
+      {/* ── 历史记录 Tab ──────────────────────────────────── */}
+      {tab === 'history' && (
         <div className="bg-slate-800 rounded-lg border border-slate-700">
-          <div className="px-4 py-3 border-b border-slate-700 text-sm font-medium text-slate-300">历史回测</div>
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead>
-                <tr className="text-slate-400 border-b border-slate-700">
+                <tr className="text-slate-400 border-b border-slate-700 bg-slate-800/80">
                   {['时间', '因子组合', '区间', '总收益', 'Sharpe', '状态', '操作'].map(h => (
-                    <th key={h} className="px-3 py-2 text-left font-medium">{h}</th>
+                    <th key={h} className="px-3 py-2 text-left font-medium whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {history.map((h: any) => (
+                {(history as any[]).map((h: any) => (
                   <tr key={h.task_id} className="border-b border-slate-700/50 hover:bg-slate-700/30">
-                    <td className="px-3 py-2 text-slate-400">{h.created_at}</td>
-                    <td className="px-3 py-2 max-w-[220px]">
-                      {h.factors?.length > 0
-                        ? <span className="text-slate-300 font-mono text-xs">{h.factors.join(', ')}</span>
-                        : <span className="text-slate-500 italic">RSMomentum（默认）</span>
-                      }
-                      <span className="text-slate-600 ml-1.5 text-xs">{h.universe}</span>
+                    <td className="px-3 py-2 text-slate-400 whitespace-nowrap">{h.created_at}</td>
+                    <td className="px-3 py-2 max-w-[280px]">
+                      {h.factors?.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {h.factors.map((f: string) => (
+                            <span key={f} className="px-1.5 py-0.5 rounded text-xs bg-slate-700 border border-slate-600 text-slate-300">
+                              {registryMap[f]?.name ?? f}
+                              <span className="ml-1 font-mono opacity-50">{f}</span>
+                            </span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="text-slate-500 italic">RSMomentum（默认）</span>
+                      )}
+                      <div className="text-slate-600 text-xs mt-0.5">{h.universe}</div>
                     </td>
-                    <td className="px-3 py-2 text-slate-400">{h.bt_start} ~ {h.bt_end}</td>
+                    <td className="px-3 py-2 text-slate-400 whitespace-nowrap">{h.bt_start} ~ {h.bt_end}</td>
                     <td className={`px-3 py-2 font-mono ${(h.total_return ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {h.total_return != null ? pct(h.total_return) : '-'}
                     </td>
                     <td className="px-3 py-2">{h.sharpe?.toFixed(2) ?? '-'}</td>
-                    <td className="px-3 py-2">{h.status}</td>
+                    <td className="px-3 py-2 text-slate-400">{h.status}</td>
                     <td className="px-3 py-2">
                       <button
-                        onClick={() => setActiveTask(h.task_id)}
-                        className="text-blue-400 hover:text-blue-300"
+                        onClick={() => { setActiveTask(h.task_id); setTab('config') }}
+                        className="text-blue-400 hover:text-blue-300 transition-colors"
                       >查看</button>
                     </td>
                   </tr>
                 ))}
+                {(history as any[]).length === 0 && (
+                  <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-500">暂无历史记录</td></tr>
+                )}
               </tbody>
             </table>
           </div>
         </div>
       )}
-
-      {/* 回测结果 */}
-      {activeTask && <BacktestResult taskId={activeTask} />}
     </div>
   )
 }

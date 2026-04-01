@@ -86,7 +86,7 @@ def _build_registry() -> dict[str, FactorMeta]:
         ),
         # ── 趋势因子 ───────────────────────────────────────────
         "trend_filter": FactorMeta(
-            key="trend_filter", name="趋势过滤（MA50/MA200）", category="trend",
+            key="trend_filter", name="趋势过滤", category="trend",
             data_type="technical", compute_fn=compute_trend_filter,
             output_columns=["ma50", "ma200", "uptrend"], signal_column="uptrend",
             signal_type="filter",

@@ -355,7 +355,7 @@ export default function FactorDashboard() {
                       : noData ? 'bg-slate-600 text-slate-300'
                       : 'bg-slate-700 text-slate-400'
                     }`}>
-                      {triggered ? '⚠ 触发止损' : watching ? '监控中' : noData ? '无数据' : '未激活'}
+                      {triggered ? '⚠ 触发止损' : watching ? '追踪中' : noData ? '无数据' : '未激活'}
                     </span>
                   </div>
                   {!noData && (

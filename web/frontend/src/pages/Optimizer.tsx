@@ -167,15 +167,16 @@ function OverfitBadge({ score }: { score: number }) {
   )
 }
 
-function FactorPills({ factors, mandatory }: { factors: string[]; mandatory: string[] }) {
+function FactorPills({ factors, mandatory, registryMap = {} }: { factors: string[]; mandatory: string[]; registryMap?: Record<string, any> }) {
   return (
     <div className="flex flex-wrap gap-1">
       {factors.map(f => (
-        <span key={f} className={`px-1.5 py-0.5 rounded text-xs font-mono border
+        <span key={f} className={`px-1.5 py-0.5 rounded text-xs border
           ${mandatory.includes(f)
             ? 'bg-blue-900/50 text-blue-300 border-blue-700'
             : 'bg-slate-700 text-slate-300 border-slate-600'}`}>
-          {f}
+          {registryMap[f]?.name ?? f}
+          <span className="ml-1 font-mono opacity-50">{f}</span>
         </span>
       ))}
     </div>
@@ -183,7 +184,7 @@ function FactorPills({ factors, mandatory }: { factors: string[]; mandatory: str
 }
 
 // ── 结果展示 ───────────────────────────────────────────────
-function OptimizerResult({ taskId, mandatory }: { taskId: string; mandatory: string[] }) {
+function OptimizerResult({ taskId, mandatory, registryMap }: { taskId: string; mandatory: string[]; registryMap: Record<string, any> }) {
   const { data: status } = useQuery({
     queryKey: ['opt-status', taskId],
     queryFn: () => getOptimizerStatus(taskId),
@@ -215,7 +216,9 @@ function OptimizerResult({ taskId, mandatory }: { taskId: string; mandatory: str
         <div className="text-xs text-slate-400">
           {status?.current ?? 0} / {status?.total ?? '?'} 组合
           {status?.current_combo?.length > 0 && (
-            <span className="ml-2 text-slate-500">当前：{status.current_combo.join(', ')}</span>
+            <span className="ml-2 text-slate-500">
+              当前：{status.current_combo.map((k: string) => registryMap[k]?.name ?? k).join(' + ')}
+            </span>
           )}
         </div>
       </div>
@@ -256,7 +259,7 @@ function OptimizerResult({ taskId, mandatory }: { taskId: string; mandatory: str
             {rows.map((r: any, i: number) => (
               <tr key={i} className="border-b border-slate-700/50 hover:bg-slate-700/30">
                 <td className="px-3 py-2 text-slate-500">{i + 1}</td>
-                <td className="px-3 py-2"><FactorPills factors={r.factors} mandatory={mandatory} /></td>
+                <td className="px-3 py-2"><FactorPills factors={r.factors} mandatory={mandatory} registryMap={registryMap} /></td>
                 <td className="px-3 py-2 text-slate-400">{r.factor_count}</td>
                 <td className="px-3 py-2"><OverfitBadge score={r.overfit_score} /></td>
                 <td className={`px-3 py-2 font-mono ${r.train.return >= 0 ? 'text-green-400' : 'text-red-400'}`}>{pct(r.train.return)}</td>
@@ -312,6 +315,8 @@ export default function Optimizer() {
     staleTime: 300_000,
   })
   const techFactors = (registry as any[]).filter((f: any) => f.data_type === 'technical' && !f.is_dependency)
+  // key → {name} 映射，用于把 key 转为 "中文名 key" 格式
+  const registryMap: Record<string, any> = Object.fromEntries((registry as any[]).map((f: any) => [f.key, f]))
 
   const toggleMandatory = (key: string) => {
     setParams(p => {
@@ -517,11 +522,12 @@ export default function Optimizer() {
                   const isMandatory = params.mandatory_factors.includes(f.key)
                   return (
                     <button key={f.key} onClick={() => toggleMandatory(f.key)}
-                      className={`px-2.5 py-1 rounded border text-xs font-mono transition-colors
+                      className={`px-2.5 py-1 rounded border text-xs transition-colors
                         ${isMandatory
                           ? 'bg-blue-700/50 border-blue-500 text-blue-200'
                           : 'border-slate-600 text-slate-400 hover:border-slate-400'}`}>
-                      {f.key}（{f.name}）
+                      {f.name}
+                      <span className="ml-1 font-mono opacity-50">{f.key}</span>
                     </button>
                   )
                 })}
@@ -545,7 +551,7 @@ export default function Optimizer() {
 
           {/* 当前任务结果 */}
           {activeTask && (
-            <OptimizerResult taskId={activeTask} mandatory={params.mandatory_factors} />
+            <OptimizerResult taskId={activeTask} mandatory={params.mandatory_factors} registryMap={registryMap} />
           )}
         </>
       )}
@@ -577,7 +583,10 @@ export default function Optimizer() {
                       {h.best_factors?.length > 0 ? (
                         <div className="flex flex-wrap gap-1">
                           {h.best_factors.map((f: string) => (
-                            <span key={f} className="px-1.5 py-0.5 rounded text-xs font-mono bg-slate-700 border border-slate-600 text-slate-300">{f}</span>
+                            <span key={f} className="px-1.5 py-0.5 rounded text-xs bg-slate-700 border border-slate-600 text-slate-300">
+                              {registryMap[f]?.name ?? f}
+                              <span className="ml-1 font-mono opacity-50">{f}</span>
+                            </span>
                           ))}
                         </div>
                       ) : '-'}

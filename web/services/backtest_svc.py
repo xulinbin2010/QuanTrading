@@ -128,6 +128,9 @@ def get_history() -> list[dict]:
         for tid, task in _tasks.items():
             summary = task.get('result', {}).get('summary', {}) if task['result'] else {}
             factors = task['params'].get('factors') or []
+            trades = task.get('result', {}).get('trades', []) if task['result'] else []
+            days_list = [t['days_held'] for t in trades if isinstance(t.get('days_held'), (int, float))]
+            avg_days = round(sum(days_list) / len(days_list)) if days_list else None
             items.append({
                 'task_id':      tid,
                 'status':       task['status'],
@@ -138,6 +141,7 @@ def get_history() -> list[dict]:
                 'sharpe':       summary.get('sharpe'),
                 'bt_start':     summary.get('bt_start'),
                 'bt_end':       summary.get('bt_end'),
+                'avg_days':     avg_days,
             })
         items.sort(key=lambda x: x['created_at'], reverse=True)
         return items

@@ -273,7 +273,7 @@ function BacktestResult({ taskId }: { taskId: string }) {
           <table className="w-full text-xs">
             <thead className="sticky top-0 bg-slate-800">
               <tr className="text-slate-400 border-b border-slate-700">
-                {['股票', '买入日', '卖出日', '买入价', '卖出价', '收益率', '盈亏', '原因'].map(h => (
+                {['股票', '买入日', '卖出日', '持仓天数', '买入价', '卖出价', '收益率', '盈亏', '原因'].map(h => (
                   <th key={h} className="px-3 py-2 text-left font-medium whitespace-nowrap">{h}</th>
                 ))}
               </tr>
@@ -284,6 +284,7 @@ function BacktestResult({ taskId }: { taskId: string }) {
                   <td className="px-3 py-1.5 font-mono text-white">{t.symbol}</td>
                   <td className="px-3 py-1.5 text-slate-400">{t.entry_date}</td>
                   <td className="px-3 py-1.5 text-slate-400">{t.exit_date}</td>
+                  <td className="px-3 py-1.5 text-slate-400">{t.days_held != null ? `${t.days_held}天` : '-'}</td>
                   <td className="px-3 py-1.5 font-mono">${t.entry_price.toFixed(2)}</td>
                   <td className="px-3 py-1.5 font-mono">${t.exit_price?.toFixed(2) ?? '-'}</td>
                   <td className={`px-3 py-1.5 font-mono ${t.return >= 0 ? 'text-green-400' : 'text-red-400'}`}>{pct(t.return)}</td>
@@ -612,7 +613,7 @@ export default function Backtest() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-slate-400 border-b border-slate-700 bg-slate-800/80">
-                  {['时间', '因子组合', '区间', '总收益', 'Sharpe', '状态', '操作'].map(h => (
+                  {['时间', '因子组合', '区间', '总收益', 'Sharpe', '均持仓天', '状态', '操作'].map(h => (
                     <th key={h} className="px-3 py-2 text-left font-medium whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -641,6 +642,7 @@ export default function Backtest() {
                       {h.total_return != null ? pct(h.total_return) : '-'}
                     </td>
                     <td className="px-3 py-2">{h.sharpe?.toFixed(2) ?? '-'}</td>
+                    <td className="px-3 py-2 text-slate-400">{h.avg_days != null ? `${h.avg_days}天` : '-'}</td>
                     <td className="px-3 py-2 text-slate-400">{h.status}</td>
                     <td className="px-3 py-2">
                       <button
@@ -651,7 +653,7 @@ export default function Backtest() {
                   </tr>
                 ))}
                 {(history as any[]).length === 0 && (
-                  <tr><td colSpan={7} className="px-4 py-10 text-center text-slate-500">暂无历史记录</td></tr>
+                  <tr><td colSpan={8} className="px-4 py-10 text-center text-slate-500">暂无历史记录</td></tr>
                 )}
               </tbody>
             </table>

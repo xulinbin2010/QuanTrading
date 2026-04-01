@@ -156,7 +156,7 @@ export default function Layout() {
             <img src="/logo.png" alt="logo" className="w-8 h-8 rounded-lg object-contain flex-shrink-0" />
             <div>
               <div className="text-sm font-bold text-slate-200">QuanTrading</div>
-              <div className="text-xs text-slate-400 mt-0.5">量化交易平台</div>
+              <div className="text-xs text-slate-400 mt-0.5">个人量化交易平台</div>
             </div>
           </div>
         </div>

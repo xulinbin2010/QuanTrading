@@ -203,16 +203,17 @@ export default function MarketScan() {
   const [universe, setUniverse] = useState('sp500')
   const [selected, setSelected] = useState<string | null>(null)
   const [showCoverage, setShowCoverage] = useState(false)
+  const [scanState, setScanState] = useState<'idle' | 'scanning' | 'done'>('idle')
   const queryClient = useQueryClient()
 
-  // 进入页面不自动触发扫描（日线策略每天只需跑一次）
-  // 只读已有缓存；手动点"重新扫描"才真正执行
-  const { data: scanResult, isFetching, dataUpdatedAt } = useQuery({
+  // 页面加载时自动向后端拉取一次（后端有 1 小时缓存，命中则毫秒返回，不会重复扫描）
+  // 手动点"重新扫描"时传 force=true 强制绕过后端缓存
+  const { data: scanResult, dataUpdatedAt, isFetching: isAutoFetching } = useQuery({
     queryKey: ['factors-scan', universe],
     queryFn: () => scanFactors(universe, 100),
-    staleTime: Infinity,   // 缓存永不过期，不自动重新请求
-    gcTime: 24 * 3_600_000, // 保留24小时内存缓存
-    enabled: false,         // 禁止自动执行，只读缓存
+    staleTime: Infinity,      // 前端缓存永不过期，不自动重新请求
+    gcTime: 24 * 3_600_000,   // 保留 24 小时内存缓存
+    refetchOnWindowFocus: false,
   })
 
   // 兼容新格式 {rows, coverage, total} 和旧格式 []
@@ -221,10 +222,16 @@ export default function MarketScan() {
   const totalScanned: number = scanResult?.total ?? rows.length
 
   const refresh = () => {
+    if (scanState === 'scanning') return
+    setScanState('scanning')
     queryClient.invalidateQueries({ queryKey: ['factors-scan', universe] })
-    scanFactors(universe, 100, true).then(d => {
-      queryClient.setQueryData(['factors-scan', universe], d)
-    })
+    scanFactors(universe, 100, true)
+      .then(d => {
+        queryClient.setQueryData(['factors-scan', universe], d)
+        setScanState('done')
+        setTimeout(() => setScanState('idle'), 3000)
+      })
+      .catch(() => setScanState('idle'))
   }
 
   const lastScan = dataUpdatedAt
@@ -257,7 +264,9 @@ export default function MarketScan() {
         <div className="flex items-center gap-3">
           {lastScan
             ? <span className="text-xs text-slate-400">上次扫描：{lastScan}</span>
-            : <span className="text-xs text-slate-500">尚未扫描（每日收盘后自动执行，或手动触发）</span>
+            : isAutoFetching
+              ? <span className="text-xs text-slate-500">加载中...</span>
+              : <span className="text-xs text-slate-500">尚未扫描（每日收盘后自动执行，或手动触发）</span>
           }
           {totalScanned > 0 && <span className="text-xs text-slate-500">{rows.length}/{totalScanned} 只</span>}
           <select
@@ -275,10 +284,24 @@ export default function MarketScan() {
           </button>
           <button
             onClick={refresh}
-            disabled={isFetching}
-            className="px-3 py-1 text-sm bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white rounded transition-colors"
+            disabled={scanState === 'scanning'}
+            className={`px-3 py-1 text-sm text-white rounded transition-colors disabled:cursor-not-allowed
+              ${scanState === 'done'
+                ? 'bg-green-600 hover:bg-green-600'
+                : 'bg-blue-600 hover:bg-blue-500 disabled:opacity-50'
+              }`}
           >
-            {isFetching ? '扫描中...' : '重新扫描'}
+            {scanState === 'scanning' && (
+              <span className="inline-flex items-center gap-1.5">
+                <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                </svg>
+                扫描中...
+              </span>
+            )}
+            {scanState === 'done' && '扫描完成 ✓'}
+            {scanState === 'idle' && '重新扫描'}
           </button>
         </div>
       </div>
@@ -308,7 +331,7 @@ export default function MarketScan() {
             </tr>
           </thead>
           <tbody>
-            {isFetching && rows.length === 0 ? (
+            {(scanState === 'scanning' || isAutoFetching) && rows.length === 0 ? (
               <tr>
                 <td colSpan={11 + activeFundCols.length} className="px-4 py-10 text-center text-slate-500">
                   正在扫描因子数据，请稍候...

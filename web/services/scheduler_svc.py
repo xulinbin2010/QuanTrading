@@ -74,8 +74,24 @@ class SchedulerService:
     def start(self):
         """启动调度器，加载 DB 中的任务"""
         self._seed_defaults()
+        # 清理上次服务崩溃遗留的僵尸 runs
+        n = self._get_db().reap_zombie_runs(timeout_minutes=5)
+        if n:
+            import logging
+            logging.getLogger(__name__).warning(f"[scheduler] 启动时清理 {n} 条僵尸 running 记录")
         self._reload_jobs()
+        # 每分钟定期清理超时任务
+        self.scheduler.add_job(
+            func=self._reap_zombies,
+            trigger='interval',
+            minutes=1,
+            id='__reap_zombies__',
+            replace_existing=True,
+        )
         self.scheduler.start()
+
+    def _reap_zombies(self):
+        self._get_db().reap_zombie_runs(timeout_minutes=5)
 
     def stop(self):
         self.scheduler.shutdown(wait=False)
@@ -159,26 +175,25 @@ class SchedulerService:
     # ── 公开 API ────────────────────────────────────────────
 
     def get_tasks(self) -> list[dict]:
+        from zoneinfo import ZoneInfo
         db = self._get_db()
         rows = db.get_tasks()
+        last_runs = db.get_last_runs_per_task()  # 单次批量查询，替代 N+1
+        cst = ZoneInfo('Asia/Shanghai')
         result = []
         for row in rows:
             task_id, name, command, cron_expr, enabled, created_at, updated_at = row
             job = self.scheduler.get_job(task_id)
             next_run = None
             if job and job.next_run_time:
-                from zoneinfo import ZoneInfo
-                cst = ZoneInfo('Asia/Shanghai')
                 next_run = job.next_run_time.astimezone(cst).strftime('%Y-%m-%d %H:%M 北京')
-            # 最近一次执行状态
-            runs = db.get_task_runs(task_id=task_id, limit=1)
             last_run = None
-            if runs:
-                r = runs[0]
+            r = last_runs.get(task_id)
+            if r:
                 last_run = {
-                    'id': r[0],
-                    'started_at': r[3].strftime('%Y-%m-%d %H:%M:%S') if r[3] else None,
-                    'status': r[5],
+                    'id': r[1],
+                    'started_at': r[2].strftime('%Y-%m-%d %H:%M:%S') if r[2] else None,
+                    'status': r[3],
                 }
             result.append({
                 'task_id':    task_id,
@@ -245,6 +260,9 @@ class SchedulerService:
                 'duration_s':  r[7],
             })
         return result
+
+    def delete_run(self, run_id: int):
+        self._get_db().delete_task_run(run_id)
 
     def get_run_log(self, run_id: int) -> str:
         return self._get_db().get_run_log(run_id)

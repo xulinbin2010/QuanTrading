@@ -388,6 +388,21 @@ class Database:
              WHERE id = %s
         """, (status, exit_code, log_text, run_id))
 
+    def reap_zombie_runs(self, timeout_minutes: int = 5) -> int:
+        """将超时仍处于 running 的僵尸记录标记为 failed，返回清理条数"""
+        if not self._ensure_conn():
+            return 0
+        self.cursor.execute("""
+            UPDATE task_runs
+               SET finished_at = NOW(),
+                   status      = 'failed',
+                   exit_code   = -9,
+                   log_text    = CONCAT(COALESCE(log_text, ''), '\n[TIMEOUT] 超过 %s 分钟未完成，自动标记为失败')
+             WHERE status = 'running'
+               AND started_at < DATE_SUB(NOW(), INTERVAL %s MINUTE)
+        """, (timeout_minutes, timeout_minutes))
+        return self.cursor.rowcount
+
     def get_task_runs(self, task_id: str = None, limit: int = 50) -> list:
         if not self._ensure_conn():
             return []
@@ -406,6 +421,26 @@ class Database:
         params.append(limit)
         self.cursor.execute(sql, params)
         return self.cursor.fetchall()
+
+    def delete_task_run(self, run_id: int):
+        if not self._ensure_conn():
+            return
+        self.cursor.execute("DELETE FROM task_runs WHERE id = %s", (run_id,))
+
+    def get_last_runs_per_task(self) -> dict:
+        """批量获取每个 task_id 的最近一次执行记录，返回 {task_id: (id, started_at, status)}"""
+        if not self._ensure_conn():
+            return {}
+        self.cursor.execute("""
+            SELECT r.task_id, r.id, r.started_at, r.status
+              FROM task_runs r
+             INNER JOIN (
+                 SELECT task_id, MAX(id) AS max_id
+                   FROM task_runs
+                  GROUP BY task_id
+             ) latest ON r.task_id = latest.task_id AND r.id = latest.max_id
+        """)
+        return {row[0]: row for row in self.cursor.fetchall()}
 
     def get_run_log(self, run_id: int) -> str:
         if not self._ensure_conn():

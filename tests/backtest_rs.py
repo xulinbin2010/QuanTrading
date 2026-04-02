@@ -85,9 +85,9 @@ def run_backtest(
     }
     """
     # 每次调用时从 config 实时读取，确保 Web UI 修改后立即生效
-    MAX_POSITIONS           = config.MAX_POSITIONS
+    MAX_POSITIONS           = top if top > 0 else config.MAX_POSITIONS
     POSITION_PCT            = config.POSITION_PCT
-    CASH_RESERVE_PCT        = config.CASH_RESERVE_PCT
+    CASH_RESERVE_PCT        = max(0.0, 1.0 - MAX_POSITIONS * POSITION_PCT)
     STOP_LOSS_PCT           = config.STOP_LOSS_PCT
     INITIAL_CASH            = config.INITIAL_CASH
     MAX_PER_SECTOR          = config.MAX_PER_SECTOR
@@ -96,6 +96,8 @@ def run_backtest(
     TRAIL_STOP_PCT          = config.TRAIL_STOP_PCT
     SPY_BRAKE_PERIOD        = config.SPY_BRAKE_PERIOD
     SPY_BRAKE_PCT           = config.SPY_BRAKE_PCT
+    TIME_STOP_DAYS          = config.TIME_STOP_DAYS
+    TIME_STOP_MIN_RETURN    = config.TIME_STOP_MIN_RETURN
 
     if min_cap_b is None:
         min_cap_b = config.MIN_CAP_B
@@ -271,6 +273,7 @@ def run_backtest(
             price = stock_data[sym].loc[date, 'close']
             ret   = (price - pos['entry_price']) / pos['entry_price']
             pos['peak_price'] = max(pos['peak_price'], price)
+            days_held = (date - pos['entry_date']).days
             if ret <= STOP_LOSS_PCT:
                 pending_sells[sym] = '止损'
             else:
@@ -278,6 +281,10 @@ def run_backtest(
                 trail_ret = (price - pos['peak_price']) / pos['peak_price']
                 if peak_ret >= TRAIL_STOP_ACTIVATE_PCT and trail_ret <= TRAIL_STOP_PCT:
                     pending_sells[sym] = '移动止损'
+                elif (TIME_STOP_DAYS > 0
+                      and days_held >= TIME_STOP_DAYS
+                      and ret < TIME_STOP_MIN_RETURN):
+                    pending_sells[sym] = '时间止损'
                 elif sym in signals and date in signals[sym].index:
                     if signals[sym].loc[date, 'signal'] == -1:
                         pending_sells[sym] = '量价背离'

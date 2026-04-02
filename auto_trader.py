@@ -49,9 +49,23 @@ STOP_LOSS_PCT           = config.STOP_LOSS_PCT
 MAX_PER_SECTOR          = config.MAX_PER_SECTOR
 TRAIL_STOP_ACTIVATE_PCT = config.TRAIL_STOP_ACTIVATE_PCT
 TRAIL_STOP_PCT          = config.TRAIL_STOP_PCT
+TIME_STOP_DAYS          = config.TIME_STOP_DAYS
+TIME_STOP_MIN_RETURN    = config.TIME_STOP_MIN_RETURN
 
 # 仓位计算：5 × 15% = 75% 持仓 + 25% 现金保留
 SELL_ON_ALERT    = True   # 量价背离时是否自动卖出（False = 只报警）
+
+
+def _entry_date(sym: str, db) -> date | None:
+    """从 orders 表查该持仓最近一笔已成交 BUY 单的日期。"""
+    rows = db.get_orders(symbol=sym, limit=50)
+    for r in rows:
+        if r[2] == 'BUY' and r[6] is not None:   # action=BUY, filled_price 有值
+            dt = r[9]
+            if dt is None:
+                continue
+            return dt.date() if hasattr(dt, 'date') else dt
+    return None
 
 
 def _peak_price(sym: str, avg_cost: float, db) -> float:
@@ -392,11 +406,65 @@ def execute(signals: dict, dry_run: bool = True):
         print(f"  无移动止损触发")
         print(f"{'='*54}")
 
+    # ── 时间止损检查（Time Stop）─────────────────────────────
+    already_stopped = {s['symbol'] for s in stop_loss_list} | {s['symbol'] for s in trail_stop_list}
+    time_stop_list  = []
+    if TIME_STOP_DAYS > 0:
+        today = date.today()
+        for sym, pos in stock_positions.items():
+            if sym in already_stopped or sym in CASH_EQUIV:
+                continue
+            avg_cost  = pos.avgCost
+            qty       = int(pos.position)
+            cur_price = signals.get('_prices', {}).get(sym)
+            if avg_cost <= 0 or qty <= 0 or cur_price is None:
+                continue
+            ret = (cur_price - avg_cost) / avg_cost
+            if ret >= TIME_STOP_MIN_RETURN:
+                continue  # 已达最低盈利，不触发
+            ed = _entry_date(sym, db)
+            if ed is None:
+                continue
+            days_held = (today - ed).days
+            if days_held >= TIME_STOP_DAYS:
+                time_stop_list.append({
+                    'symbol': sym, 'qty': qty,
+                    'avg_cost': avg_cost, 'cur_price': cur_price,
+                    'return': ret, 'days_held': days_held,
+                })
+
+    print(f"\n{'='*54}")
+    if time_stop_list:
+        print(f"  时间止损触发（持仓>{TIME_STOP_DAYS}天未达{TIME_STOP_MIN_RETURN:.0%}）：{len(time_stop_list)} 只")
+        print(f"{'='*54}")
+        for s in time_stop_list:
+            print(f"  [{s['symbol']}]  均价 ${s['avg_cost']:.2f} → 现价 ${s['cur_price']:.2f}"
+                  f"  {s['return']:+.1%}  持仓 {s['days_held']} 天")
+            if not dry_run:
+                _cancel_existing(s['symbol'], 'SELL')
+                if tif == 'OPG':
+                    trade = trader.limit_sell(s['symbol'], s['qty'],
+                                              price=round(s['cur_price'] * 0.97, 2), tif='OPG')
+                    label = f"限价 OPG 时间止损（下限 ${s['cur_price']*0.97:.2f}）"
+                else:
+                    trade = trader.market_sell(s['symbol'], s['qty'], tif=tif)
+                    label = tif_label
+                if trade is None:
+                    print(f"  → [ERROR] {s['symbol']} 时间止损单提交失败，请手动处理！")
+                else:
+                    print(f"  → 已下时间止损单 [{label}] 卖出 {s['qty']} 股")
+            else:
+                floor_str = f"（限价下限 ${s['cur_price']*0.97:.2f}）" if tif == 'OPG' else ""
+                print(f"  → [dry-run] 将下时间止损单 {tif_label}{floor_str} 卖出 {s['qty']} 股")
+    else:
+        print(f"  无时间止损触发")
+        print(f"{'='*54}")
+
     # ── 卖出报警（量价背离）──────────────────────────────────
     # 用真实 IB 持仓补充：--held 未传入的股票也能被检测到
     sell_list      = list(signals.get('sell', []))
     signal_map     = signals.get('_signal_map', {})
-    already_alerted = {s['symbol'] for s in sell_list}
+    already_alerted = {s['symbol'] for s in sell_list} | {s['symbol'] for s in time_stop_list}
     for sym in stock_positions:
         if sym in already_alerted or sym in CASH_EQUIV:
             continue

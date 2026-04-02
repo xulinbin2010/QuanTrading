@@ -34,6 +34,7 @@ const BUY_CONDITION_TEMPLATES = [
 const SELL_CONDITIONS = [
   { icon: '⚠️', label: '量价背离', key: 'volume_divergence', desc: '价格创新高但成交量低于均量（顶部信号）' },
   { icon: '🔴', label: '硬止损', key: 'STOP_LOSS_PCT', desc: '跌破入场价 -15% 强制卖出' },
+  { icon: '⏱️', label: '时间止损', key: 'TIME_STOP_DAYS', desc: '持仓超过 N 交易日仍未达到最低盈利门槛则卖出（Time Stop）' },
 ]
 
 const CATEGORY_LABELS: Record<string, string> = {

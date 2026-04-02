@@ -63,6 +63,9 @@ export const getBacktestResult = (taskId: string) =>
   api.get(`/backtest/result/${taskId}`).then(r => r.data)
 export const getBacktestHistory = () =>
   api.get('/backtest/history').then(r => r.data)
+export const getVixAnalysis = (params: {
+  threshold?: number; start?: string; end?: string; symbol?: string; mode?: string
+}) => api.get('/backtest/vix', { params }).then(r => r.data)
 
 // ── 因子优化器 ────────────────────────────────────────────
 
@@ -95,5 +98,7 @@ export const getTaskRuns        = (taskId?: string, limit = 50) =>
   api.get('/scheduler/runs', { params: { task_id: taskId, limit } }).then(r => r.data)
 export const getRunLog          = (runId: number) =>
   api.get(`/scheduler/runs/${runId}/log`).then(r => r.data)
+export const deleteTaskRun      = (runId: number) =>
+  api.delete(`/scheduler/runs/${runId}`).then(r => r.data)
 export const getCronPreview     = (expr: string, count = 5) =>
   api.get('/scheduler/cron-preview', { params: { expr, count } }).then(r => r.data)

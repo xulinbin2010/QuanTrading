@@ -63,6 +63,12 @@ def get_runs(task_id: str = Query(None), limit: int = Query(50, le=200)):
     return get_scheduler().get_runs(task_id=task_id, limit=limit)
 
 
+@router.delete('/runs/{run_id}')
+def delete_run(run_id: int):
+    get_scheduler().delete_run(run_id)
+    return {'status': 'ok'}
+
+
 @router.get('/runs/{run_id}/log')
 def get_log(run_id: int):
     log = get_scheduler().get_run_log(run_id)

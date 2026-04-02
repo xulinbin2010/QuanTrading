@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { runBacktest, getBacktestStatus, getBacktestResult, getBacktestHistory, getFactorRegistry } from '../api/client'
+import { runBacktest, getBacktestStatus, getBacktestResult, getBacktestHistory, getFactorRegistry, getVixAnalysis } from '../api/client'
 import ReactECharts from 'echarts-for-react'
 
 const UNIVERSES = ['sp500', 'nasdaq100', 'russell2000']
@@ -353,10 +353,270 @@ function loadStored<T>(key: string, fallback: T): T {
   } catch { return fallback }
 }
 
+// ── VIX 恐慌回测 ─────────────────────────────────────────────
+function VixBacktest() {
+  const [threshold, setThreshold] = useState(30)
+  const [start, setStart] = useState('2010-01-01')
+  const [end, setEnd] = useState('')
+  const [symbol, setSymbol] = useState('SPY')
+  const [mode, setMode] = useState<'spike' | 'peak'>('spike')
+  const [viewMode, setViewMode] = useState<'win_rate' | 'avg_return'>('win_rate')
+  const [enabled, setEnabled] = useState(false)
+
+  const { data, isFetching, refetch } = useQuery({
+    queryKey: ['vix-analysis', threshold, start, end, symbol, mode],
+    queryFn: () => getVixAnalysis({ threshold, start, end: end || undefined, symbol, mode }),
+    enabled,
+    staleTime: 300_000,
+  })
+
+  const heatmap = data?.heatmap
+  const horizons: number[] = heatmap?.horizons ?? []
+  const buckets: string[] = heatmap?.buckets ?? []
+  const matrix: (number | null)[][] = viewMode === 'win_rate' ? (heatmap?.win_rate ?? []) : (heatmap?.avg_return ?? [])
+  const countMatrix: number[][] = heatmap?.count ?? []
+
+  // ECharts 热力图 option
+  const heatmapOption = heatmap ? (() => {
+    const heatData: [number, number, number | null][] = []
+    matrix.forEach((row, bi) => {
+      row.forEach((val, hi) => { heatData.push([hi, bi, val]) })
+    })
+    const isWin = viewMode === 'win_rate'
+    return {
+      backgroundColor: 'transparent',
+      tooltip: {
+        formatter: (p: any) => {
+          const [hi, bi, val] = p.data
+          const cnt = countMatrix[bi]?.[hi] ?? 0
+          const label = isWin ? `胜率 ${val?.toFixed(1)}%` : `均收益 ${val?.toFixed(2)}%`
+          return `VIX ${buckets[bi]} / 持有 ${horizons[hi]}天<br/>${label}<br/>样本数 ${cnt}`
+        },
+      },
+      grid: { top: 30, bottom: 60, left: 70, right: 20 },
+      xAxis: {
+        type: 'category',
+        data: horizons.map(h => `${h}d`),
+        axisLabel: { color: '#94a3b8' },
+        axisLine: { lineStyle: { color: '#475569' } },
+      },
+      yAxis: {
+        type: 'category',
+        data: buckets,
+        axisLabel: { color: '#94a3b8' },
+        axisLine: { lineStyle: { color: '#475569' } },
+      },
+      visualMap: {
+        min: isWin ? 40 : -5,
+        max: isWin ? 90 : 10,
+        calculable: true,
+        orient: 'horizontal',
+        left: 'center',
+        bottom: 0,
+        inRange: { color: isWin ? ['#ef4444','#fbbf24','#22c55e'] : ['#ef4444','#fbbf24','#22c55e'] },
+        textStyle: { color: '#94a3b8' },
+      },
+      series: [{
+        type: 'heatmap',
+        data: heatData,
+        label: {
+          show: true,
+          formatter: (p: any) => p.data[2] != null
+            ? (isWin ? `${p.data[2].toFixed(0)}%` : `${p.data[2].toFixed(1)}%`)
+            : '-',
+          color: '#fff',
+          fontWeight: 'bold',
+          fontSize: 12,
+          textBorderColor: '#0f172a',
+          textBorderWidth: 2,
+        },
+        emphasis: { itemStyle: { shadowBlur: 10, shadowColor: 'rgba(0,0,0,0.5)' } },
+      }],
+    }
+  })() : null
+
+  // VIX 历史走势图
+  const vixChartOption = data?.vix_series ? (() => {
+    const signalSet = new Set(data.signal_dates ?? [])
+    const dates = data.vix_series.map((d: any) => d.date)
+    const vals = data.vix_series.map((d: any) => d.vix)
+    const signalPoints = data.vix_series
+      .filter((d: any) => signalSet.has(d.date))
+      .map((d: any) => ({ name: d.date, coord: [d.date, d.vix] }))
+    return {
+      backgroundColor: 'transparent',
+      tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+      grid: { top: 20, bottom: 40, left: 50, right: 20 },
+      xAxis: { type: 'category', data: dates, axisLabel: { color: '#94a3b8', fontSize: 10 }, axisLine: { lineStyle: { color: '#475569' } } },
+      yAxis: { type: 'value', axisLabel: { color: '#94a3b8' }, splitLine: { lineStyle: { color: '#334155' } } },
+      series: [
+        {
+          type: 'line', data: vals, name: 'VIX', lineStyle: { color: '#f59e0b', width: 1.5 },
+          areaStyle: { color: 'rgba(245,158,11,0.1)' }, symbol: 'none',
+          markLine: {
+            silent: true, symbol: 'none',
+            data: [{ yAxis: threshold, lineStyle: { color: '#ef4444', type: 'dashed', width: 1.5 }, label: { formatter: `VIX ${threshold}`, color: '#ef4444' } }],
+          },
+          markPoint: {
+            symbol: 'circle', symbolSize: 5,
+            itemStyle: { color: '#ef4444' },
+            data: signalPoints.slice(-200),
+          },
+        },
+      ],
+    }
+  })() : null
+
+  return (
+    <div className="space-y-4">
+      {/* 配置栏 */}
+      <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
+        <div className="flex flex-wrap gap-4 items-end">
+          <div>
+            <div className="text-xs text-slate-400 mb-1">触发阈值</div>
+            <select value={threshold} onChange={e => setThreshold(+e.target.value)}
+              className="bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-sm text-white">
+              {[20, 25, 30, 35, 40].map(v => <option key={v} value={v}>VIX &gt; {v}</option>)}
+            </select>
+          </div>
+          <div>
+            <div className="text-xs text-slate-400 mb-1">触发模式</div>
+            <select value={mode} onChange={e => setMode(e.target.value as any)}
+              className="bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-sm text-white">
+              <option value="spike">spike — 当日超阈值</option>
+              <option value="peak">peak — 峰值回落（更准）</option>
+            </select>
+          </div>
+          <div>
+            <div className="text-xs text-slate-400 mb-1">标的</div>
+            <select value={symbol} onChange={e => setSymbol(e.target.value)}
+              className="bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-sm text-white">
+              {['SPY', 'QQQ', 'IWM', 'DIA'].map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div>
+            <div className="text-xs text-slate-400 mb-1">起始日期</div>
+            <input type="date" value={start} onChange={e => setStart(e.target.value)}
+              className="bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-sm text-white" />
+          </div>
+          <div>
+            <div className="text-xs text-slate-400 mb-1">结束日期</div>
+            <input type="date" value={end} onChange={e => setEnd(e.target.value)}
+              placeholder="今天"
+              className="bg-slate-900 border border-slate-600 rounded px-2 py-1.5 text-sm text-white" />
+          </div>
+          <button
+            onClick={() => { setEnabled(true); setTimeout(() => refetch(), 0) }}
+            disabled={isFetching}
+            className="px-4 py-1.5 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white text-sm rounded font-medium transition-colors"
+          >
+            {isFetching ? '计算中...' : '▶ 分析'}
+          </button>
+        </div>
+
+        {/* 说明 */}
+        <div className="mt-3 text-xs text-slate-500 space-y-0.5">
+          <div><span className="text-amber-400">spike模式</span>：VIX当日收盘超过阈值即触发，包含所有恐慌日，样本量多</div>
+          <div><span className="text-amber-400">peak模式</span>：VIX超阈值且当日低于昨日（峰值回落），避免接飞刀，买在恐慌缓解时</div>
+        </div>
+      </div>
+
+      {data && (
+        <>
+          {/* 统计摘要 */}
+          <div className="flex gap-3 text-sm">
+            <div className="bg-slate-800 rounded border border-slate-700 px-4 py-2">
+              <span className="text-slate-400">信号次数</span>
+              <span className="ml-2 text-white font-bold">{data.total_events}</span>
+            </div>
+            <div className="bg-slate-800 rounded border border-slate-700 px-4 py-2">
+              <span className="text-slate-400">模式</span>
+              <span className="ml-2 text-amber-400">{data.mode} / VIX&gt;{data.threshold}</span>
+            </div>
+            <div className="bg-slate-800 rounded border border-slate-700 px-4 py-2">
+              <span className="text-slate-400">标的</span>
+              <span className="ml-2 text-white">{data.symbol}</span>
+            </div>
+          </div>
+
+          {/* 热力图 */}
+          <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
+            <div className="flex items-center gap-3 mb-3">
+              <span className="text-sm font-medium text-white">
+                {viewMode === 'win_rate' ? '胜率热力图（%）' : '平均收益热力图（%）'}
+              </span>
+              <div className="flex gap-1 ml-auto">
+                {(['win_rate', 'avg_return'] as const).map(v => (
+                  <button key={v} onClick={() => setViewMode(v)}
+                    className={`px-3 py-1 text-xs rounded transition-colors ${viewMode === v ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-white'}`}>
+                    {v === 'win_rate' ? '胜率' : '均收益'}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="text-xs text-slate-500 mb-2">行 = VIX区间 / 列 = 买入后持有天数 / 格子内 = {viewMode === 'win_rate' ? '上涨概率' : '平均收益率'}</div>
+            {heatmapOption && <ReactECharts option={heatmapOption} style={{ height: 280 }} />}
+          </div>
+
+          {/* VIX走势图 */}
+          <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
+            <div className="text-sm font-medium text-white mb-3">
+              VIX历史走势 <span className="text-xs text-slate-400 ml-1">红点 = 触发信号日</span>
+            </div>
+            {vixChartOption && <ReactECharts option={vixChartOption} style={{ height: 200 }} />}
+          </div>
+
+          {/* 历史事件表 */}
+          <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
+            <div className="text-sm font-medium text-white mb-3">
+              历史触发事件（最近{Math.min(data.events?.length ?? 0, 300)}条）
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-slate-400 border-b border-slate-700">
+                    <th className="text-left py-2 pr-4">日期</th>
+                    <th className="text-right pr-4">VIX</th>
+                    {horizons.map(h => <th key={h} className="text-right pr-3">{h}d</th>)}
+                  </tr>
+                </thead>
+                <tbody>
+                  {(data.events ?? []).map((ev: any) => (
+                    <tr key={ev.date} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                      <td className="py-1.5 pr-4 text-slate-300">{ev.date}</td>
+                      <td className={`text-right pr-4 font-mono font-medium ${ev.vix >= 40 ? 'text-red-400' : ev.vix >= 30 ? 'text-amber-400' : 'text-slate-300'}`}>
+                        {ev.vix}
+                      </td>
+                      {horizons.map(h => {
+                        const v = ev[`ret_${h}d`]
+                        return (
+                          <td key={h} className={`text-right pr-3 font-mono ${v == null ? 'text-slate-600' : v >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                            {v != null ? `${v > 0 ? '+' : ''}${v.toFixed(1)}%` : '—'}
+                          </td>
+                        )
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </>
+      )}
+
+      {!data && !isFetching && (
+        <div className="bg-slate-800 rounded-lg border border-slate-700 p-10 text-center text-slate-500">
+          设置参数后点击「分析」，查看VIX恐慌指数触发后的历史胜率
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Backtest() {
   const [params, setParams] = useState(() => loadStored('bt_params', DEFAULT_PARAMS))
   const [activeTask, setActiveTask] = useState<string | null>(null)
-  const [tab, setTab] = useState<'config' | 'history'>('config')
+  const [tab, setTab] = useState<'config' | 'history' | 'vix'>('config')
   const [showFactors, setShowFactors] = useState(false)
   const [selectedFactors, setSelectedFactors] = useState<string[]>(() => loadStored('bt_factors', []))
 
@@ -416,6 +676,7 @@ export default function Backtest() {
         {[
           { key: 'config',  label: '回测配置' },
           { key: 'history', label: '历史记录' },
+          { key: 'vix',     label: 'VIX恐慌策略' },
         ].map(t => (
           <button key={t.key}
             onClick={() => { setTab(t.key as any); if (t.key === 'history') refetchHistory() }}
@@ -660,6 +921,9 @@ export default function Backtest() {
           </div>
         </div>
       )}
+
+      {/* ── VIX 恐慌回测 Tab ──────────────────────────────── */}
+      {tab === 'vix' && <VixBacktest />}
     </div>
   )
 }

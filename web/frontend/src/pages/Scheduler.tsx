@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getSchedulerTasks, getTaskRuns, runTaskNow,
-  upsertSchedulerTask, getRunLog, getCronPreview,
+  upsertSchedulerTask, getRunLog, getCronPreview, deleteTaskRun,
 } from '../api/client'
 
 function cronToHuman(expr: string): string {
@@ -76,14 +76,20 @@ export default function Scheduler() {
   const { data: tasks = [], isLoading: tasksLoading, isError: tasksError } = useQuery({
     queryKey: ['scheduler-tasks'],
     queryFn: getSchedulerTasks,
-    refetchInterval: 15_000,
+    refetchInterval: (query) => {
+      const data = query.state.data as any[] | undefined
+      return data?.some(t => t.last_run?.status === 'running') ? 3_000 : 15_000
+    },
     retry: 1,
   })
 
   const { data: runs = [], isLoading: runsLoading } = useQuery({
     queryKey: ['task-runs'],
     queryFn: () => getTaskRuns(undefined, 50),
-    refetchInterval: 10_000,
+    refetchInterval: (query) => {
+      const data = query.state.data as any[] | undefined
+      return data?.some(r => r.status === 'running') ? 3_000 : 10_000
+    },
     retry: 1,
   })
 
@@ -95,9 +101,19 @@ export default function Scheduler() {
   const runNowMutation = useMutation({
     mutationFn: (taskId: string) => runTaskNow(taskId),
     onSuccess: () => {
+      // 立即刷新，之后动态 refetchInterval 在 running 期间自动3秒轮询
       queryClient.invalidateQueries({ queryKey: ['task-runs'] })
       queryClient.invalidateQueries({ queryKey: ['scheduler-tasks'] })
     },
+  })
+
+  const runningTaskIds = new Set(
+    (runs as any[]).filter(r => r.status === 'running').map(r => r.task_id)
+  )
+
+  const deleteRunMutation = useMutation({
+    mutationFn: (runId: number) => deleteTaskRun(runId),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['task-runs'] }),
   })
 
   const saveMutation = useMutation({
@@ -190,10 +206,10 @@ export default function Scheduler() {
             <div className="flex gap-2">
               <button
                 onClick={() => runNowMutation.mutate(task.task_id)}
-                disabled={runNowMutation.isPending}
-                className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors"
+                disabled={runNowMutation.isPending || runningTaskIds.has(task.task_id)}
+                className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                ▶ 立即执行
+                {runningTaskIds.has(task.task_id) ? '⏳ 运行中' : '▶ 立即执行'}
               </button>
               <button
                 onClick={() => setEditTask({ ...task })}
@@ -244,12 +260,21 @@ export default function Scheduler() {
                       </span>
                     </td>
                     <td className="px-4 py-2">
-                      <button
-                        onClick={() => setSelectedLog(r.id)}
-                        className="text-blue-400 hover:text-blue-300"
-                      >
-                        查看日志
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => setSelectedLog(r.id)}
+                          className="text-blue-400 hover:text-blue-300"
+                        >
+                          查看日志
+                        </button>
+                        <button
+                          onClick={() => deleteRunMutation.mutate(r.id)}
+                          disabled={deleteRunMutation.isPending}
+                          className="text-red-500 hover:text-red-400 disabled:opacity-40"
+                        >
+                          删除
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

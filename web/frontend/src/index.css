@@ -65,6 +65,37 @@ html.light {
 
   /* white → 深色文字（text-white 在浅色背景上不可见，统一改为深色） */
   --color-white: #0f172a;
+
+  /* ── 语义色：红色（错误框、卖出信号） ── */
+  --color-red-950: #fff1f2;
+  --color-red-900: #fee2e2;   /* bg-red-900/xx → 淡红背景 */
+  --color-red-800: #fca5a5;   /* border-red-800 → 中红边框 */
+  --color-red-700: #f87171;   /* border-red-700 */
+  --color-red-400: #dc2626;   /* text-red-400 状态点 → 深红 */
+  --color-red-300: #b91c1c;   /* text-red-300 文字 → 深红 */
+
+  /* ── 语义色：绿色（成功、买入信号） ── */
+  --color-green-900: #dcfce7; /* bg-green-900/xx → 淡绿背景 */
+  --color-green-800: #86efac; /* border-green-800 */
+  --color-green-400: #16a34a; /* text-green-400 状态点 → 深绿 */
+  --color-green-300: #15803d; /* text-green-300 文字 → 深绿 */
+
+  /* ── 语义色：黄色（运行中、警告） ── */
+  --color-yellow-900: #fef9c3;
+  --color-yellow-400: #d97706; /* text-yellow-400 状态点 */
+  --color-yellow-300: #a16207; /* text-yellow-300 文字 */
+
+  /* ── 语义色：橙色（警告标签） ── */
+  --color-orange-900: #ffedd5;
+  --color-orange-700: #fb923c;
+  --color-orange-300: #c2410c;
+
+  /* ── 语义色：蓝色（信息提示、必选标签） ── */
+  --color-blue-900: #dbeafe;
+  --color-blue-800: #93c5fd;
+  --color-blue-700: #60a5fa;
+  --color-blue-300: #1d4ed8;   /* text-blue-300 → 深蓝 */
+  --color-blue-200: #1e40af;   /* text-blue-200（必选因子按钮文字）→ 深蓝 */
 }
 
 html.light body {

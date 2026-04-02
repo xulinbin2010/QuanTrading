@@ -99,25 +99,45 @@ def get_balance() -> dict:
     }
 
 
+def _get_entry_date(symbol: str, db) -> str | None:
+    """从 orders 表查该持仓最近一笔已成交 BUY 单的日期（只取日期部分）"""
+    try:
+        rows = db.get_orders(symbol=symbol, limit=50)
+        for r in rows:
+            if r[2] == 'BUY' and r[6] is not None:   # action=BUY, filled_price 有值
+                dt = r[9]
+                if dt is None:
+                    continue
+                if hasattr(dt, 'date'):
+                    return dt.date().strftime('%Y-%m-%d')
+                return str(dt)[:10]
+    except Exception:
+        pass
+    return None
+
+
 def get_positions() -> list[dict]:
     """返回当前持仓（需 IB Gateway）"""
     _ensure_connected()
     if not _ib or not _ib.isConnected():
         raise RuntimeError("IB Gateway 未连接")
+    db = get_db()
     positions = []
     for item in _ib.portfolio():
         avg_cost = float(item.averageCost)
         market_price = float(item.marketPrice)
         unrealized_pnl_pct = (market_price - avg_cost) / avg_cost if avg_cost else 0
+        symbol = item.contract.symbol
         positions.append({
-            "symbol":           item.contract.symbol,
-            "qty":              float(item.position),
-            "avg_cost":         avg_cost,
-            "market_price":     market_price,
-            "market_value":     float(item.marketValue),
-            "unrealized_pnl":   float(item.unrealizedPNL),
+            "symbol":             symbol,
+            "qty":                float(item.position),
+            "avg_cost":           avg_cost,
+            "market_price":       market_price,
+            "market_value":       float(item.marketValue),
+            "unrealized_pnl":     float(item.unrealizedPNL),
             "unrealized_pnl_pct": unrealized_pnl_pct,
-            "realized_pnl":     float(item.realizedPNL),
+            "realized_pnl":       float(item.realizedPNL),
+            "entry_date":         _get_entry_date(symbol, db),
         })
     return positions
 

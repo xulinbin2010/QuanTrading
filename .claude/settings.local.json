@@ -34,7 +34,23 @@
       "Bash(kill -9 6218)",
       "Bash(pkill -f \"ib_insync\\\\|IBConnection\\\\|ib.connect\\\\|server.py\\\\|uvicorn\")",
       "Bash(ps:*)",
-      "Bash(kill -9 7553)"
+      "Bash(kill -9 7553)",
+      "WebSearch",
+      "WebFetch(domain:atas.net)",
+      "WebFetch(domain:kjtradingsystems.com)",
+      "WebFetch(domain:www.chartmill.com)",
+      "WebFetch(domain:medium.com)",
+      "WebFetch(domain:www.tradingview.com)",
+      "WebFetch(domain:www.quantifiedstrategies.com)",
+      "WebFetch(domain:tradingeducators.com)",
+      "WebFetch(domain:www.crackingmarkets.com)",
+      "Bash(npm uninstall:*)",
+      "Bash(pkill -f \"uvicorn web.server\")",
+      "Bash(nohup ./start_web.sh)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(f'runs: {len\\(d\\)}'\\)\")",
+      "Bash(wc -l pages/*.tsx)",
+      "Read(//tmp/**)",
+      "Bash(bash /tmp/detailed_scan.sh)"
     ]
   }
 }

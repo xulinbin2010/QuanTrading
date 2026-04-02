@@ -1,5 +1,5 @@
 """策略回测 API 路由"""
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from web.models import BacktestRequest
 from web.services import backtest_svc
 
@@ -50,3 +50,17 @@ def result(task_id: str):
 @router.get('/history')
 def history():
     return backtest_svc.get_history()
+
+
+@router.get('/vix')
+def vix_analysis(
+    threshold: float = Query(30, description='VIX触发阈值'),
+    start: str = Query('2010-01-01', description='起始日期'),
+    end: str = Query(None, description='结束日期，默认今天'),
+    symbol: str = Query('SPY', description='目标标的，如SPY/QQQ'),
+    mode: str = Query('spike', description='spike=当日触发 / peak=峰值回落触发'),
+):
+    try:
+        return backtest_svc.run_vix_analysis(threshold, start, end, symbol, mode)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

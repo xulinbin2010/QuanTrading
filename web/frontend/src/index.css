@@ -19,6 +19,24 @@ button:not(:disabled):active {
   opacity: 0.75;
 }
 
+/* ── 全局主题色：将 Tailwind blue 全部替换为橘黄色 ─────────────
+   所有 bg-blue-* / text-blue-* / border-blue-* / focus:border-blue-*
+   均自动变为橙色，无需修改任何组件文件。
+   ────────────────────────────────────────────────────────────── */
+:root {
+  --color-blue-50:  #fff7ed;
+  --color-blue-100: #ffedd5;
+  --color-blue-200: #fed7aa;
+  --color-blue-300: #fdba74;
+  --color-blue-400: #fb923c;
+  --color-blue-500: #f97316;
+  --color-blue-600: #ea580c;
+  --color-blue-700: #c2410c;
+  --color-blue-800: #9a3412;
+  --color-blue-900: #7c2d12;
+  --color-blue-950: #431407;
+}
+
 body {
   margin: 0;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
@@ -44,64 +62,129 @@ body {
   border-radius: 3px;
 }
 
-/* ── 浅色主题：通过覆盖 Tailwind v4 CSS 变量实现，无需改动各页面组件 ── */
-html.light {
+/* ════════════════════════════════════════════════════════════
+   白天主题（淡灰调，适合明亮环境）
+   html.day 类挂在 <html> 上
+   ════════════════════════════════════════════════════════════ */
+html.day {
   color-scheme: light;
 
-  /* 背景色：深灰 → 浅灰 */
-  --color-slate-950: #e2e8f0;
-  --color-slate-900: #f8fafc;
-  --color-slate-800: #f0f4f8;
-  --color-slate-700: #e2e8f0;
-  --color-slate-600: #c8d3df;
+  /* 背景色层次：主背景 → 卡片 → hover → 边框 */
+  --color-slate-950: #f0f0f0;
+  --color-slate-900: #ffffff;   /* 主背景：纯白 */
+  --color-slate-800: #ffffff;   /* 卡片 / 侧边栏：纯白 */
+  --color-slate-700: #dde5f0;   /* hover / tab 选中：明显深于白色卡片 */
+  --color-slate-600: #c8d3e0;   /* 边框：清晰可见 */
 
-  /* 文字色：浅 → 深 */
-  --color-slate-500: #64748b;
-  --color-slate-400: #475569;
-  --color-slate-300: #1e293b;
-  --color-slate-200: #0f172a;
-  --color-slate-100: #0a1120;
-  --color-slate-50:  #020617;
+  /* 文字层次：深 → 浅 */
+  --color-slate-500: #7a8698;
+  --color-slate-400: #4f5e72;
+  --color-slate-300: #2d3c50;
+  --color-slate-200: #1a2636;   /* 主要文字 */
+  --color-slate-100: #0f1a28;
+  --color-slate-50:  #060d18;
 
-  /* white → 深色文字（text-white 在浅色背景上不可见，统一改为深色） */
-  --color-white: #0f172a;
+  /* text-white → 深色文字（用于浅色背景上的按钮文字） */
+  --color-white: #1a2636;
 
-  /* ── 语义色：红色（错误框、卖出信号） ── */
+  /* 选中/激活态：与深色模式相同的橙色，深背景+深文字（--color-white已覆盖为深色）*/
+  --color-blue-900: #fff7ed;   /* info 框背景（浅橙，保持轻量） */
+  --color-blue-800: #fed7aa;   /* info 框边框 */
+  --color-blue-300: #9a3412;   /* info 框文字 */
+
+  /* 语义色：红 */
   --color-red-950: #fff1f2;
-  --color-red-900: #fee2e2;   /* bg-red-900/xx → 淡红背景 */
-  --color-red-800: #fca5a5;   /* border-red-800 → 中红边框 */
-  --color-red-700: #f87171;   /* border-red-700 */
-  --color-red-400: #dc2626;   /* text-red-400 状态点 → 深红 */
-  --color-red-300: #b91c1c;   /* text-red-300 文字 → 深红 */
+  --color-red-900: #fee2e2;
+  --color-red-800: #fca5a5;
+  --color-red-700: #f87171;
+  --color-red-400: #dc2626;
+  --color-red-300: #b91c1c;
 
-  /* ── 语义色：绿色（成功、买入信号） ── */
-  --color-green-900: #dcfce7; /* bg-green-900/xx → 淡绿背景 */
-  --color-green-800: #86efac; /* border-green-800 */
-  --color-green-400: #16a34a; /* text-green-400 状态点 → 深绿 */
-  --color-green-300: #15803d; /* text-green-300 文字 → 深绿 */
+  /* 语义色：绿 */
+  --color-green-900: #dcfce7;
+  --color-green-800: #86efac;
+  --color-green-400: #16a34a;
+  --color-green-300: #15803d;
 
-  /* ── 语义色：黄色（运行中、警告） ── */
+  /* 语义色：黄 */
   --color-yellow-900: #fef9c3;
-  --color-yellow-400: #d97706; /* text-yellow-400 状态点 */
-  --color-yellow-300: #a16207; /* text-yellow-300 文字 */
+  --color-yellow-400: #d97706;
+  --color-yellow-300: #a16207;
 
-  /* ── 语义色：橙色（警告标签） ── */
+  /* 语义色：橙 */
   --color-orange-900: #ffedd5;
   --color-orange-700: #fb923c;
   --color-orange-300: #c2410c;
-
-  /* ── 语义色：蓝色（信息提示、必选标签） ── */
-  --color-blue-900: #dbeafe;
-  --color-blue-800: #93c5fd;
-  --color-blue-700: #60a5fa;
-  --color-blue-300: #1d4ed8;   /* text-blue-300 → 深蓝 */
-  --color-blue-200: #1e40af;   /* text-blue-200（必选因子按钮文字）→ 深蓝 */
 }
 
-html.light body {
-  background-color: #f8fafc;
-  color: #0f172a;
+html.day body {
+  background-color: #ffffff;
+  color: #1a2636;
 }
 
-html.light ::-webkit-scrollbar-track { background: #e2e8f0; }
-html.light ::-webkit-scrollbar-thumb { background: #94a3b8; }
+html.day ::-webkit-scrollbar-track { background: #e8edf4; }
+html.day ::-webkit-scrollbar-thumb { background: #b0bbcc; border-radius: 3px; }
+
+
+/* ════════════════════════════════════════════════════════════
+   夜晚主题（淡暖白调，护眼舒适）
+   html.night 类挂在 <html> 上
+   ════════════════════════════════════════════════════════════ */
+html.night {
+  color-scheme: light;
+
+  /* 背景色层次 */
+  --color-slate-950: #f0f0f0;
+  --color-slate-900: #ffffff;   /* 主背景：纯白 */
+  --color-slate-800: #ffffff;   /* 卡片：纯白 */
+  --color-slate-700: #e3e0d8;   /* hover / tab 选中：明显深于卡片 */
+  --color-slate-600: #d0cdc4;   /* 边框 */
+
+  /* 文字层次 */
+  --color-slate-500: #7c7a76;
+  --color-slate-400: #56534e;
+  --color-slate-300: #333028;
+  --color-slate-200: #1c1a14;   /* 主要文字：暖黑 */
+  --color-slate-100: #100e09;
+  --color-slate-50:  #050402;
+
+  /* text-white → 深色文字 */
+  --color-white: #1c1a14;
+
+  /* 选中/激活态：与深色模式相同的橙色 */
+  --color-blue-900: #fff7ed;   /* info 框背景 */
+  --color-blue-800: #fed7aa;   /* info 框边框 */
+  --color-blue-300: #9a3412;   /* info 框文字 */
+
+  /* 语义色：红 */
+  --color-red-950: #fff1f2;
+  --color-red-900: #fee2e2;
+  --color-red-800: #fca5a5;
+  --color-red-700: #f87171;
+  --color-red-400: #dc2626;
+  --color-red-300: #b91c1c;
+
+  /* 语义色：绿 */
+  --color-green-900: #dcfce7;
+  --color-green-800: #86efac;
+  --color-green-400: #16a34a;
+  --color-green-300: #15803d;
+
+  /* 语义色：黄 */
+  --color-yellow-900: #fef9c3;
+  --color-yellow-400: #d97706;
+  --color-yellow-300: #a16207;
+
+  /* 语义色：橙 */
+  --color-orange-900: #ffedd5;
+  --color-orange-700: #fb923c;
+  --color-orange-300: #c2410c;
+}
+
+html.night body {
+  background-color: #ffffff;
+  color: #1c1a14;
+}
+
+html.night ::-webkit-scrollbar-track { background: #eeede9; }
+html.night ::-webkit-scrollbar-thumb { background: #b8b6b0; border-radius: 3px; }

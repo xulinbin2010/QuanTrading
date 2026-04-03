@@ -48,59 +48,62 @@ const SIGNAL_TYPE_LABELS: Record<string, { label: string; color: string }> = {
   sell_alert: { label: '卖出信号', color: 'bg-red-900/50 text-red-300 border-red-700' },
 }
 
+const DISPLAY_ONLY_BADGE = { label: '仅展示 *', color: 'bg-slate-700/50 text-slate-400 border-slate-600' }
+
 // ── 因子卡片（注册表中的每个因子） ────────────────────────
 function FactorCard({ factor, onToggle }: { factor: any; onToggle: (key: string, enabled: boolean) => void }) {
-  const [expanded, setExpanded] = useState(false)
-  const sig = SIGNAL_TYPE_LABELS[factor.signal_type] ?? { label: factor.signal_type, color: 'bg-slate-700 text-slate-300 border-slate-600' }
+  const sig = factor.display_only
+    ? DISPLAY_ONLY_BADGE
+    : (SIGNAL_TYPE_LABELS[factor.signal_type] ?? { label: factor.signal_type, color: 'bg-slate-700 text-slate-300 border-slate-600' })
+
+  const paramEntries = Object.entries(factor.params ?? {}) as [string, any][]
 
   return (
-    <div className={`border rounded-lg transition-colors ${factor.enabled ? 'border-slate-600 bg-slate-800' : 'border-slate-700 bg-slate-800/40 opacity-60'}`}>
+    <div className={`border rounded-lg transition-colors ${
+      factor.display_only
+        ? 'border-slate-700 bg-slate-800/30 opacity-60'
+        : factor.enabled ? 'border-slate-600 bg-slate-800' : 'border-slate-700 bg-slate-800/40 opacity-60'
+    }`}>
       <div className="flex items-center gap-3 px-4 py-3">
-        {/* 开关 */}
+        {/* 开关（display_only 因子禁用开关） */}
         <button
-          onClick={() => onToggle(factor.key, !factor.enabled)}
-          className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${factor.enabled ? 'bg-blue-600' : 'bg-slate-600'}`}
+          onClick={() => !factor.display_only && onToggle(factor.key, !factor.enabled)}
+          disabled={factor.display_only}
+          title={factor.display_only ? '仅用于 K 线详情展示，不参与信号/回测/优化' : undefined}
+          className={`relative w-9 h-5 rounded-full transition-colors flex-shrink-0 ${
+            factor.display_only ? 'bg-slate-700 cursor-not-allowed' : factor.enabled ? 'bg-blue-600' : 'bg-slate-600'
+          }`}
         >
-          <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${factor.enabled ? 'translate-x-4' : ''}`} />
+          <span className={`absolute top-0.5 left-0.5 w-4 h-4 rounded-full bg-white transition-transform ${factor.enabled && !factor.display_only ? 'translate-x-4' : ''}`} />
         </button>
 
         {/* 名称 + 标签 */}
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="text-sm font-medium text-white">{factor.name}</span>
+            <span className={`text-sm font-medium ${factor.display_only ? 'text-slate-400' : 'text-white'}`}>{factor.name}</span>
             <span className={`text-xs px-1.5 py-0.5 rounded border ${sig.color}`}>{sig.label}</span>
             <span className="text-xs text-slate-500 bg-slate-700/50 px-1.5 py-0.5 rounded">
               {CATEGORY_LABELS[factor.category] ?? factor.category}
             </span>
           </div>
-          <div className="text-xs text-slate-500 font-mono mt-0.5">{factor.key}</div>
+          <div className="text-xs text-slate-500 font-mono mt-0.5">
+            {factor.key}
+            {factor.display_only && <span className="ml-2 text-slate-600">· 不参与信号 / 回测 / 优化</span>}
+          </div>
         </div>
 
-        {/* 参数展开 */}
-        {Object.keys(factor.params ?? {}).length > 0 && (
-          <button
-            onClick={() => setExpanded(e => !e)}
-            className="text-xs text-slate-500 hover:text-slate-300 transition-colors flex-shrink-0"
-          >
-            参数 {expanded ? '▲' : '▼'}
-          </button>
+        {/* 参数（直接内联显示） */}
+        {paramEntries.length > 0 && (
+          <div className="flex items-center gap-3 flex-shrink-0">
+            {paramEntries.map(([pname, pmeta]) => (
+              <div key={pname} className="text-right">
+                <div className="text-xs text-slate-500">{pmeta.desc || pname}</div>
+                <div className="font-mono text-sm text-slate-300">{String(pmeta.default)}</div>
+              </div>
+            ))}
+          </div>
         )}
       </div>
-
-      {/* 参数详情 */}
-      {expanded && Object.keys(factor.params ?? {}).length > 0 && (
-        <div className="border-t border-slate-700 px-4 py-3 grid grid-cols-2 md:grid-cols-3 gap-3">
-          {Object.entries(factor.params).map(([pname, pmeta]: [string, any]) => (
-            <div key={pname} className="bg-slate-700/40 rounded p-2">
-              <div className="text-xs text-slate-400">{pmeta.desc || pname}</div>
-              <div className="font-mono text-sm text-white mt-0.5">
-                {String(pmeta.default)}
-                <span className="text-xs text-slate-500 ml-1">({pmeta.type})</span>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
     </div>
   )
 }

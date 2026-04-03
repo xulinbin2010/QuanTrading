@@ -24,6 +24,7 @@ class FactorMeta:
     params: dict                      # {param_name: (default, type, 描述)}
     default_enabled: bool = True      # 默认是否启用
     is_dependency: bool = False       # 纯依赖项（不作为独立信号，不出现在优化器/UI 可选列表）
+    display_only: bool = False        # 仅展示用，不参与买卖信号/回测/优化
 
 
 # ── 延迟导入避免循环依赖 ─────────────────────────────────────────
@@ -113,6 +114,7 @@ def _build_registry() -> dict[str, FactorMeta]:
             signal_type="score",
             params={"period": (14, int, "ATR 计算周期")},
             default_enabled=True,
+            display_only=True,  # 仅用于单股 K 线详情展示，不参与买卖信号/回测/优化
         ),
         # ── 成长因子（基本面，快照）────────────────────────────
         "revenue_growth": FactorMeta(

@@ -15,26 +15,45 @@ const NAV = [
 
 type Theme = 'light' | 'dark' | 'system'
 
+/** 8:00–20:00 本地时间视为白天 */
+function isDayTime() {
+  const h = new Date().getHours()
+  return h >= 8 && h < 20
+}
+
 function useTheme(): [Theme, (t: Theme) => void] {
+  const VALID: Theme[] = ['light', 'dark', 'system']
   const [theme, setThemeState] = useState<Theme>(() => {
-    return (localStorage.getItem('theme') as Theme) ?? 'dark'
+    const saved = localStorage.getItem('theme') as Theme
+    return VALID.includes(saved) ? saved : 'dark'
   })
 
   const applyTheme = (t: Theme) => {
     const html = document.documentElement
-    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-    const isDark = t === 'dark' || (t === 'system' && prefersDark)
-    html.classList.toggle('dark', isDark)
-    html.classList.toggle('light', !isDark)
+    html.classList.remove('day', 'night', 'dark')
+    if (t === 'dark') {
+      html.classList.add('dark')
+    } else if (t === 'light') {
+      // 浅色：按时间段切换白天灰调/夜晚白调
+      html.classList.add(isDayTime() ? 'day' : 'night')
+    } else {
+      // 跟随系统
+      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
+      html.classList.add(prefersDark ? 'dark' : (isDayTime() ? 'day' : 'night'))
+    }
   }
 
   useEffect(() => {
     applyTheme(theme)
-    if (theme !== 'system') return
+    if (theme === 'dark') return
+    // 浅色/跟随系统：每分钟检查时间段
+    const id = setInterval(() => applyTheme(theme), 60_000)
+    if (theme !== 'system') return () => clearInterval(id)
+    // 跟随系统：同时监听系统主题变化
     const mq = window.matchMedia('(prefers-color-scheme: dark)')
-    const handler = () => applyTheme('system')
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
+    const onMqChange = () => applyTheme('system')
+    mq.addEventListener('change', onMqChange)
+    return () => { clearInterval(id); mq.removeEventListener('change', onMqChange) }
   }, [theme])
 
   const setTheme = (t: Theme) => {
@@ -45,7 +64,6 @@ function useTheme(): [Theme, (t: Theme) => void] {
   return [theme, setTheme]
 }
 
-// 主题图标
 function IconSun() {
   return (
     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
@@ -73,7 +91,7 @@ function IconMonitor() {
 const THEMES: { key: Theme; icon: React.ReactNode; label: string }[] = [
   { key: 'light',  icon: <IconSun />,     label: '浅色' },
   { key: 'dark',   icon: <IconMoon />,    label: '深色' },
-  { key: 'system', icon: <IconMonitor />, label: '系统' },
+  { key: 'system', icon: <IconMonitor />, label: '跟随系统' },
 ]
 
 function ThemeToggle() {
@@ -85,7 +103,7 @@ function ThemeToggle() {
     <div className="relative">
       <button
         onClick={() => setOpen(s => !s)}
-        title={`当前：${current.label}`}
+        title={`当前主题：${current.label}`}
         className="flex items-center gap-1.5 px-2 py-1 rounded border border-slate-600 text-slate-400 hover:text-slate-200 hover:border-slate-400 text-xs transition-colors"
       >
         {current.icon}
@@ -97,14 +115,14 @@ function ThemeToggle() {
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 z-50 bg-slate-800 border border-slate-600 rounded-lg shadow-xl overflow-hidden min-w-[90px]">
+          <div className="absolute right-0 top-full mt-1 z-50 bg-slate-800 border border-slate-600 rounded-lg shadow-xl overflow-hidden min-w-[100px]">
             {THEMES.map(t => (
               <button
                 key={t.key}
                 onClick={() => { setTheme(t.key); setOpen(false) }}
                 className={`w-full flex items-center gap-2 px-3 py-2 text-xs transition-colors
                   ${theme === t.key
-                    ? 'bg-blue-600 text-white'
+                    ? 'bg-blue-600 text-white font-medium'
                     : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`}
               >
                 {t.icon}

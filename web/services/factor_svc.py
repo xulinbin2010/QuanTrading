@@ -59,6 +59,7 @@ def get_factor_registry() -> list[dict]:
             'params':       params_info,
             'enabled':       enabled,
             'is_dependency': meta.is_dependency,
+            'display_only':  meta.display_only,
         })
     return result
 

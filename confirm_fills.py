@@ -18,7 +18,9 @@ from ib_insync import ExecutionFilter
 
 from core.connection import IBConnection
 from core.database  import Database
+from core.trading   import Trading
 from core.logger    import get_logger
+import config
 
 logger = get_logger('confirm_fills')
 
@@ -102,9 +104,11 @@ def run(trade_date: str, debug: bool = False):
     ib   = conn.connect()
 
     fill_map, trade_map = _fetch_ib_data(ib, debug)
+    trader = Trading(ib, db=db)
 
     # ── 逐单比对，回写结果 ───────────────────────────────────
-    filled_count   = 0
+    filled_count    = 0
+    partial_count   = 0
     cancelled_count = 0
     unfilled_count  = 0
 
@@ -115,12 +119,35 @@ def run(trade_date: str, debug: bool = False):
         # ① 优先用 reqExecutions（跨 session 可靠）
         fill = fill_map.get(order_id)
         if fill:
-            db.update_order_fill(order_id, fill['avg_price'], fill['shares'], 'Filled')
+            filled_qty = fill['shares']
+            remainder  = int(qty) - int(filled_qty)
+            is_partial = remainder > 0 and int(filled_qty) > 0
+            status     = 'PartialFill' if is_partial else 'Filled'
+
+            db.update_order_fill(order_id, fill['avg_price'], filled_qty, status)
             logger.info(
-                f'[{symbol}] {action} {int(fill["shares"])}股 '
-                f'成交价 ${fill["avg_price"]:.4f}  ✓ Filled'
+                f'[{symbol}] {action} {int(filled_qty)}股 '
+                f'成交价 ${fill["avg_price"]:.4f}  ✓ {status}'
             )
             filled_count += 1
+
+            # 离线兜底：部分成交 → 补挂 DAY 限价单
+            if is_partial and action == 'BUY':
+                partial_count += 1
+                day_limit = round(fill['avg_price'] * (1 + config.MAX_ENTRY_SLIPPAGE), 2)
+                logger.warning(
+                    f'[{symbol}] 部分成交 {int(filled_qty)}/{int(qty)} 股，'
+                    f'补挂 DAY 限价买单 {remainder} 股 @ ${day_limit:.2f}'
+                )
+                trader.limit_buy(symbol, remainder, price=day_limit, tif='DAY')
+            elif is_partial and action == 'SELL':
+                partial_count += 1
+                # 卖出部分成交 — 补挂 DAY 市价卖（确保剩余仓位能清掉）
+                logger.warning(
+                    f'[{symbol}] 卖出部分成交 {int(filled_qty)}/{int(qty)} 股，'
+                    f'补挂 DAY 市价卖单 {remainder} 股'
+                )
+                trader.market_sell(symbol, remainder, tif='DAY')
             continue
 
         # ② 备用：ib.trades()（处理 Cancelled / PreSubmitted 等状态）
@@ -162,7 +189,7 @@ def run(trade_date: str, debug: bool = False):
 
     # ── 汇总 ────────────────────────────────────────────────
     logger.info(
-        f'确认完毕 — 成交 {filled_count} 笔 | '
+        f'确认完毕 — 成交 {filled_count} 笔（其中部分成交补单 {partial_count} 笔）| '
         f'取消 {cancelled_count} 笔 | '
         f'待定/未找到 {unfilled_count} 笔'
     )

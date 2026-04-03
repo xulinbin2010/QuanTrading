@@ -19,9 +19,9 @@ def balance():
 
 
 @router.get('/positions')
-def positions():
+def positions(refresh: bool = Query(False)):
     try:
-        return portfolio_svc.get_positions()
+        return portfolio_svc.get_positions(force_refresh=refresh)
     except RuntimeError as e:
         raise HTTPException(status_code=503, detail=str(e))
 

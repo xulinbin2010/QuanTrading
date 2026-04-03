@@ -11,7 +11,8 @@ export default api
 
 export const getIBStatus   = () => api.get('/portfolio/ib-status').then(r => r.data)
 export const getBalance    = () => api.get('/portfolio/balance').then(r => r.data)
-export const getPositions  = () => api.get('/portfolio/positions').then(r => r.data)
+export const getPositions        = () => api.get('/portfolio/positions').then(r => r.data)
+export const refreshPositions    = () => api.get('/portfolio/positions', { params: { refresh: true } }).then(r => r.data)
 export const getOrders     = (symbol?: string, limit = 50) =>
   api.get('/portfolio/orders', { params: { symbol, limit } }).then(r => r.data)
 export const getAccountHistory = (limit = 90) =>

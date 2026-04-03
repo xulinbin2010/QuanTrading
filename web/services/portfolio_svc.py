@@ -116,8 +116,24 @@ def _get_entry_date(symbol: str, db) -> str | None:
     return None
 
 
-def get_positions() -> list[dict]:
-    """返回当前持仓（需 IB Gateway）"""
+def _reset_connection():
+    """断开并清除 IB 连接单例，供强制刷新时使用。"""
+    global _conn, _ib, _last_attempt
+    with _ib_lock:
+        if _conn is not None:
+            try:
+                _conn.disconnect()
+            except Exception:
+                pass
+        _conn = None
+        _ib = None
+        _last_attempt = 0.0  # 清除冷却计时，允许立即重连
+
+
+def get_positions(force_refresh: bool = False) -> list[dict]:
+    """返回当前持仓（需 IB Gateway）。force_refresh=True 时先断线重连以获取最新数据。"""
+    if force_refresh:
+        _reset_connection()
     _ensure_connected()
     if not _ib or not _ib.isConnected():
         raise RuntimeError("IB Gateway 未连接")

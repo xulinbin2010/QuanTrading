@@ -52,6 +52,8 @@ TRAIL_STOP_PCT          = config.TRAIL_STOP_PCT
 TIME_STOP_DAYS          = config.TIME_STOP_DAYS
 TIME_STOP_MIN_RETURN    = config.TIME_STOP_MIN_RETURN
 
+MAX_ENTRY_SLIPPAGE = config.MAX_ENTRY_SLIPPAGE
+
 # 仓位计算：5 × 15% = 75% 持仓 + 25% 现金保留
 SELL_ON_ALERT    = True   # 量价背离时是否自动卖出（False = 只报警）
 
@@ -94,8 +96,7 @@ def _peak_price(sym: str, avg_cost: float, db) -> float:
 # 现金等价 ETF：占仓时计入现金、不占槽位、跳过止损和信号扫描
 CASH_EQUIV = {'SGOV', 'BIL', 'USFR'}
 
-# OPG 限价保护：最多接受高于昨收 1% 的开盘价，超过则放弃该笔
-MAX_ENTRY_SLIPPAGE = 0.01
+# OPG 限价保护：从 config.py 统一读取（默认 1%），支持 Web UI 修改
 
 # ══════════════════════════════════════════════════════
 
@@ -242,6 +243,65 @@ def get_order_tif(ib) -> str:
       盘前/盘后/周末        → OPG  （下一个开盘集合竞价成交）
     """
     return 'DAY' if market_is_open(ib) else 'OPG'
+
+
+def _handle_opg_partial_fills(ib, trader, opg_buy_trades: list):
+    """
+    【在线路径】等待 OPG 集合竞价完成，检测部分成交并立即补挂 DAY 限价单。
+
+    opg_buy_trades: [(symbol, orig_qty, limit_price, trade), ...]
+    逻辑：
+      - 完全成交 → 无需处理
+      - 零成交   → 开盘价超限，跳过（不追高）
+      - 部分成交 → 补挂 DAY 限价单，限价 = 实际成交均价 × (1 + MAX_ENTRY_SLIPPAGE)
+    """
+    import time as _time
+
+    et = datetime.now(ZoneInfo('America/New_York'))
+    # 等到 9:32 ET，给集合竞价留足时间
+    target = et.replace(hour=9, minute=32, second=0, microsecond=0)
+    wait_sec = (target - et).total_seconds()
+
+    if wait_sec > 0:
+        mins = wait_sec / 60
+        print(f"\n[补单监控] OPG 单已提交，等待开盘集合竞价完成（约 {mins:.0f} 分钟后检查）...")
+        print(f"  可按 Ctrl+C 跳过等待（已提交的 OPG 单将继续在交易所执行）")
+        try:
+            _time.sleep(wait_sec)
+        except KeyboardInterrupt:
+            print(f"\n[补单监控] 跳过等待，改由 confirm_fills.py 在 9:35 处理部分成交")
+            return
+
+    ib.sleep(2)   # pump ib_insync event loop，刷新订单状态
+
+    print(f"\n[补单监控] 检查 OPG 买入单成交情况...")
+    补单_count = 0
+    for symbol, orig_qty, limit_price, trade in opg_buy_trades:
+        if trade is None:
+            continue
+        filled   = float(trade.orderStatus.filled)
+        remainder = orig_qty - int(filled)
+
+        if remainder <= 0:
+            print(f"  [{symbol}] 完全成交 {orig_qty} 股 ✓")
+            continue
+
+        if filled < 0.5:
+            print(f"  [{symbol}] OPG 单零成交（开盘价超限价 ${limit_price:.2f}），不追高，跳过")
+            continue
+
+        # 部分成交 — 补一笔 DAY 限价单
+        avg_fill  = float(trade.orderStatus.avgFillPrice) or limit_price
+        day_limit = round(avg_fill * (1 + MAX_ENTRY_SLIPPAGE), 2)
+        print(f"  [{symbol}] 部分成交 {int(filled)}/{orig_qty} 股，"
+              f"补挂 DAY 限价单 {remainder} 股 @ ${day_limit:.2f}")
+        trader.limit_buy(symbol, remainder, price=day_limit, tif='DAY')
+        补单_count += 1
+
+    if 补单_count == 0:
+        print(f"  所有 OPG 单均已完整成交或零成交，无需补单")
+    else:
+        print(f"[补单监控] 已补挂 {补单_count} 笔 DAY 限价单")
 
 
 def execute(signals: dict, dry_run: bool = True):
@@ -523,6 +583,7 @@ def execute(signals: dict, dry_run: bool = True):
                 sector_counts[sec] = sector_counts.get(sec, 0) + 1
 
         executed = 0
+        opg_buy_trades: list = []   # [(symbol, orig_qty, limit_price, trade)] 供补单监控用
         for sig in buy_list:
             if executed >= slots:
                 break
@@ -553,6 +614,7 @@ def execute(signals: dict, dry_run: bool = True):
                         print(f"  → [ERROR] {symbol} 买入单提交失败，请手动处理！")
                     else:
                         print(f"  → 已下限价 OPG 单（开盘超过 ${limit_price:.2f} 则自动放弃）")
+                        opg_buy_trades.append((symbol, qty, limit_price, trade))
                 else:
                     print(f"  → [dry-run] 将下限价 OPG 单 ${limit_price:.2f}")
             else:
@@ -570,6 +632,10 @@ def execute(signals: dict, dry_run: bool = True):
                     print(f"  → [dry-run] 将下 {tif_label}")
             sector_counts[sec] = sector_counts.get(sec, 0) + 1
             executed += 1
+
+        # 在线路径：等待开盘集合竞价完成，检测并补充部分成交订单
+        if opg_buy_trades:
+            _handle_opg_partial_fills(ib, trader, opg_buy_trades)
 
     conn.disconnect()
     db.close()

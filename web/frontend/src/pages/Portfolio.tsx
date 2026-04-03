@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { getAccountHistory, getOrders, getBalance, getPositions } from '../api/client'
+import { getAccountHistory, getOrders, getBalance, getPositions, refreshPositions } from '../api/client'
 import ReactECharts from 'echarts-for-react'
 import { useState } from 'react'
 
@@ -130,13 +130,17 @@ export default function Portfolio() {
               onClick={async () => {
                 setSpinning(true)
                 setRefreshMsg(null)
-                const [result] = await Promise.all([
-                  refetchPositions(),
-                  new Promise(r => setTimeout(r, 600)),
-                ])
-                setSpinning(false)
-                setRefreshMsg(result.status === 'error' ? 'error' : 'ok')
-                setTimeout(() => setRefreshMsg(null), 2500)
+                try {
+                  // 强制断线重连以获取 IB 最新持仓（绕过缓存）
+                  await refreshPositions()
+                  await refetchPositions()
+                  setRefreshMsg('ok')
+                } catch {
+                  setRefreshMsg('error')
+                } finally {
+                  setSpinning(false)
+                  setTimeout(() => setRefreshMsg(null), 2500)
+                }
               }}
               disabled={spinning}
               className="flex items-center gap-1 text-xs text-slate-400 hover:text-white disabled:opacity-40 transition-colors"

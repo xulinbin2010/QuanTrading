@@ -51,7 +51,9 @@
       "Bash(wc -l pages/*.tsx)",
       "Read(//tmp/**)",
       "Bash(bash /tmp/detailed_scan.sh)",
-      "Bash(xargs cat:*)"
+      "Bash(xargs cat:*)",
+      "Bash(npx tsc:*)",
+      "Bash(python3 -c ':*)"
     ]
   }
 }

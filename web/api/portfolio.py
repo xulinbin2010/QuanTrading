@@ -36,6 +36,15 @@ def account_history(limit: int = Query(90, le=500)):
     return portfolio_svc.get_account_history(limit=limit)
 
 
+@router.get('/performance')
+def performance(days: int = Query(30, ge=7, le=730)):
+    from web.services import performance_svc
+    try:
+        return performance_svc.get_performance(days=days)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get('/signals')
 def signals(universe: str = Query('sp500')):
     try:

@@ -70,8 +70,8 @@ html.day {
   color-scheme: light;
 
   /* 背景色层次：主背景 → 卡片 → hover → 边框 */
-  --color-slate-950: #f0f0f0;
-  --color-slate-900: #ffffff;   /* 主背景：纯白 */
+  --color-slate-950: #e8edf4;
+  --color-slate-900: #edf0f5;   /* 主背景：浅灰蓝 */
   --color-slate-800: #ffffff;   /* 卡片 / 侧边栏：纯白 */
   --color-slate-700: #dde5f0;   /* hover / tab 选中：明显深于白色卡片 */
   --color-slate-600: #c8d3e0;   /* 边框：清晰可见 */
@@ -87,8 +87,8 @@ html.day {
   /* text-white → 深色文字（用于浅色背景上的按钮文字） */
   --color-white: #1a2636;
 
-  /* 选中/激活态：与深色模式相同的橙色，深背景+深文字（--color-white已覆盖为深色）*/
-  --color-blue-900: #fff7ed;   /* info 框背景（浅橙，保持轻量） */
+  /* 选中/激活态：与深色模式相同的橙色 */
+  --color-blue-900: #fff7ed;   /* info 框背景 */
   --color-blue-800: #fed7aa;   /* info 框边框 */
   --color-blue-300: #9a3412;   /* info 框文字 */
 
@@ -118,7 +118,7 @@ html.day {
 }
 
 html.day body {
-  background-color: #ffffff;
+  background-color: #edf0f5;
   color: #1a2636;
 }
 
@@ -134,8 +134,8 @@ html.night {
   color-scheme: light;
 
   /* 背景色层次 */
-  --color-slate-950: #f0f0f0;
-  --color-slate-900: #ffffff;   /* 主背景：纯白 */
+  --color-slate-950: #edeae4;
+  --color-slate-900: #f0ede7;   /* 主背景：浅暖灰 */
   --color-slate-800: #ffffff;   /* 卡片：纯白 */
   --color-slate-700: #e3e0d8;   /* hover / tab 选中：明显深于卡片 */
   --color-slate-600: #d0cdc4;   /* 边框 */
@@ -182,7 +182,7 @@ html.night {
 }
 
 html.night body {
-  background-color: #ffffff;
+  background-color: #f0ede7;
   color: #1c1a14;
 }
 

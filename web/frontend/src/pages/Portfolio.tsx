@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query'
-import { getAccountHistory, getOrders, getBalance, getPositions, refreshPositions } from '../api/client'
+import { getOrders, getBalance, getPositions, refreshPositions, getEarningsDates, getPerformance } from '../api/client'
 import ReactECharts from 'echarts-for-react'
 import { useState } from 'react'
 
@@ -21,33 +21,163 @@ function fmt(n?: number) {
 }
 
 
-function EquityChart({ data }: { data: { snapshot_at: string; net_liquidation: number }[] }) {
-  if (!data.length) return <div className="text-slate-500 text-sm py-8 text-center">暂无净值数据</div>
-  const option = {
+type PeriodKey = '2W' | '1M' | '3M' | 'YTD'
+const PERIOD_DAYS: Record<PeriodKey, () => number> = {
+  '2W':  () => 14,
+  '1M':  () => 30,
+  '3M':  () => 90,
+  'YTD': () => {
+    const now = new Date()
+    return Math.round((now.getTime() - new Date(now.getFullYear(), 0, 1).getTime()) / 86_400_000)
+  },
+}
+
+function pct(v?: number, prefix = true) {
+  if (v === undefined || v === null) return '-'
+  const sign = v >= 0 ? (prefix ? '+' : '') : ''
+  return `${sign}${v.toFixed(2)}%`
+}
+
+function PerfCard({ label, value, color }: { label: string; value: string; color?: string }) {
+  return (
+    <div className="bg-slate-900/60 rounded-lg px-4 py-3 border border-slate-700/60 text-center">
+      <div className="text-xs text-slate-400 mb-1">{label}</div>
+      <div className={`text-base font-semibold tabular-nums ${color ?? 'text-white'}`}>{value}</div>
+    </div>
+  )
+}
+
+function PerformanceSection() {
+  const [period, setPeriod] = useState<PeriodKey>('1M')
+  const days = PERIOD_DAYS[period]()
+
+  const { data, isLoading } = useQuery({
+    queryKey: ['performance', period],
+    queryFn: () => getPerformance(days),
+    staleTime: 10 * 60_000,
+    retry: false,
+  })
+
+  const nav: { date: string; value: number }[]  = data?.nav  ?? []
+  const spy: { date: string; value: number }[]  = data?.spy  ?? []
+  const m = data?.metrics ?? {}
+
+  const chartOption = {
     backgroundColor: 'transparent',
-    tooltip: { trigger: 'axis', formatter: (p: any) => `${p[0].name}<br/>净值: $${p[0].value.toLocaleString()}` },
-    grid: { left: 60, right: 20, top: 20, bottom: 40 },
+    tooltip: {
+      trigger: 'axis',
+      backgroundColor: '#1e293b',
+      borderColor: '#334155',
+      textStyle: { color: '#e2e8f0', fontSize: 12 },
+      formatter: (params: any[]) =>
+        `${params[0].name}<br/>` +
+        params.map((p: any) => `<span style="color:${p.color}">●</span> ${p.seriesName}: ${p.value?.toFixed(2)}`).join('<br/>'),
+    },
+    legend: {
+      data: ['Portfolio', 'SPY'],
+      textStyle: { color: '#94a3b8', fontSize: 11 },
+      top: 4,
+      right: 8,
+    },
+    grid: { left: 48, right: 16, top: 32, bottom: 36 },
     xAxis: {
       type: 'category',
-      data: data.map(d => d.snapshot_at.slice(0, 10)),
-      axisLabel: { color: '#94a3b8', fontSize: 11 },
-      axisLine: { lineStyle: { color: '#334155' } },
+      data: nav.map(d => d.date),
+      axisLabel: { color: '#64748b', fontSize: 10 },
+      axisLine: { lineStyle: { color: '#1e293b' } },
+      boundaryGap: false,
     },
     yAxis: {
       type: 'value',
-      axisLabel: { color: '#94a3b8', fontSize: 11, formatter: (v: number) => '$' + (v / 1000).toFixed(0) + 'K' },
+      min: (e: { min: number }) => parseFloat((e.min * 0.995).toFixed(2)),
+      max: (e: { max: number }) => parseFloat((e.max * 1.005).toFixed(2)),
+      axisLabel: { color: '#64748b', fontSize: 10, formatter: (v: number) => v.toFixed(1) },
       splitLine: { lineStyle: { color: '#1e293b' } },
     },
-    series: [{
-      type: 'line',
-      data: data.map(d => d.net_liquidation),
-      smooth: true,
-      symbol: 'none',
-      lineStyle: { color: '#3b82f6', width: 2 },
-      areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(59,130,246,0.3)' }, { offset: 1, color: 'rgba(59,130,246,0.02)' }] } },
-    }],
+    series: [
+      {
+        name: 'Portfolio',
+        type: 'line',
+        data: nav.map(d => d.value),
+        smooth: false,
+        symbol: 'none',
+        lineStyle: { color: '#3b82f6', width: 2 },
+        areaStyle: { color: { type: 'linear', x: 0, y: 0, x2: 0, y2: 1, colorStops: [{ offset: 0, color: 'rgba(59,130,246,0.18)' }, { offset: 1, color: 'rgba(59,130,246,0.01)' }] } },
+      },
+      {
+        name: 'SPY',
+        type: 'line',
+        data: spy.map(d => d.value),
+        smooth: false,
+        symbol: 'none',
+        lineStyle: { color: '#f97316', width: 1.5, type: 'dashed' },
+      },
+    ],
   }
-  return <ReactECharts option={option} style={{ height: 200 }} />
+
+  return (
+    <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
+      {/* 标题 + 周期选择 */}
+      <div className="flex items-center justify-between mb-3">
+        <span className="text-sm font-medium text-slate-300">业绩复盘</span>
+        <div className="flex gap-1">
+          {(['2W', '1M', '3M', 'YTD'] as PeriodKey[]).map(p => (
+            <button
+              key={p}
+              onClick={() => setPeriod(p)}
+              className={`px-2.5 py-0.5 text-xs rounded font-medium transition-colors
+                ${period === p
+                  ? 'bg-blue-600 text-white'
+                  : 'bg-slate-700 text-slate-400 hover:text-white'}`}
+            >
+              {p}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 指标卡片 */}
+      {isLoading ? (
+        <div className="text-slate-500 text-xs py-2">计算中...</div>
+      ) : !data?.has_data ? (
+        <div className="text-slate-500 text-sm py-4 text-center">暂无账户快照数据，请先连接 IB Gateway</div>
+      ) : (
+        <>
+          <div className="grid grid-cols-5 gap-2 mb-4">
+            <PerfCard
+              label="区间收益"
+              value={pct(m.total_return)}
+              color={(m.total_return ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}
+            />
+            <PerfCard
+              label="年化收益"
+              value={pct(m.annualized)}
+              color={(m.annualized ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}
+            />
+            <PerfCard
+              label="Sharpe"
+              value={m.sharpe !== undefined ? m.sharpe.toFixed(2) : '-'}
+              color={(m.sharpe ?? 0) >= 1 ? 'text-green-400' : (m.sharpe ?? 0) >= 0 ? 'text-yellow-400' : 'text-red-400'}
+            />
+            <PerfCard
+              label="最大回撤"
+              value={pct(m.max_drawdown)}
+              color="text-red-400"
+            />
+            <PerfCard
+              label="超额 SPY"
+              value={pct(m.excess_spy)}
+              color={(m.excess_spy ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}
+            />
+          </div>
+          <ReactECharts option={chartOption} style={{ height: 220 }} />
+          <div className="text-right text-xs text-slate-600 mt-1">
+            {m.data_from ? `${m.data_from} 起` : ''} · {m.period_days} 个快照，两线均归一至 100
+          </div>
+        </>
+      )}
+    </div>
+  )
 }
 
 export default function Portfolio() {
@@ -75,10 +205,12 @@ export default function Portfolio() {
     refetchInterval: 30_000,
   })
 
-  const { data: history = [] } = useQuery({
-    queryKey: ['account-history'],
-    queryFn: () => getAccountHistory(90),
-    refetchInterval: 60_000,
+  const posSymbols = (positions ?? []).map((p: any) => p.symbol).filter(Boolean)
+  const { data: earningsDates } = useQuery<Record<string, string | null>>({
+    queryKey: ['earnings', posSymbols.join(',')],
+    queryFn: () => posSymbols.length ? getEarningsDates(posSymbols) : Promise.resolve({}),
+    enabled: posSymbols.length > 0,
+    staleTime: 12 * 60 * 60_000,
   })
 
   const ibOffline = balanceErr && posErr
@@ -110,11 +242,8 @@ export default function Portfolio() {
         <StatCard label="购买力" value={fmt(balance?.buying_power)} />
       </div>
 
-      {/* 净值曲线 */}
-      <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-        <div className="text-sm font-medium text-slate-300 mb-3">账户净值历史</div>
-        <EquityChart data={history} />
-      </div>
+      {/* 业绩复盘 */}
+      <PerformanceSection />
 
       {/* 持仓表格 */}
       <div className="bg-slate-800 rounded-lg border border-slate-700">
@@ -159,7 +288,7 @@ export default function Portfolio() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-slate-400 text-xs border-b border-slate-700">
-                  {['股票', '买入日', '数量', '均价', '现价', '市值', '浮盈', '浮盈%'].map(h => (
+                  {['股票', '买入日', '数量', '均价', '现价', '市值', '浮盈', '浮盈%', '财报'].map(h => (
                     <th key={h} className="px-4 py-2 text-left font-medium">{h}</th>
                   ))}
                 </tr>
@@ -178,6 +307,15 @@ export default function Portfolio() {
                     </td>
                     <td className={`px-4 py-2 font-mono font-medium ${p.unrealized_pnl_pct >= 0 ? 'text-green-400' : 'text-red-400'}`}>
                       {p.unrealized_pnl_pct >= 0 ? '+' : ''}{(p.unrealized_pnl_pct * 100).toFixed(2)}%
+                    </td>
+                    <td className="px-4 py-2 font-mono text-xs">
+                      {(() => {
+                        const d = earningsDates?.[p.symbol]
+                        if (!d) return <span className="text-slate-500">-</span>
+                        const days = Math.round((new Date(d).getTime() - Date.now()) / 86400_000)
+                        const color = days <= 2 ? 'text-red-400 font-semibold' : days <= 7 ? 'text-yellow-400' : 'text-slate-400'
+                        return <span className={color} title={`${days}天后`}>{d.slice(5)}</span>
+                      })()}
                     </td>
                   </tr>
                 ))}
@@ -211,20 +349,24 @@ export default function Portfolio() {
                 </tr>
               </thead>
               <tbody>
-                {orders.map((o: any) => (
-                  <tr key={o.id} className="border-b border-slate-700/50 hover:bg-slate-700/30 text-xs">
+                {orders.map((o: any) => {
+                  const filled = o.status === 'Filled' || o.status === 'PartialFill'
+                  const dim = !filled ? 'opacity-40' : ''
+                  return (
+                  <tr key={o.id} className={`border-b border-slate-700/50 hover:bg-slate-700/30 text-xs ${dim}`}>
                     <td className="px-4 py-2 text-slate-400 font-mono">{o.created_at}</td>
-                    <td className="px-4 py-2 font-mono text-white">{o.symbol}</td>
-                    <td className={`px-4 py-2 font-semibold ${o.action === 'BUY' ? 'text-green-400' : 'text-red-400'}`}>
+                    <td className={`px-4 py-2 font-mono ${filled ? 'text-white' : 'text-slate-400'}`}>{o.symbol}</td>
+                    <td className={`px-4 py-2 font-semibold ${filled ? (o.action === 'BUY' ? 'text-green-400' : 'text-red-400') : 'text-slate-500'}`}>
                       {o.action}
                     </td>
-                    <td className="px-4 py-2 text-slate-300">{o.order_type}</td>
+                    <td className="px-4 py-2 text-slate-400">{o.order_type}</td>
                     <td className="px-4 py-2">{o.quantity}</td>
                     <td className="px-4 py-2">{o.price ? `$${o.price.toFixed(2)}` : '市价'}</td>
                     <td className="px-4 py-2">{o.filled_price ? `$${o.filled_price.toFixed(2)}` : '-'}</td>
-                    <td className="px-4 py-2 text-slate-400">{o.status}</td>
+                    <td className={`px-4 py-2 ${filled ? 'text-slate-300' : 'text-slate-500'}`}>{o.status}</td>
                   </tr>
-                ))}
+                )})}
+
               </tbody>
             </table>
           </div>

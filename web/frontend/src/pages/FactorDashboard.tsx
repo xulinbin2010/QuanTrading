@@ -108,8 +108,6 @@ function FactorCard({ factor, onToggle }: { factor: any; onToggle: (key: string,
   )
 }
 
-const UNIVERSES = ['sp500', 'nasdaq100', 'russell2000']
-
 // ── 信号标签列表 ───────────────────────────────────────────
 function SignalTags({ signals, color }: { signals: any[]; color: 'green' | 'red' }) {
   const cls = color === 'green'
@@ -133,7 +131,7 @@ function SignalTags({ signals, color }: { signals: any[]; color: 'green' | 'red'
 // ── 主页面 ────────────────────────────────────────────────
 export default function FactorDashboard() {
   const [showRegistry, setShowRegistry] = useState(true)
-  const [universe, setUniverse] = useState('sp500')
+  const [universe] = useState('sp500+ndx')
   const [previewResult, setPreviewResult] = useState<any>(null)
   const [trailResults, setTrailResults] = useState<any[]>([])
   const [trailLoading, setTrailLoading] = useState(false)
@@ -231,13 +229,7 @@ export default function FactorDashboard() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-white">因子看板</h1>
-        <select
-          className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none"
-          value={universe}
-          onChange={e => { setUniverse(e.target.value); setPreviewResult(null) }}
-        >
-          {UNIVERSES.map(u => <option key={u} value={u}>{u}</option>)}
-        </select>
+        <span className="text-xs text-slate-400 bg-slate-700 border border-slate-600 rounded px-2 py-1">sp500+ndx</span>
       </div>
 
       {/* 策略概览 */}

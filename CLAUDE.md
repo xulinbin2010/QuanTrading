@@ -286,12 +286,10 @@ start_web.sh         # 一键启动脚本
 
 ---
 
-## 已知待做事项（P1）
+## 已知待做事项
 
 | 优先级 | 内容 | 文件 |
 |--------|------|------|
-| P1 | 行业集中度限制（`MAX_PER_SECTOR=2`） | `auto_trader.py`, `config.py` |
-| P1 | SPY 熔断机制（近20日跌超8%暂停买入） | `auto_trader.py`, `config.py` |
 | P2 | 回测加入 OPG 滑点保护（与实盘对齐） | `tests/backtest_rs.py` |
 | P2 | scanner 加入市值/行业过滤 | `sp500_scanner.py` |
 

@@ -1,6 +1,6 @@
 """
 股票池管理。优先从 Wikipedia 拉最新成分股，失败则用内置列表。
-支持：S&P 500 / NASDAQ-100 / Russell 2000
+支持：S&P 500 / NASDAQ-100 / S&P500+NDX合并池
 """
 import io
 import os
@@ -47,53 +47,21 @@ _BUILTIN_NDX = [
     'ZS','DDOG','TEAM','OKTA','ALGN','ILMN','LCID','RIVN','ZM',
 ]
 
-# ── 内置 Russell 2000 代表性列表（小市值）───────────────────────
-_BUILTIN_RUT = [
-    # 科技/软件
-    'SMAR','CVLT','ALKT','CARG','PRCT','JAMF','NCNO','BRZE','TOST',
-    'MNDY','FRSH','GTLB','S','ALIT','ENFN','PCTY',
-    # 半导体/硬件
-    'DIOD','SMTC','AOSL','POWI','AMBA','FORM','MKSI','CRUS','SITM',
-    'AEHR','ACLS','ONTO','IOSP','COHU',
-    # 生物医药
-    'RXRX','XNCR','PRAX','ITOS','ACLX','BEAM','EDIT','NTLA','VERV',
-    'ARRY','KROS','IMVT','ITRI','DCPH','FOLD','IOVA','MRUS',
-    'HALO','ANAB','ACAD','PRTA','RVMD','TARS','RYTM',
-    # 金融
-    'CATY','PPBI','FULT','WSFS','TOWN','EGBN','BHLB','FFIN','FBIZ',
-    'HCI','GLPI','KREF','GPMT','RC','PFSI','UWMC',
-    # 消费/零售
-    'XPOF','ELF','HAYW','PLAY','JACK','SHAK','CAKE','BJRI','DENN',
-    'DIN','WING','TXRH','BROS','CAVA',
-    # 工业
-    'AAON','CSWI','IBP','JBI','LMAT','MGRC','PFGC','ATKR','TREX',
-    'KTOS','AXON','ASGN','CACI','VSE','MANT',
-    # REITs/地产
-    'NHI','IIPR','STAG','REXR','COLD','CUBE','EXR','NSA','SELF',
-    # 能源
-    'CIVI','MNRL','PHX','REX','FLNG','TALO','CRGY','GPOR',
-    # 医疗器械/服务
-    'ITGR','OMCL','MMSI','LNTH','INVA','NVCR','TMDX','IRTC',
-    'PRVA','ADUS','AMED','SGRY','OPCH',
-    # 其他
-    'ALRS','YELP','UWMC','BIGC','SDGR','AI','LMND','ROOT','HIPPO',
-    'OPEN','HIMS','CVNA','OLPX','HYLN','LAZR','MVIS',
-]
-
 _BUILTIN_SP500 = sorted(set(_BUILTIN_SP500))
 _BUILTIN_NDX   = sorted(set(_BUILTIN_NDX))
-_BUILTIN_RUT   = sorted(set(_BUILTIN_RUT))
 
 
 # ── 公共获取函数 ──────────────────────────────────────────────────
 
 def get_sp500_tickers(extra: list[str] = None) -> list[str]:
-    tickers = _try_wikipedia(
-        url='https://en.wikipedia.org/wiki/List_of_S%26P_500_companies',
-        table_id='constituents',
-        col='Symbol',
-        label='S&P 500',
-    ) or list(_BUILTIN_SP500)
+    tickers = (_try_ivv_holdings()
+               or _try_wikipedia(
+                   url='https://en.wikipedia.org/wiki/List_of_S%26P_500_companies',
+                   table_id='constituents',
+                   col='Symbol',
+                   label='S&P 500',
+               )
+               or list(_BUILTIN_SP500))
     return _append_extra(tickers, extra)
 
 
@@ -106,11 +74,6 @@ def get_nasdaq100_tickers(extra: list[str] = None) -> list[str]:
     ) or list(_BUILTIN_NDX)
     return _append_extra(tickers, extra)
 
-
-def get_russell2000_tickers(extra: list[str] = None) -> list[str]:
-    """Russell 2000 无公开完整列表，使用内置代表性小市值股票"""
-    print(f"  使用内置 Russell 2000 代表性列表（{len(_BUILTIN_RUT)} 只）")
-    return _append_extra(list(_BUILTIN_RUT), extra)
 
 
 _STOCK_INFO_CACHE = os.path.join(os.path.dirname(__file__), '..', '.stock_info_cache.pkl')
@@ -176,22 +139,69 @@ def get_stock_info(symbols: list[str]) -> dict[str, dict]:
     return {s: cache[s] for s in symbols if s in cache}
 
 
+def get_sp500_ndx_tickers(extra: list[str] = None) -> list[str]:
+    """S&P 500 + NASDAQ 100 合并去重，保留大盘流动性好的股票池。"""
+    sp5 = get_sp500_tickers()
+    ndx = get_nasdaq100_tickers()
+    combined = list(dict.fromkeys(sp5 + [t for t in ndx if t not in set(sp5)]))
+    ndx_only = [t for t in ndx if t not in set(sp5)]
+    print(f"  合并股票池：S&P500({len(sp5)}) + NDX独有({len(ndx_only)}) = {len(combined)} 只")
+    if extra:
+        for t in extra:
+            if t.upper() not in combined:
+                combined.append(t.upper())
+    return combined
+
+
 def get_tickers(universe: str = 'sp500', extra: list[str] = None) -> list[str]:
     """统一入口，按名称选择股票池"""
     mapping = {
+        'sp500+ndx':  get_sp500_ndx_tickers,
         'sp500':      get_sp500_tickers,
         'nasdaq100':  get_nasdaq100_tickers,
         'ndx':        get_nasdaq100_tickers,
-        'russell2000': get_russell2000_tickers,
-        'rut':        get_russell2000_tickers,
     }
     fn = mapping.get(universe.lower())
     if fn is None:
-        raise ValueError(f"未知股票池：{universe}，可选：sp500 / nasdaq100 / russell2000")
+        raise ValueError(f"未知股票池：{universe}，可选：sp500+ndx / sp500 / nasdaq100")
     return fn(extra=extra)
 
 
 # ── 内部工具函数 ──────────────────────────────────────────────────
+
+def _try_ivv_holdings() -> list[str]:
+    """从 iShares IVV ETF 官方持仓 CSV 获取 S&P 500 成分股（每日更新，比 Wikipedia 更准确）。"""
+    url = (
+        'https://www.ishares.com/us/products/239726/ishares-core-sp-500-etf'
+        '/1467271812596.ajax?fileType=csv&fileName=IVV_holdings&dataType=fund'
+    )
+    headers = {
+        'User-Agent': (
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) '
+            'Chrome/120.0.0.0 Safari/537.36'
+        )
+    }
+    # IVV ticker 与 yfinance 格式差异映射
+    _TICKER_FIX = {'BRKB': 'BRK-B', 'BFB': 'BF-B'}
+    try:
+        resp = requests.get(url, headers=headers, timeout=15)
+        resp.raise_for_status()
+        df = pd.read_csv(io.StringIO(resp.text), skiprows=9)
+        stocks = df[df['Asset Class'] == 'Equity']
+        tickers = (
+            stocks['Ticker']
+            .dropna()
+            .str.strip()
+            .map(lambda t: _TICKER_FIX.get(t, t))
+            .tolist()
+        )
+        print(f"  iShares IVV 获取成功：{len(tickers)} 只 S&P 500 成分股")
+        return tickers
+    except Exception as e:
+        print(f"  iShares IVV 请求失败，回退 Wikipedia：{e}")
+        return []
+
 
 def _try_wikipedia(url: str, table_id: str, col: str, label: str) -> list[str]:
     headers = {

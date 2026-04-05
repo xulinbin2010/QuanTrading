@@ -17,7 +17,9 @@ export const getOrders     = (symbol?: string, limit = 50) =>
   api.get('/portfolio/orders', { params: { symbol, limit } }).then(r => r.data)
 export const getAccountHistory = (limit = 90) =>
   api.get('/portfolio/account-history', { params: { limit } }).then(r => r.data)
-export const getSignals = (universe = 'sp500') =>
+export const getPerformance = (days = 30) =>
+  api.get('/portfolio/performance', { params: { days } }).then(r => r.data)
+export const getSignals = (universe = 'sp500+ndx') =>
   api.get('/portfolio/signals', { params: { universe } }).then(r => r.data)
 
 // ── 因子看板 ──────────────────────────────────────────────
@@ -29,6 +31,10 @@ export const scanFactors   = (universe: string, top = 50, force = false) =>
   api.get('/factors/scan', { params: { universe, top, force } }).then(r => r.data)
 export const getStockDetail = (symbol: string, days = 120) =>
   api.get(`/factors/stock/${symbol}`, { params: { days } }).then(r => r.data)
+export const getInsiderData    = () => api.get('/factors/insider').then(r => r.data)
+export const getEarningsDates  = (symbols: string[]) =>
+  api.get('/factors/earnings', { params: { symbols: symbols.join(',') } }).then(r => r.data as Record<string, string | null>)
+
 export const clearFactorCache = (universe?: string) =>
   api.delete('/factors/cache', { params: { universe } }).then(r => r.data)
 export const getFactorRegistry = () =>

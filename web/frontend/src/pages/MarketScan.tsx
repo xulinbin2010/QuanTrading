@@ -1,9 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { scanFactors, getStockDetail } from '../api/client'
+import { scanFactors, getStockDetail, getInsiderData } from '../api/client'
 import ReactECharts from 'echarts-for-react'
-
-const UNIVERSES = ['sp500', 'nasdaq100', 'russell2000']
 
 // ── 基础组件 ──────────────────────────────────────────────
 
@@ -200,20 +198,28 @@ function StockDetailPanel({ symbol, onClose }: { symbol: string; onClose: () => 
 // ── 主页面 ────────────────────────────────────────────────
 
 export default function MarketScan() {
-  const [universe, setUniverse] = useState('sp500')
+  const [tab, setTab] = useState<'scan' | 'insider'>('scan')
+  const [universe] = useState('sp500+ndx')
   const [selected, setSelected] = useState<string | null>(null)
   const [showCoverage, setShowCoverage] = useState(false)
   const [scanState, setScanState] = useState<'idle' | 'scanning' | 'done'>('idle')
   const queryClient = useQueryClient()
 
-  // 页面加载时自动向后端拉取一次（后端有 1 小时缓存，命中则毫秒返回，不会重复扫描）
-  // 手动点"重新扫描"时传 force=true 强制绕过后端缓存
+  // 因子扫描
   const { data: scanResult, dataUpdatedAt, isFetching: isAutoFetching } = useQuery({
     queryKey: ['factors-scan', universe],
     queryFn: () => scanFactors(universe, 100),
-    staleTime: Infinity,      // 前端缓存永不过期，不自动重新请求
-    gcTime: 24 * 3_600_000,   // 保留 24 小时内存缓存
+    staleTime: Infinity,
+    gcTime: 24 * 3_600_000,
     refetchOnWindowFocus: false,
+  })
+
+  // 内部人买入
+  const { data: insiderRows = [], isLoading: insiderLoading, refetch: refetchInsider } = useQuery({
+    queryKey: ['insider-data'],
+    queryFn: getInsiderData,
+    staleTime: 20 * 3_600_000,
+    retry: false,
   })
 
   // 兼容新格式 {rows, coverage, total} 和旧格式 []
@@ -247,13 +253,11 @@ export default function MarketScan() {
     { key: 'pb_ratio', label: 'PB', render: (v: any) => <FmtNum v={v} decimals={2} suffix="x" /> },
   ]
 
-  // 只显示有至少 10% 覆盖率的基本面列
   const activeFundCols = fundamentalCols.filter(col => {
     const cov = coverage[col.key]
     return cov && cov.pct > 10
   })
 
-  // 覆盖率摘要展示的因子
   const coverageEntries = Object.entries(coverage).filter(([, v]: any) => v.total > 0)
 
   return (
@@ -262,110 +266,189 @@ export default function MarketScan() {
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-white">市场扫描</h1>
         <div className="flex items-center gap-3">
-          {lastScan
-            ? <span className="text-xs text-slate-400">上次扫描：{lastScan}</span>
-            : isAutoFetching
-              ? <span className="text-xs text-slate-500">加载中...</span>
-              : <span className="text-xs text-slate-500">尚未扫描（每日收盘后自动执行，或手动触发）</span>
-          }
-          {totalScanned > 0 && <span className="text-xs text-slate-500">{rows.length}/{totalScanned} 只</span>}
-          <select
-            className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-sm text-white focus:outline-none"
-            value={universe}
-            onChange={e => setUniverse(e.target.value)}
-          >
-            {UNIVERSES.map(u => <option key={u} value={u}>{u}</option>)}
-          </select>
-          <button
-            onClick={() => setShowCoverage(s => !s)}
-            className="px-2 py-1 text-xs border border-slate-600 text-slate-400 hover:text-white hover:border-slate-400 rounded transition-colors"
-          >
-            覆盖率
-          </button>
-          <button
-            onClick={refresh}
-            disabled={scanState === 'scanning'}
-            className={`px-3 py-1 text-sm text-white rounded transition-colors disabled:cursor-not-allowed
-              ${scanState === 'done'
-                ? 'bg-green-600 hover:bg-green-600'
-                : 'bg-blue-600 hover:bg-blue-500 disabled:opacity-50'
-              }`}
-          >
-            {scanState === 'scanning' && (
-              <span className="inline-flex items-center gap-1.5">
-                <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
-                </svg>
-                扫描中...
-              </span>
-            )}
-            {scanState === 'done' && '扫描完成 ✓'}
-            {scanState === 'idle' && '重新扫描'}
-          </button>
+          <span className="text-xs text-slate-400 bg-slate-700 border border-slate-600 rounded px-2 py-1">sp500+ndx</span>
+          {tab === 'scan' && (
+            <>
+              {lastScan
+                ? <span className="text-xs text-slate-400">上次扫描：{lastScan}</span>
+                : isAutoFetching
+                  ? <span className="text-xs text-slate-500">加载中...</span>
+                  : <span className="text-xs text-slate-500">尚未扫描（每日收盘后自动执行，或手动触发）</span>
+              }
+              {totalScanned > 0 && <span className="text-xs text-slate-500">{rows.length}/{totalScanned} 只</span>}
+              <button
+                onClick={() => setShowCoverage(s => !s)}
+                className="px-2 py-1 text-xs border border-slate-600 text-slate-400 hover:text-white hover:border-slate-400 rounded transition-colors"
+              >
+                覆盖率
+              </button>
+              <button
+                onClick={refresh}
+                disabled={scanState === 'scanning'}
+                className={`px-3 py-1 text-sm text-white rounded transition-colors disabled:cursor-not-allowed
+                  ${scanState === 'done'
+                    ? 'bg-green-600 hover:bg-green-600'
+                    : 'bg-blue-600 hover:bg-blue-500 disabled:opacity-50'
+                  }`}
+              >
+                {scanState === 'scanning' && (
+                  <span className="inline-flex items-center gap-1.5">
+                    <svg className="animate-spin h-3.5 w-3.5" viewBox="0 0 24 24" fill="none">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z"/>
+                    </svg>
+                    扫描中...
+                  </span>
+                )}
+                {scanState === 'done' && '扫描完成 ✓'}
+                {scanState === 'idle' && '重新扫描'}
+              </button>
+            </>
+          )}
+          {tab === 'insider' && (
+            <button
+              onClick={() => refetchInsider()}
+              disabled={insiderLoading}
+              className="px-3 py-1 text-xs bg-slate-700 hover:bg-slate-600 disabled:opacity-40 text-slate-300 rounded transition-colors"
+            >
+              {insiderLoading ? '加载中...' : '刷新'}
+            </button>
+          )}
         </div>
       </div>
 
-      {/* 覆盖率摘要栏（可折叠） */}
-      {showCoverage && coverageEntries.length > 0 && (
-        <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
-          <div className="text-xs text-slate-400 mb-3 font-medium">因子数据覆盖率（共 {totalScanned} 只股票）</div>
-          <div className="flex flex-wrap gap-4">
-            {coverageEntries.map(([key, cov]: any) => (
-              <CoverageBar key={key} label={key} valid={cov.valid} total={cov.total} />
-            ))}
+      {/* Tab 导航 */}
+      <div className="flex border-b border-slate-700 -mt-2">
+        {([
+          { key: 'scan',    label: '因子扫描' },
+          { key: 'insider', label: '内部人买入' },
+        ] as const).map(t => (
+          <button
+            key={t.key}
+            onClick={() => setTab(t.key)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors
+              ${tab === t.key ? 'border-blue-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Tab: 因子扫描 ──────────────────────────────────── */}
+      {tab === 'scan' && (
+        <>
+          {showCoverage && coverageEntries.length > 0 && (
+            <div className="bg-slate-800 border border-slate-700 rounded-lg p-3">
+              <div className="text-xs text-slate-400 mb-3 font-medium">因子数据覆盖率（共 {totalScanned} 只股票）</div>
+              <div className="flex flex-wrap gap-4">
+                {coverageEntries.map(([key, cov]: any) => (
+                  <CoverageBar key={key} label={key} valid={cov.valid} total={cov.total} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-slate-400 text-xs border-b border-slate-700 bg-slate-800/80">
+                  {['#', '股票', '收盘价', 'RS 强度', '量比', '突破', '放量', '趋势', '信号',
+                    ...activeFundCols.map(c => c.label),
+                    '行业', '市值(B)'].map(h => (
+                    <th key={h} className="px-3 py-2 text-left font-medium whitespace-nowrap">{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {(scanState === 'scanning' || isAutoFetching) && rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={11 + activeFundCols.length} className="px-4 py-10 text-center text-slate-500">
+                      正在扫描因子数据，请稍候...
+                    </td>
+                  </tr>
+                ) : rows.length === 0 ? (
+                  <tr>
+                    <td colSpan={11 + activeFundCols.length} className="px-4 py-10 text-center text-slate-500">点击「重新扫描」获取数据</td>
+                  </tr>
+                ) : rows.map((r: any, i: number) => (
+                  <tr
+                    key={r.symbol}
+                    className="border-b border-slate-700/50 hover:bg-slate-700/40 cursor-pointer transition-colors"
+                    onClick={() => setSelected(r.symbol)}
+                  >
+                    <td className="px-3 py-2 text-slate-500 text-xs">{i + 1}</td>
+                    <td className="px-3 py-2 font-mono font-medium text-white">{r.symbol}</td>
+                    <td className="px-3 py-2 font-mono">${r.close.toFixed(2)}</td>
+                    <td className="px-3 py-2"><RsBar v={r.rs_score} /></td>
+                    <td className="px-3 py-2 font-mono text-xs">{r.vol_ratio.toFixed(1)}x</td>
+                    <td className="px-3 py-2"><BoolIcon v={r.breakout} /></td>
+                    <td className="px-3 py-2"><BoolIcon v={r.vol_surge} /></td>
+                    <td className="px-3 py-2"><BoolIcon v={r.uptrend} /></td>
+                    <td className="px-3 py-2"><SignalBadge signal={r.signal} /></td>
+                    {activeFundCols.map(col => (
+                      <td key={col.key} className="px-3 py-2">{col.render(r[col.key])}</td>
+                    ))}
+                    <td className="px-3 py-2 text-xs text-slate-400 max-w-28 truncate">{r.industry ?? '-'}</td>
+                    <td className="px-3 py-2 text-xs text-slate-400">{r.market_cap_b?.toFixed(0) ?? '-'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
-        </div>
+        </>
       )}
 
-      {/* 因子表格 */}
-      <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-x-auto">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="text-slate-400 text-xs border-b border-slate-700 bg-slate-800/80">
-              {['#', '股票', '收盘价', 'RS 强度', '量比', '突破', '放量', '趋势', '信号',
-                ...activeFundCols.map(c => c.label),
-                '行业', '市值(B)'].map(h => (
-                <th key={h} className="px-3 py-2 text-left font-medium whitespace-nowrap">{h}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody>
-            {(scanState === 'scanning' || isAutoFetching) && rows.length === 0 ? (
-              <tr>
-                <td colSpan={11 + activeFundCols.length} className="px-4 py-10 text-center text-slate-500">
-                  正在扫描因子数据，请稍候...
-                </td>
-              </tr>
-            ) : rows.length === 0 ? (
-              <tr>
-                <td colSpan={11 + activeFundCols.length} className="px-4 py-10 text-center text-slate-500">点击「重新扫描」获取数据</td>
-              </tr>
-            ) : rows.map((r: any, i: number) => (
-              <tr
-                key={r.symbol}
-                className="border-b border-slate-700/50 hover:bg-slate-700/40 cursor-pointer transition-colors"
-                onClick={() => setSelected(r.symbol)}
-              >
-                <td className="px-3 py-2 text-slate-500 text-xs">{i + 1}</td>
-                <td className="px-3 py-2 font-mono font-medium text-white">{r.symbol}</td>
-                <td className="px-3 py-2 font-mono">${r.close.toFixed(2)}</td>
-                <td className="px-3 py-2"><RsBar v={r.rs_score} /></td>
-                <td className="px-3 py-2 font-mono text-xs">{r.vol_ratio.toFixed(1)}x</td>
-                <td className="px-3 py-2"><BoolIcon v={r.breakout} /></td>
-                <td className="px-3 py-2"><BoolIcon v={r.vol_surge} /></td>
-                <td className="px-3 py-2"><BoolIcon v={r.uptrend} /></td>
-                <td className="px-3 py-2"><SignalBadge signal={r.signal} /></td>
-                {activeFundCols.map(col => (
-                  <td key={col.key} className="px-3 py-2">{col.render(r[col.key])}</td>
-                ))}
-                <td className="px-3 py-2 text-xs text-slate-400 max-w-28 truncate">{r.industry ?? '-'}</td>
-                <td className="px-3 py-2 text-xs text-slate-400">{r.market_cap_b?.toFixed(0) ?? '-'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      {/* ── Tab: 内部人买入 ────────────────────────────────── */}
+      {tab === 'insider' && (
+        <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
+          {insiderLoading && <div className="text-xs text-slate-500 py-6 text-center">从 OpenInsider 拉取数据...</div>}
+
+          {!insiderLoading && (insiderRows as any[]).length === 0 && (
+            <div className="text-xs text-slate-500 py-6 text-center">暂无数据（网络失败或无近期记录）</div>
+          )}
+
+          {!insiderLoading && (insiderRows as any[]).length > 0 && (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-slate-400 text-xs border-b border-slate-700">
+                      <th className="px-3 py-2 text-left font-medium">#</th>
+                      <th className="px-3 py-2 text-left font-medium">股票</th>
+                      <th className="px-3 py-2 text-right font-medium">评分</th>
+                      <th className="px-3 py-2 text-right font-medium">买入人数</th>
+                      <th className="px-3 py-2 text-right font-medium">买入金额</th>
+                      <th className="px-3 py-2 text-right font-medium">最近日期</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-700/50">
+                    {(insiderRows as any[]).map((r: any, i: number) => (
+                      <tr key={r.symbol} className={`hover:bg-slate-700/30 transition-colors ${!r.in_universe ? 'opacity-35' : ''}`}>
+                        <td className="px-3 py-2 text-slate-500 text-xs">{i + 1}</td>
+                        <td className="px-3 py-2 font-mono font-medium text-white">{r.symbol}</td>
+                        <td className="px-3 py-2 text-right">
+                          <span className="text-yellow-400">{'★'.repeat(r.score)}</span>
+                          <span className="text-slate-600">{'★'.repeat(3 - r.score)}</span>
+                        </td>
+                        <td className="px-3 py-2 text-right text-slate-300 text-xs">{r.count} 人</td>
+                        <td className="px-3 py-2 text-right text-green-400 font-mono text-xs">
+                          ${r.total_value >= 1_000_000
+                            ? `${(r.total_value / 1_000_000).toFixed(1)}M`
+                            : `${(r.total_value / 1_000).toFixed(0)}K`}
+                        </td>
+                        <td className="px-3 py-2 text-right text-slate-500 text-xs">{r.last_date}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="text-xs text-slate-600 mt-3 text-right">
+                共 {(insiderRows as any[]).length} 条，淡色为 sp500+ndx 池外股票
+              </div>
+            </>
+          )}
+        </div>
+      )}
 
       {selected && (
         <StockDetailPanel symbol={selected} onClose={() => setSelected(null)} />

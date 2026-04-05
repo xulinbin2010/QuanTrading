@@ -114,7 +114,7 @@ def _build_registry() -> dict[str, FactorMeta]:
             signal_type="score",
             params={"period": (14, int, "ATR 计算周期")},
             default_enabled=True,
-            display_only=True,  # 仅用于单股 K 线详情展示，不参与买卖信号/回测/优化
+            is_dependency=True,  # 用于ATR自适应止损，不作为独立买入信号
         ),
         # ── 成长因子（基本面，快照）────────────────────────────
         "revenue_growth": FactorMeta(

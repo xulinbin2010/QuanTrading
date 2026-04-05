@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { runBacktest, getBacktestStatus, getBacktestResult, getBacktestHistory, getFactorRegistry, getVixAnalysis } from '../api/client'
 import ReactECharts from 'echarts-for-react'
 
-const UNIVERSES = ['sp500', 'nasdaq100', 'russell2000']
 const PERIODS = ['1mo', '3mo', '6mo', '1y']
 
 const WEEKDAYS = ['日', '一', '二', '三', '四', '五', '六']
@@ -340,7 +339,7 @@ const CATEGORY_LABELS: Record<string, string> = {
 
 const DEFAULT_PARAMS = {
   period: '3mo', start: '', end: '',
-  universe: 'sp500', top_n: 6,
+  universe: 'sp500+ndx', top_n: 6,
   min_cap_b: 10, max_cap_b: 5000,
   deny_industries: [] as string[],
   useCustomDate: false,
@@ -690,18 +689,6 @@ export default function Backtest() {
       {tab === 'config' && <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
         <div className="text-sm font-medium text-slate-300 mb-4">回测参数</div>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {/* 股票池 */}
-          <div>
-            <label className="block text-xs text-slate-400 mb-1">股票池</label>
-            <select
-              className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
-              value={params.universe}
-              onChange={e => setParams(p => ({ ...p, universe: e.target.value }))}
-            >
-              {UNIVERSES.map(u => <option key={u}>{u}</option>)}
-            </select>
-          </div>
-
           {/* Top N */}
           <div>
             <label className="block text-xs text-slate-400 mb-1">Top N（最大持仓候选）</label>

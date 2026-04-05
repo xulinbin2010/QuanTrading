@@ -4,7 +4,7 @@ import sys
 import os
 import time
 import threading
-from datetime import datetime
+from datetime import datetime, date
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 from core.database import Database
@@ -83,6 +83,37 @@ def get_ib_status() -> dict:
     return {"connected": connected, "account": account}
 
 
+_last_snapshot_date: date | None = None
+_snapshot_lock = threading.Lock()
+
+
+def _auto_save_snapshot(balance: dict) -> None:
+    """每天首次成功获取 balance 时，自动写一条账户快照（用于复盘）。"""
+    global _last_snapshot_date
+    today = date.today()
+    with _snapshot_lock:
+        if _last_snapshot_date == today:
+            return
+        try:
+            db = get_db()
+            db.save_account_snapshot(
+                net_liq       = balance['net_liquidation'],
+                total_cash    = balance['total_cash'],
+                unrealized_pnl= balance['unrealized_pnl'],
+                realized_pnl  = balance['realized_pnl'],
+                buying_power  = balance['buying_power'],
+            )
+            _last_snapshot_date = today
+            # 清除复盘缓存，使新数据立即生效
+            try:
+                from web.services import performance_svc
+                performance_svc.invalidate_cache()
+            except Exception:
+                pass
+        except Exception:
+            pass
+
+
 def get_balance() -> dict:
     """返回账户余额（需 IB Gateway），失败抛 RuntimeError"""
     _ensure_connected()
@@ -90,13 +121,15 @@ def get_balance() -> dict:
         raise RuntimeError("IB Gateway 未连接")
     from core.account import Account
     acc = Account(_ib)
-    return {
+    balance = {
         "net_liquidation": acc._get_value("NetLiquidation"),
         "total_cash":      acc._get_value("TotalCashValue"),
         "unrealized_pnl":  acc._get_value("UnrealizedPnL"),
         "realized_pnl":    acc._get_value("RealizedPnL"),
         "buying_power":    acc._get_value("BuyingPower"),
     }
+    _auto_save_snapshot(balance)
+    return balance
 
 
 def _get_entry_date(symbol: str, db) -> str | None:

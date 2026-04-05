@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 import pandas as pd
 import numpy as np
 from strategies.rs_momentum import RSMomentum
+from strategies.factors.atr import compute_atr
 from core.universe import get_tickers, get_stock_info
 from core.data_store import DataStore
 from core.fmt import lj, rj
@@ -47,7 +48,6 @@ def _parse_args():
     parser.add_argument('--top',      type=int, default=10)
     parser.add_argument('--start',    default=None, help='回测起始日期 YYYY-MM-DD')
     parser.add_argument('--end',      default=None, help='回测结束日期 YYYY-MM-DD')
-    parser.add_argument('--universe', default='sp500', help='股票池: sp500 / nasdaq100 / russell2000')
     parser.add_argument('--daily',    action='store_true', help='打印每日持仓明细（默认关闭）')
     parser.add_argument('--min-cap',  type=float, default=config.MIN_CAP_B,
                         dest='min_cap_b', help=f'最小市值（十亿USD），默认 {config.MIN_CAP_B}B')
@@ -94,8 +94,18 @@ def run_backtest(
     VOL_SHRINK_RATIO        = config.VOL_SHRINK_RATIO
     TRAIL_STOP_ACTIVATE_PCT = config.TRAIL_STOP_ACTIVATE_PCT
     TRAIL_STOP_PCT          = config.TRAIL_STOP_PCT
+    ATR_STOP_MULTIPLIER     = config.ATR_STOP_MULTIPLIER
+    ATR_STOP_FLOOR          = config.ATR_STOP_FLOOR
+    TARGET_RISK_PER_POS     = config.TARGET_RISK_PER_POS
     SPY_BRAKE_PERIOD        = config.SPY_BRAKE_PERIOD
     SPY_BRAKE_PCT           = config.SPY_BRAKE_PCT
+    VIX_BRAKE_LEVEL         = config.VIX_BRAKE_LEVEL
+    BREADTH_MIN_PCT         = config.BREADTH_MIN_PCT
+    BREADTH_MAX_POS         = config.BREADTH_MAX_POS
+    FUND_FILTER_ENABLED     = config.FUND_FILTER_ENABLED
+    FUND_MIN_ROE            = config.FUND_MIN_ROE
+    FUND_MAX_DE             = config.FUND_MAX_DE
+    FUND_MIN_REV_GROWTH     = config.FUND_MIN_REV_GROWTH
     TIME_STOP_DAYS          = config.TIME_STOP_DAYS
     TIME_STOP_MIN_RETURN    = config.TIME_STOP_MIN_RETURN
 
@@ -122,7 +132,7 @@ def run_backtest(
     dl_end   = bt_end.strftime('%Y-%m-%d')
 
     # ── 加载数据 ──────────────────────────────────────────
-    all_syms = list(set(tickers + ['SPY']))
+    all_syms = list(set(tickers + ['SPY', '^VIX']))
     store    = DataStore()
     all_data = store.get(all_syms, start=dl_start, end=dl_end, min_rows=40)
 
@@ -154,38 +164,69 @@ def run_backtest(
         except Exception:
             pass
 
-    # ── 市值 / 行业过滤 ────────────────────────────────────
-    deny_set  = {d.lower() for d in (deny_industries or [])}
-    _allowed_cache: dict[str, bool] = {}
+    # ── 预计算 ATR14（用于自适应止损） ───────────────────────
+    atr_series: dict[str, pd.Series] = {}
+    for sym, df in stock_data.items():
+        try:
+            atr_df = compute_atr(df.copy())
+            atr_series[sym] = atr_df['atr14']
+        except Exception:
+            pass
 
-    def _is_allowed(sym: str) -> bool:
-        if sym not in _allowed_cache:
-            if not deny_set and min_cap_b is None and max_cap_b is None:
-                _allowed_cache[sym] = True
-            else:
-                info = get_stock_info([sym]).get(sym, {})
-                cap  = info.get('market_cap_b')
-                ind  = (info.get('industry') or '').lower()
-                ok   = True
-                if cap is not None:
-                    if min_cap_b is not None and cap < min_cap_b:
-                        ok = False
-                    if max_cap_b is not None and cap > max_cap_b:
-                        ok = False
-                if ok and deny_set and any(d in ind for d in deny_set):
-                    ok = False
-                _allowed_cache[sym] = ok
-        return _allowed_cache[sym]
-
-    # ── 行业分类 ────────────────────────────────────────────
+    # ── 批量获取基本面 / 行业数据（复用于过滤 + 行业分类）────
     _sector_batch = get_stock_info(list(stock_data.keys()))
     _sector_map: dict[str, str] = {
         s: (_sector_batch.get(s, {}).get('sector') or 'Unknown')
         for s in stock_data
     }
 
+    # ── 市值 / 行业 / 基本面过滤 ─────────────────────────────
+    deny_set  = {d.lower() for d in (deny_industries or [])}
+    _allowed_cache: dict[str, bool] = {}
+
+    def _is_allowed(sym: str) -> bool:
+        if sym not in _allowed_cache:
+            info = _sector_batch.get(sym, {})
+            cap  = info.get('market_cap_b')
+            ind  = (info.get('industry') or '').lower()
+            ok   = True
+            if cap is not None:
+                if min_cap_b is not None and cap < min_cap_b:
+                    ok = False
+                if max_cap_b is not None and cap > max_cap_b:
+                    ok = False
+            if ok and deny_set and any(d in ind for d in deny_set):
+                ok = False
+            # 基本面硬门槛（数据缺失时放行，不因数据不全误杀）
+            if ok and FUND_FILTER_ENABLED:
+                roe = info.get('roe')
+                de  = info.get('debt_to_equity')
+                rev = info.get('revenue_growth')
+                if roe is not None and roe < FUND_MIN_ROE:
+                    ok = False
+                if ok and de is not None and de > FUND_MAX_DE:
+                    ok = False
+                if ok and rev is not None and rev < FUND_MIN_REV_GROWTH:
+                    ok = False
+            _allowed_cache[sym] = ok
+        return _allowed_cache[sym]
+
     # ── SPY 熔断 ────────────────────────────────────────────
     spy_rolling_ret = spy_close.pct_change(periods=SPY_BRAKE_PERIOD)
+
+    # ── VIX 时间序列 ─────────────────────────────────────────
+    vix_close_series = pd.Series(dtype=float)
+    vix_df = all_data.get('^VIX')
+    if vix_df is not None and len(vix_df) > 0:
+        vix_close_series = vix_df['close']
+
+    # ── 市场宽度时间序列（% 股票站上 MA200） ─────────────────
+    breadth_series = pd.Series(dtype=float)
+    _close_cols = {s: df['close'] for s, df in stock_data.items() if len(df) >= 201}
+    if _close_cols:
+        _close_matrix = pd.DataFrame(_close_cols)
+        _ma200_matrix = _close_matrix.rolling(200).mean()
+        breadth_series = (_close_matrix > _ma200_matrix).mean(axis=1)
 
     # ── 逐日模拟 ────────────────────────────────────────────
     cash           = INITIAL_CASH
@@ -197,6 +238,8 @@ def run_backtest(
     pending_sells  = {}
     pending_buys   = []
     spy_brake_days = 0
+    vix_brake_days = 0
+    breadth_cap_days = 0
 
     for i, date in enumerate(dates):
         if i < bt_start_idx:
@@ -251,7 +294,20 @@ def run_backtest(
                     if sym in positions or sym not in stock_data or date not in stock_data[sym].index:
                         continue
                     price = stock_data[sym].loc[date, 'open']
-                    qty   = int(net_liq * POSITION_PCT / price)
+                    # 波动率仓位：每仓风险 = TARGET_RISK_PER_POS × 净值
+                    atr14_entry = None
+                    if sym in atr_series and date in atr_series[sym].index:
+                        v = atr_series[sym].get(date)
+                        if v is not None and pd.notna(v) and float(v) > 0:
+                            atr14_entry = float(v)
+                    if atr14_entry is not None:
+                        target_risk = net_liq * TARGET_RISK_PER_POS
+                        stop_dist   = ATR_STOP_MULTIPLIER * atr14_entry
+                        qty_by_risk = int(target_risk / stop_dist)
+                        qty_by_pct  = int(net_liq * POSITION_PCT / price)
+                        qty = min(qty_by_risk, qty_by_pct) if qty_by_risk > 0 else qty_by_pct
+                    else:
+                        qty = int(net_liq * POSITION_PCT / price)
                     comm  = calc_commission(qty, price, is_sell=False)
                     cost  = qty * price + comm
                     if qty <= 0 or cash - cost < min_cash:
@@ -260,7 +316,7 @@ def run_backtest(
                     total_commission += comm
                     positions[sym] = {
                         'qty': qty, 'entry_price': price, 'entry_date': date,
-                        'commission': comm, 'peak_price': price,
+                        'commission': comm, 'peak_price': price, 'atr14': atr14_entry,
                     }
                     executed += 1
         pending_buys = []
@@ -274,7 +330,14 @@ def run_backtest(
             ret   = (price - pos['entry_price']) / pos['entry_price']
             pos['peak_price'] = max(pos['peak_price'], price)
             days_held = (date - pos['entry_date']).days
-            if ret <= STOP_LOSS_PCT:
+            # ATR 自适应止损
+            atr14 = pos.get('atr14')
+            if atr14 is not None and atr14 > 0 and pos['entry_price'] > 0:
+                atr_stop_pct = max(ATR_STOP_FLOOR,
+                                   -(ATR_STOP_MULTIPLIER * atr14 / pos['entry_price']))
+            else:
+                atr_stop_pct = STOP_LOSS_PCT
+            if ret <= atr_stop_pct:
                 pending_sells[sym] = '止损'
             else:
                 peak_ret  = (pos['peak_price'] - pos['entry_price']) / pos['entry_price']
@@ -295,9 +358,22 @@ def run_backtest(
         if spy_brake:
             spy_brake_days += 1
 
+        # VIX 熔断
+        vix_today = vix_close_series.get(date)
+        vix_brake = vix_today is not None and float(vix_today) >= VIX_BRAKE_LEVEL
+        if vix_brake:
+            vix_brake_days += 1
+
+        # 市场宽度限制
+        breadth_today = breadth_series.get(date)
+        breadth_weak  = breadth_today is not None and float(breadth_today) < BREADTH_MIN_PCT
+        if breadth_weak:
+            breadth_cap_days += 1
+        effective_max_pos = min(MAX_POSITIONS, BREADTH_MAX_POS) if breadth_weak else MAX_POSITIONS
+
         # 买入信号
-        free_slots = MAX_POSITIONS - len(positions) + len(pending_sells)
-        if free_slots > 0 and not spy_brake:
+        free_slots = effective_max_pos - len(positions) + len(pending_sells)
+        if free_slots > 0 and not spy_brake and not vix_brake:
             new_buys = []
             for sym, sig_df in signals.items():
                 if sym in positions or sym in pending_sells or date not in sig_df.index:
@@ -411,6 +487,8 @@ def run_backtest(
         'win_rate':         round(win_rate, 4),
         'total_commission': round(total_commission, 2),
         'spy_brake_days':   spy_brake_days,
+        'vix_brake_days':   vix_brake_days,
+        'breadth_cap_days': breadth_cap_days,
         'universe':         universe,
         'bt_start':         str(dates[bt_start_idx].date()),
         'bt_end':           str(last_date.date()),
@@ -460,6 +538,12 @@ def print_report(result: dict, daily: bool = False):
     print(f"  Sharpe          {s['sharpe']:>14.2f}")
     brake_pct = s['spy_brake_days'] / max(s['days'], 1) * 100
     print(f"  SPY熔断天数     {s['spy_brake_days']:>11} 天  ({brake_pct:.0f}% 回测期)")
+    if s.get('vix_brake_days', 0) > 0:
+        vix_pct = s['vix_brake_days'] / max(s['days'], 1) * 100
+        print(f"  VIX熔断天数     {s['vix_brake_days']:>11} 天  ({vix_pct:.0f}% 回测期)")
+    if s.get('breadth_cap_days', 0) > 0:
+        br_pct = s['breadth_cap_days'] / max(s['days'], 1) * 100
+        print(f"  宽度限仓天数    {s['breadth_cap_days']:>11} 天  ({br_pct:.0f}% 回测期)")
     print(f"  已平仓交易      {s['total_trades']:>14} 笔")
     print(f"  胜率            {s['win_rate']:>14.1%}")
     if trades:
@@ -550,13 +634,13 @@ def _print_daily_holdings(daily_holdings, last_n=50):
 def run():
     """CLI 入口：解析参数 → run_backtest() → 打印报告"""
     args = _parse_args()
-    print(f"获取股票池（{args.universe}）...")
+    print(f"获取股票池（sp500+ndx）...")
     result = run_backtest(
         period=args.period,
         top=args.top,
         start=args.start,
         end=args.end,
-        universe=args.universe,
+        universe='sp500+ndx',
         daily=args.daily,
         min_cap_b=args.min_cap_b,
         max_cap_b=args.max_cap_b,

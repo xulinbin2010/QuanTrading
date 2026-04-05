@@ -33,7 +33,9 @@ from core.database import Database
 from core.data_store import DataStore
 from core.universe import get_tickers, get_stock_info
 from core.insider import get_insider_buys
+from core.earnings import prefetch_earnings, has_upcoming_earnings
 from strategies.rs_momentum import RSMomentum
+from strategies.factors.atr import compute_atr
 import config
 
 warnings.filterwarnings('ignore')
@@ -49,6 +51,9 @@ STOP_LOSS_PCT           = config.STOP_LOSS_PCT
 MAX_PER_SECTOR          = config.MAX_PER_SECTOR
 TRAIL_STOP_ACTIVATE_PCT = config.TRAIL_STOP_ACTIVATE_PCT
 TRAIL_STOP_PCT          = config.TRAIL_STOP_PCT
+ATR_STOP_MULTIPLIER     = config.ATR_STOP_MULTIPLIER
+ATR_STOP_FLOOR          = config.ATR_STOP_FLOOR
+TARGET_RISK_PER_POS     = config.TARGET_RISK_PER_POS
 TIME_STOP_DAYS          = config.TIME_STOP_DAYS
 TIME_STOP_MIN_RETURN    = config.TIME_STOP_MIN_RETURN
 
@@ -104,7 +109,7 @@ CASH_EQUIV = {'SGOV', 'BIL', 'USFR'}
 def scan_signals(
     held_symbols:     list[str],
     extra:            list[str] = None,
-    universe:         str       = 'sp500',
+    universe:         str       = 'sp500+ndx',
     min_cap_b:        float     = None,    # 最小市值（十亿 USD），如 10
     max_cap_b:        float     = None,    # 最大市值（十亿 USD），如 500
     deny_industries:  list[str] = None,    # 拒绝行业，如 ['Software—Application']
@@ -123,7 +128,7 @@ def scan_signals(
     dl_start = (date.today() - timedelta(days=400)).strftime('%Y-%m-%d')
     dl_end   = date.today().strftime('%Y-%m-%d')
 
-    all_syms = list(set(tickers + ['SPY']))
+    all_syms = list(set(tickers + ['SPY', '^VIX']))
     store    = DataStore()
     all_data = store.get(all_syms, start=dl_start, end=dl_end)
 
@@ -142,6 +147,19 @@ def scan_signals(
             print(f"\n  [熔断] SPY 近 {config.SPY_BRAKE_PERIOD} 日跌幅 {spy_20d_ret:.1%}"
                   f"（阈值 {config.SPY_BRAKE_PCT:.0%}），今日暂停新仓买入！")
 
+    # ── VIX 熔断检查 ──────────────────────────────────────────
+    vix_brake = False
+    vix_close = None
+    vix_df = all_data.get('^VIX')
+    if vix_df is not None and len(vix_df) > 0:
+        vix_close = float(vix_df['close'].iloc[-1])
+        if vix_close >= config.VIX_BRAKE_LEVEL:
+            vix_brake = True
+            print(f"\n  [VIX熔断] VIX={vix_close:.1f}（阈值 {config.VIX_BRAKE_LEVEL:.0f}），"
+                  f"今日暂停新仓买入！")
+        else:
+            print(f"  VIX={vix_close:.1f}（安全线 <{config.VIX_BRAKE_LEVEL:.0f}）")
+
     # ── 运行策略 ──────────────────────────────────────────────
     strategy = RSMomentum(vol_shrink_ratio=config.VOL_SHRINK_RATIO)
     strategy.set_spy(spy_close)
@@ -149,6 +167,7 @@ def scan_signals(
     buy_signals = []
     sell_alerts = []
     prices      = {}
+    atr_map     = {}   # symbol → ATR14 绝对值（用于自适应止损计算）
     signal_map  = {}   # symbol → signal 值，供 execute() 对真实 IB 持仓补充卖出报警
 
     for symbol, df in all_data.items():
@@ -164,6 +183,11 @@ def scan_signals(
             vol_ratio = latest['volume'] / latest['vol_ma20'] if latest['vol_ma20'] > 0 else 0
             prices[symbol]     = latest['close']
             signal_map[symbol] = int(sig)
+            # ATR14 用于自适应止损
+            atr_df = compute_atr(df.tail(30).copy())
+            atr14  = float(atr_df['atr14'].iloc[-1])
+            if pd.notna(atr14) and atr14 > 0:
+                atr_map[symbol] = atr14
 
             if sig == 1:
                 buy_signals.append({
@@ -183,8 +207,30 @@ def scan_signals(
 
     buy_signals.sort(key=lambda x: x['rs_score'], reverse=True)
 
+    # ── 市场宽度：S&P500 中站上 MA200 的比例 ─────────────────
+    breadth_cap = False
+    breadth_pct = None
+    n_above = n_total = 0
+    for sym, df in all_data.items():
+        if sym in ('SPY', '^VIX') or sym in CASH_EQUIV or len(df) < 201:
+            continue
+        ma200 = df['close'].rolling(200).mean().iloc[-1]
+        if pd.notna(ma200):
+            n_total += 1
+            if df['close'].iloc[-1] > ma200:
+                n_above += 1
+    if n_total > 0:
+        breadth_pct = n_above / n_total
+        if breadth_pct < config.BREADTH_MIN_PCT:
+            breadth_cap = True
+            print(f"\n  [市场宽度] 仅 {breadth_pct:.0%} 股票站上MA200"
+                  f"（阈值 {config.BREADTH_MIN_PCT:.0%}），"
+                  f"最多开 {config.BREADTH_MAX_POS} 仓！")
+        else:
+            print(f"  市场宽度={breadth_pct:.0%} 股票站上MA200（健康线 >{config.BREADTH_MIN_PCT:.0%}）")
+
     # 熔断期间清空买入信号（卖出报警照常输出）
-    if spy_brake:
+    if spy_brake or vix_brake:
         buy_signals = []
 
     # ── 内部人士买入数据（一次性拉取，用于买入候选排序参考）──────────────────
@@ -212,6 +258,17 @@ def scan_signals(
             # 行业过滤
             if deny_set and any(d in ind for d in deny_set):
                 continue
+            # 基本面硬门槛（数据缺失时放行）
+            if config.FUND_FILTER_ENABLED:
+                roe = info.get('roe')
+                de  = info.get('debt_to_equity')
+                rev = info.get('revenue_growth')
+                if roe is not None and roe < config.FUND_MIN_ROE:
+                    continue
+                if de is not None and de > config.FUND_MAX_DE:
+                    continue
+                if rev is not None and rev < config.FUND_MIN_REV_GROWTH:
+                    continue
             sig['market_cap_b']  = cap
             sig['industry']      = info.get('industry')
             sig['sector']        = info.get('sector')
@@ -222,8 +279,14 @@ def scan_signals(
             print(f"  [过滤] 市值/行业过滤移除 {n_removed} 只，剩余 {len(filtered)} 只买入候选")
         buy_signals = filtered
 
-    return {'buy': buy_signals, 'sell': sell_alerts, '_prices': prices, '_signal_map': signal_map,
-            'spy_brake': spy_brake}
+    # ── 财报日期预取（批量缓存，execute 阶段直接用缓存）────────────────────────
+    if buy_signals and config.EARNINGS_AVOID_DAYS > 0:
+        prefetch_earnings([s['symbol'] for s in buy_signals])
+
+    return {'buy': buy_signals, 'sell': sell_alerts, '_prices': prices, '_atr': atr_map,
+            '_signal_map': signal_map, 'spy_brake': spy_brake,
+            '_vix': vix_close, '_vix_brake': vix_brake,
+            '_breadth': breadth_pct, '_breadth_cap': breadth_cap}
 
 
 def market_is_open(ib) -> bool:
@@ -385,19 +448,26 @@ def execute(signals: dict, dry_run: bool = True):
         if avg_cost <= 0 or qty <= 0 or cur_price is None:
             continue
         ret = (cur_price - avg_cost) / avg_cost
-        if ret <= STOP_LOSS_PCT:
+        # ATR 自适应止损：止损价 = 入场价 - N×ATR14，最大亏损不超过 ATR_STOP_FLOOR
+        atr14 = signals.get('_atr', {}).get(sym)
+        if atr14 is not None and atr14 > 0 and avg_cost > 0:
+            atr_stop_pct = max(config.ATR_STOP_FLOOR, -(config.ATR_STOP_MULTIPLIER * atr14 / avg_cost))
+        else:
+            atr_stop_pct = STOP_LOSS_PCT  # 无ATR数据时回退固定止损
+        if ret <= atr_stop_pct:
             stop_loss_list.append({
                 'symbol': sym, 'qty': qty,
                 'avg_cost': avg_cost, 'cur_price': cur_price, 'return': ret,
+                'stop_pct': atr_stop_pct,
             })
 
     print(f"\n{'='*54}")
     if stop_loss_list:
-        print(f"  止损触发（跌破入场价 {STOP_LOSS_PCT:.0%}）：{len(stop_loss_list)} 只")
+        print(f"  止损触发（ATR自适应止损）：{len(stop_loss_list)} 只")
         print(f"{'='*54}")
         for s in stop_loss_list:
             print(f"  [{s['symbol']}]  均价 ${s['avg_cost']:.2f} → 现价 ${s['cur_price']:.2f}  "
-                  f"浮亏 {s['return']:.1%}")
+                  f"浮亏 {s['return']:.1%}（止损线 {s['stop_pct']:.1%}）")
             if not dry_run:
                 _cancel_existing(s['symbol'], 'SELL')
                 if tif == 'OPG':
@@ -563,11 +633,23 @@ def execute(signals: dict, dry_run: bool = True):
 
     # ── 买入信号 ──────────────────────────────────────────────
     buy_list = signals.get('buy', [])
+
+    # 市场环境过滤：VIX熔断 / 市场宽度压仓
+    vix_brake_active   = signals.get('_vix_brake', False)
+    breadth_cap_active = signals.get('_breadth_cap', False)
+    if vix_brake_active:
+        buy_list = []
+    elif breadth_cap_active:
+        effective_max_pos = min(MAX_POSITIONS, config.BREADTH_MAX_POS)
+        slots = max(0, effective_max_pos - n_held)
+
     print(f"\n{'='*54}")
     print(f"  买入信号：{len(buy_list)} 只  可用仓位：{slots} 个")
     print(f"{'='*54}")
 
-    if deployable < budget_per_pos * 0.5:
+    if vix_brake_active:
+        print(f"  [VIX熔断] 暂停买入")
+    elif deployable < budget_per_pos * 0.5:
         print(f"  可用资金 ${deployable:,.0f} 不足（保留现金规则：须保留 ${min_cash:,.0f}）")
     elif slots <= 0:
         print(f"  仓位已满（{n_held}/{MAX_POSITIONS}），今日不开新仓")
@@ -596,7 +678,23 @@ def execute(signals: dict, dry_run: bool = True):
             if sector_counts.get(sec, 0) >= MAX_PER_SECTOR:
                 print(f"  [{symbol}] 行业[{sec}]已持有 {sector_counts[sec]} 只（上限 {MAX_PER_SECTOR}），跳过")
                 continue
-            qty = int(budget_per_pos / sig['close'])
+            # 财报回避
+            if config.EARNINGS_AVOID_DAYS > 0 and has_upcoming_earnings(symbol, config.EARNINGS_AVOID_DAYS):
+                print(f"  [{symbol}] 财报将在 {config.EARNINGS_AVOID_DAYS} 日内，跳过")
+                continue
+            # 波动率仓位：每仓风险 = TARGET_RISK_PER_POS × 净值，止损距离 = ATR_STOP_MULTIPLIER × ATR14
+            atr14 = signals.get('_atr', {}).get(symbol)
+            if atr14 is not None and atr14 > 0:
+                target_risk_dollars = net_liq * config.TARGET_RISK_PER_POS
+                stop_distance = config.ATR_STOP_MULTIPLIER * atr14
+                qty_by_risk = int(target_risk_dollars / stop_distance)
+                qty_by_pct  = int(net_liq * POSITION_PCT / sig['close'])
+                qty = min(qty_by_risk, qty_by_pct) if qty_by_risk > 0 else qty_by_pct
+                sizing_note = (f"风险法 ${target_risk_dollars:,.0f}÷ATR止损${stop_distance:.2f}={qty_by_risk}股"
+                               f"  上限{POSITION_PCT:.0%}={qty_by_pct}股  → {qty}股")
+            else:
+                qty = int(budget_per_pos / sig['close'])
+                sizing_note = f"固定比例 ${budget_per_pos:,.0f}÷${sig['close']:.2f}={qty}股"
             if qty <= 0:
                 print(f"  [{symbol}] 单价 ${sig['close']:.2f} 超出预算，跳过")
                 continue
@@ -605,8 +703,7 @@ def execute(signals: dict, dry_run: bool = True):
             if tif == 'OPG':
                 limit_price = round(sig['close'] * (1 + MAX_ENTRY_SLIPPAGE), 2)
                 print(f"  [{symbol}]  RS={sig['rs_score']:+.3f}  量比={sig['vol_ratio']:.1f}x  行业={sec}")
-                print(f"    预算 ${budget_per_pos:,.0f} ÷ 昨收 ${sig['close']:.2f} = {qty} 股  "
-                      f"限价 ${limit_price:.2f}  预计成本 ${qty*limit_price:,.0f}")
+                print(f"    {sizing_note}  限价 ${limit_price:.2f}  预计成本 ${qty*limit_price:,.0f}")
                 if not dry_run:
                     _cancel_existing(symbol, 'BUY')
                     trade = trader.limit_buy(symbol, qty, price=limit_price, tif=tif)
@@ -618,9 +715,8 @@ def execute(signals: dict, dry_run: bool = True):
                 else:
                     print(f"  → [dry-run] 将下限价 OPG 单 ${limit_price:.2f}")
             else:
-                print(f"  [{symbol}]  RS={sig['rs_score']:+.3f}  量比={sig['vol_ratio']:.1f}x  "
-                      f"行业={sec}  "
-                      f"拟买 {qty} 股 × ${sig['close']:.2f} = ${cost:,.0f}")
+                print(f"  [{symbol}]  RS={sig['rs_score']:+.3f}  量比={sig['vol_ratio']:.1f}x  行业={sec}")
+                print(f"    {sizing_note}  拟成本 ${cost:,.0f}")
                 if not dry_run:
                     _cancel_existing(symbol, 'BUY')
                     trade = trader.market_buy(symbol, qty, tif=tif)
@@ -647,8 +743,6 @@ def main():
     parser.add_argument('--dry-run',  action='store_true', help='只显示信号，不下单')
     parser.add_argument('--held',     nargs='+', default=[], help='当前持仓（用于卖出报警）')
     parser.add_argument('--extra',    nargs='+', default=[], help='追加股票（如 SNDK TSM）')
-    parser.add_argument('--universe', default='sp500',
-                        help='股票池：sp500 / nasdaq100 / russell2000')
     parser.add_argument('--min-cap',  type=float, default=config.MIN_CAP_B,
                         help=f'最小市值（十亿USD），默认 {config.MIN_CAP_B}B')
     parser.add_argument('--max-cap',  type=float, default=config.MAX_CAP_B,
@@ -667,7 +761,7 @@ def main():
     print(f"\n{'='*54}")
     print(f"  RS 动量自动交易  [{mode}]")
     print(f"  北京时间：{now_bj}")
-    print(f"  股票池：{args.universe}  |  "
+    print(f"  股票池：sp500+ndx  |  "
           f"最多{MAX_POSITIONS}仓 | 单仓{POSITION_PCT:.0%} | 保留现金{CASH_RESERVE_PCT:.0%}")
     if args.min_cap or args.max_cap:
         cap_str = f"市值过滤：${args.min_cap or 0:.0f}B ~ ${args.max_cap or '∞'}B"
@@ -686,7 +780,7 @@ def main():
 
     print("第一步：扫描信号（基于昨日收盘数据）")
     signals = scan_signals(
-        held, extra=extra, universe=args.universe,
+        held, extra=extra, universe='sp500+ndx',
         min_cap_b=args.min_cap, max_cap_b=args.max_cap,
         deny_industries=deny_industries,
     )

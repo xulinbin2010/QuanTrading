@@ -7,6 +7,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 import time
 import pandas as pd
 from datetime import date, timedelta
+import config
 
 # ── 内存缓存（factor scan 结果，TTL 1 小时）────────────────
 _scan_cache: dict = {}   # key: universe, value: {ts, data}
@@ -484,3 +485,32 @@ def check_trail_stops(positions: list[dict]) -> list[dict]:
         })
 
     return results
+
+
+# ── 内部人买入 ─────────────────────────────────────────────
+
+def get_insider_data(days: int = None, min_value_k: int = None) -> list[dict]:
+    """
+    返回近期内部人净买入记录，按买入金额降序排列。
+    使用 core/insider.py 的 20 小时缓存，不重复请求。
+    """
+    from core.insider import get_insider_buys
+    from core.universe import get_tickers
+    _days        = days        or config.INSIDER_DAYS
+    _min_value_k = min_value_k or config.INSIDER_MIN_VALUE_K
+
+    universe_set = set(get_tickers('sp500+ndx'))
+    raw = get_insider_buys(days=_days, min_value_k=_min_value_k)
+    rows = [
+        {
+            'symbol':      sym,
+            'score':       info['score'],
+            'count':       info['count'],
+            'total_value': info['total_value'],
+            'last_date':   info.get('last_date', ''),
+            'in_universe': sym in universe_set,
+        }
+        for sym, info in raw.items()
+    ]
+    rows.sort(key=lambda x: x['total_value'], reverse=True)
+    return rows

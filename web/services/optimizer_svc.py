@@ -116,6 +116,38 @@ def _split_dates(start: str, end: str, train_ratio: float) -> tuple[str, str, st
     )
 
 
+def _add_months(d: date, months: int) -> date:
+    """日期加 N 个月，处理月末边界"""
+    import calendar
+    month = d.month - 1 + months
+    year  = d.year + month // 12
+    month = month % 12 + 1
+    day   = min(d.day, calendar.monthrange(year, month)[1])
+    return date(year, month, day)
+
+
+def _generate_wf_windows(start: str, end: str,
+                          train_months: int, test_months: int,
+                          step_months: int) -> list[dict]:
+    """生成 Walk-Forward 滚动窗口列表（非重叠测试期）"""
+    d0, d1 = date.fromisoformat(start), date.fromisoformat(end)
+    windows, ts = [], d0
+    while True:
+        te = _add_months(ts, train_months) - timedelta(days=1)
+        vs = te + timedelta(days=1)
+        ve = _add_months(vs, test_months) - timedelta(days=1)
+        if ve > d1:
+            break
+        windows.append({
+            'train_start': ts.strftime('%Y-%m-%d'),
+            'train_end':   te.strftime('%Y-%m-%d'),
+            'test_start':  vs.strftime('%Y-%m-%d'),
+            'test_end':    ve.strftime('%Y-%m-%d'),
+        })
+        ts = _add_months(ts, step_months)
+    return windows
+
+
 def _get_tech_factor_keys() -> list[str]:
     """从注册表获取所有技术因子 key（注册顺序）"""
     from strategies.factors.registry import get_registry
@@ -159,19 +191,14 @@ def _run(task_id: str, params: dict):
         top_n       = params.get('top_n_results', 20)
         min_cap_b   = params.get('min_cap_b', None)
         max_cap_b   = params.get('max_cap_b', None)
-        bt_top_n    = params.get('bt_top_n', 6)     # 回测持仓候选数
-
-        # 训练 / 测试日期
-        train_start, train_end, test_start, test_end = _split_dates(start, end, train_ratio)
+        bt_top_n    = params.get('bt_top_n', 6)
+        mode        = params.get('mode', 'single')   # 'single' | 'walkforward'
 
         # 可选因子 = 全部技术因子 - mandatory
         all_tech = _get_tech_factor_keys()
         optional = [k for k in all_tech if k not in mandatory]
-
-        # 枚举 optional 的子集（大小 = min_size-len(mandatory) ~ max_size-len(mandatory)）
-        opt_min = max(0, min_size - len(mandatory))
-        opt_max = max_size - len(mandatory)
-
+        opt_min  = max(0, min_size - len(mandatory))
+        opt_max  = max_size - len(mandatory)
         combos: list[list[str]] = []
         for size in range(opt_min, opt_max + 1):
             for subset in combinations(optional, size):
@@ -179,98 +206,214 @@ def _run(task_id: str, params: dict):
 
         total = len(combos)
         with _lock:
-            _tasks[task_id]['total'] = total
+            _tasks[task_id]['total']   = total
             _tasks[task_id]['current'] = 0
 
-        # ── 并行回测 ─────────────────────────────────────────
-        results = []
+        results: list[dict] = []
 
-        def _submit(combo):
-            train_s = _run_one(combo, train_start, train_end, universe, bt_top_n, min_cap_b, max_cap_b)
-            test_s  = _run_one(combo, test_start,  test_end,  universe, bt_top_n,  min_cap_b, max_cap_b)
-            return combo, train_s, test_s
+        # ── 单次切分模式 ───────────────────────────────────────
+        if mode == 'single':
+            train_start, train_end, test_start, test_end = _split_dates(start, end, train_ratio)
 
-        done = 0
-        with ThreadPoolExecutor(max_workers=4) as executor:
-            futures = {executor.submit(_submit, c): c for c in combos}
-            for future in as_completed(futures):
-                combo, train_s, test_s = future.result()
-                done += 1
-                with _lock:
-                    _tasks[task_id]['current']  = done
-                    _tasks[task_id]['progress'] = done / (total * 2)
-                    _tasks[task_id]['current_combo'] = combo
+            def _submit_single(combo):
+                ts = _run_one(combo, train_start, train_end, universe, bt_top_n, min_cap_b, max_cap_b)
+                vs = _run_one(combo, test_start,  test_end,  universe, bt_top_n, min_cap_b, max_cap_b)
+                return combo, ts, vs
 
-                # 过滤：有报错 / 测试期交易不足 5 笔
-                if '_error' in train_s or '_error' in test_s:
-                    err = train_s.get('_error') or test_s.get('_error', '')
+            done = 0
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                futures = {executor.submit(_submit_single, c): c for c in combos}
+                for future in as_completed(futures):
+                    combo, train_s, test_s = future.result()
+                    done += 1
                     with _lock:
-                        _tasks[task_id].setdefault('last_error', err)
-                    continue
-                if test_s.get('total_trades', 0) < 5:
-                    continue
+                        _tasks[task_id]['current']      = done
+                        _tasks[task_id]['progress']     = done / total
+                        _tasks[task_id]['current_combo'] = combo
 
-                train_sharpe = float(train_s.get('sharpe', 0) or 0)
-                test_sharpe  = float(test_s.get('sharpe', 0) or 0)
-                overfit      = round(train_sharpe - test_sharpe, 3)
+                    if '_error' in train_s or '_error' in test_s:
+                        err = train_s.get('_error') or test_s.get('_error', '')
+                        with _lock:
+                            _tasks[task_id].setdefault('last_error', err)
+                        continue
+                    if test_s.get('total_trades', 0) < 5:
+                        continue
 
-                # 排序得分：测试期指标 - 复杂度惩罚
-                if metric == 'sharpe':
-                    base_score = test_sharpe
-                elif metric == 'total_return':
-                    base_score = float(test_s.get('total_return', 0) or 0)
-                elif metric == 'excess_return':
-                    base_score = float(test_s.get('excess_return', 0) or 0)
-                else:
-                    base_score = test_sharpe
+                    train_sharpe = float(train_s.get('sharpe', 0) or 0)
+                    test_sharpe  = float(test_s.get('sharpe', 0) or 0)
 
-                score = base_score - 0.02 * len(combo)
+                    if metric == 'sharpe':
+                        base_score = test_sharpe
+                    elif metric == 'total_return':
+                        base_score = float(test_s.get('total_return', 0) or 0)
+                    elif metric == 'excess_return':
+                        base_score = float(test_s.get('excess_return', 0) or 0)
+                    else:
+                        base_score = test_sharpe
 
-                results.append({
-                    'factors':        combo,
-                    'factor_count':   len(combo),
-                    'score':          round(score, 4),
-                    'overfit_score':  overfit,
-                    'train': {
-                        'return':     round(float(train_s.get('total_return', 0) or 0), 4),
-                        'annual':     round(float(train_s.get('annual_return', 0) or 0), 4),
-                        'sharpe':     round(train_sharpe, 3),
-                        'max_dd':     round(float(train_s.get('max_drawdown', 0) or 0), 4),
-                        'win_rate':   round(float(train_s.get('win_rate', 0) or 0), 4),
-                        'trades':     int(train_s.get('total_trades', 0) or 0),
-                    },
-                    'test': {
-                        'return':     round(float(test_s.get('total_return', 0) or 0), 4),
-                        'annual':     round(float(test_s.get('annual_return', 0) or 0), 4),
-                        'sharpe':     round(test_sharpe, 3),
-                        'max_dd':     round(float(test_s.get('max_drawdown', 0) or 0), 4),
-                        'win_rate':   round(float(test_s.get('win_rate', 0) or 0), 4),
-                        'trades':     int(test_s.get('total_trades', 0) or 0),
-                        'spy_return': round(float(test_s.get('spy_return', 0) or 0), 4),
-                    },
-                })
+                    results.append({
+                        'factors':       combo,
+                        'factor_count':  len(combo),
+                        'score':         round(base_score - 0.02 * len(combo), 4),
+                        'overfit_score': round(train_sharpe - test_sharpe, 3),
+                        'train': {
+                            'return':   round(float(train_s.get('total_return', 0) or 0), 4),
+                            'annual':   round(float(train_s.get('annual_return', 0) or 0), 4),
+                            'sharpe':   round(train_sharpe, 3),
+                            'max_dd':   round(float(train_s.get('max_drawdown', 0) or 0), 4),
+                            'win_rate': round(float(train_s.get('win_rate', 0) or 0), 4),
+                            'trades':   int(train_s.get('total_trades', 0) or 0),
+                        },
+                        'test': {
+                            'return':     round(float(test_s.get('total_return', 0) or 0), 4),
+                            'annual':     round(float(test_s.get('annual_return', 0) or 0), 4),
+                            'sharpe':     round(test_sharpe, 3),
+                            'max_dd':     round(float(test_s.get('max_drawdown', 0) or 0), 4),
+                            'win_rate':   round(float(test_s.get('win_rate', 0) or 0), 4),
+                            'trades':     int(test_s.get('total_trades', 0) or 0),
+                            'spy_return': round(float(test_s.get('spy_return', 0) or 0), 4),
+                        },
+                    })
 
-        # 排序 + 截取 top_n
-        results.sort(key=lambda r: r['score'], reverse=True)
-        top_results = results[:top_n]
-
-        with _lock:
-            _tasks[task_id]['result']   = {
-                'results':      top_results,
+            results.sort(key=lambda r: r['score'], reverse=True)
+            result_payload = {
+                'mode':         'single',
+                'results':      results[:top_n],
                 'total_tested': len(results),
                 'total_combos': total,
                 'train_period': f'{train_start} ~ {train_end}',
                 'test_period':  f'{test_start} ~ {test_end}',
                 'metric':       metric,
             }
+
+        # ── Walk-Forward 滚动窗口模式 ──────────────────────────
+        else:
+            wf_train  = params.get('wf_train_months', 12)
+            wf_test   = params.get('wf_test_months',  3)
+            wf_step   = params.get('wf_step_months',  3)
+            windows   = _generate_wf_windows(start, end, wf_train, wf_test, wf_step)
+
+            if not windows:
+                raise ValueError(
+                    f'区间太短，无法生成 Walk-Forward 窗口（需要至少 {wf_train + wf_test} 个月）'
+                )
+
+            def _submit_wf(combo):
+                pairs = []
+                for w in windows:
+                    ts = _run_one(combo, w['train_start'], w['train_end'], universe, bt_top_n, min_cap_b, max_cap_b)
+                    vs = _run_one(combo, w['test_start'],  w['test_end'],  universe, bt_top_n, min_cap_b, max_cap_b)
+                    pairs.append((w, ts, vs))
+                return combo, pairs
+
+            done = 0
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                futures = {executor.submit(_submit_wf, c): c for c in combos}
+                for future in as_completed(futures):
+                    combo, pairs = future.result()
+                    done += 1
+                    with _lock:
+                        _tasks[task_id]['current']       = done
+                        _tasks[task_id]['progress']      = done / total
+                        _tasks[task_id]['current_combo'] = combo
+
+                    # 仅保留无报错、测试期交易 >= 3 的窗口
+                    valid = [(w, ts, vs) for w, ts, vs in pairs
+                             if '_error' not in ts and '_error' not in vs
+                             and vs.get('total_trades', 0) >= 3]
+
+                    # 有效窗口须占总窗口数的一半以上
+                    if len(valid) < max(1, len(windows) // 2):
+                        continue
+
+                    train_sharpes = [float(ts.get('sharpe', 0) or 0) for _, ts, _ in valid]
+                    test_sharpes  = [float(vs.get('sharpe', 0) or 0) for _, _, vs in valid]
+                    test_returns  = [float(vs.get('total_return', 0) or 0) for _, _, vs in valid]
+                    test_dds      = [float(vs.get('max_drawdown', 0) or 0) for _, _, vs in valid]
+                    test_wrs      = [float(vs.get('win_rate', 0) or 0) for _, _, vs in valid]
+                    test_trades   = [int(vs.get('total_trades', 0) or 0) for _, _, vs in valid]
+
+                    n = len(valid)
+                    avg_train_sharpe = sum(train_sharpes) / n
+                    avg_test_sharpe  = sum(test_sharpes)  / n
+                    std_test_sharpe  = (sum((x - avg_test_sharpe) ** 2 for x in test_sharpes) / n) ** 0.5
+                    avg_overfit      = avg_train_sharpe - avg_test_sharpe
+                    # stability = 全部窗口（含失效）中测试 Sharpe > 0 的比例
+                    stability        = sum(1 for s in test_sharpes if s > 0) / len(windows)
+
+                    if metric == 'sharpe':
+                        base_score = avg_test_sharpe
+                    elif metric == 'total_return':
+                        base_score = sum(test_returns) / n
+                    elif metric == 'excess_return':
+                        base_score = sum(
+                            float(vs.get('excess_return', 0) or 0) for _, _, vs in valid
+                        ) / n
+                    else:
+                        base_score = avg_test_sharpe
+
+                    # 得分：均值 - 波动惩罚 - 复杂度惩罚
+                    score = base_score - 0.3 * std_test_sharpe - 0.02 * len(combo)
+
+                    per_window = [
+                        {
+                            'train_period': f"{w['train_start']} ~ {w['train_end']}",
+                            'test_period':  f"{w['test_start']} ~ {w['test_end']}",
+                            'train_sharpe': round(float(ts.get('sharpe', 0) or 0), 3),
+                            'test_sharpe':  round(float(vs.get('sharpe', 0) or 0), 3),
+                            'test_return':  round(float(vs.get('total_return', 0) or 0), 4),
+                            'test_trades':  int(vs.get('total_trades', 0) or 0),
+                        }
+                        for w, ts, vs in valid
+                    ]
+
+                    results.append({
+                        'factors':      combo,
+                        'factor_count': len(combo),
+                        'score':        round(score, 4),
+                        'stability':    round(stability, 3),
+                        'avg_overfit':  round(avg_overfit, 3),
+                        'avg_train': {
+                            'sharpe':  round(avg_train_sharpe, 3),
+                        },
+                        'avg_test': {
+                            'sharpe':     round(avg_test_sharpe, 3),
+                            'std_sharpe': round(std_test_sharpe, 3),
+                            'return':     round(sum(test_returns) / n, 4),
+                            'max_dd':     round(sum(test_dds) / n, 4),
+                            'win_rate':   round(sum(test_wrs) / n, 4),
+                            'trades':     round(sum(test_trades) / n, 1),
+                        },
+                        'window_count': n,
+                        'windows':      per_window,
+                    })
+
+            results.sort(key=lambda r: r['score'], reverse=True)
+            result_payload = {
+                'mode':         'walkforward',
+                'results':      results[:top_n],
+                'total_tested': len(results),
+                'total_combos': total,
+                'window_count': len(windows),
+                'wf_params':    {'train_months': wf_train, 'test_months': wf_test, 'step_months': wf_step},
+                # 供历史表格展示用的整体区间
+                'train_period': f'{windows[0]["train_start"]} ~ {windows[-1]["train_end"]}',
+                'test_period':  f'{windows[0]["test_start"]}  ~ {windows[-1]["test_end"]}',
+                'metric':       metric,
+            }
+
+        with _lock:
+            _tasks[task_id]['result']   = result_payload
             _tasks[task_id]['status']   = 'completed'
             _tasks[task_id]['progress'] = 1.0
             _save_task(task_id, _tasks[task_id])
 
     except Exception as e:
+        import traceback
         with _lock:
             _tasks[task_id]['status'] = 'failed'
             _tasks[task_id]['error']  = str(e)
+            _tasks[task_id]['trace']  = traceback.format_exc()
 
 
 # ── 公开 API ───────────────────────────────────────────────
@@ -331,10 +474,13 @@ def get_history() -> list[dict]:
                 'task_id':       tid,
                 'status':        task['status'],
                 'created_at':    task['created_at'],
+                'mode':          r.get('mode', 'single'),
                 'total_combos':  r.get('total_combos', 0),
                 'total_tested':  r.get('total_tested', 0),
                 'train_period':  r.get('train_period', ''),
                 'test_period':   r.get('test_period', ''),
+                'window_count':  r.get('window_count', 0),
+                'wf_params':     r.get('wf_params', {}),
                 'metric':        r.get('metric', ''),
                 'best_factors':  r['results'][0]['factors'] if r.get('results') else [],
                 'best_score':    r['results'][0]['score'] if r.get('results') else None,

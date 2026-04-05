@@ -1,0 +1,931 @@
+INFO:     Will watch for changes in these directories: ['/Users/xulinbin/aiProject/QuanTrading']
+INFO:     Uvicorn running on http://127.0.0.1:3001 (Press CTRL+C to quit)
+INFO:     Started reloader process [28244] using WatchFiles
+
+  QuanTrading Web UI
+  API 文档：http://127.0.0.1:3001/docs
+  前端地址：http://127.0.0.1:3001
+
+INFO:     Started server process [28249]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+  [配置] 已从 DB 加载
+数据库连接成功
+  [调度器] 已启动
+INFO:     127.0.0.1:50223 - "GET /docs HTTP/1.1" 200 OK
+正在连接 IB Gateway (127.0.0.1:4002)...
+数据库连接成功
+数据库连接成功
+INFO:     127.0.0.1:50254 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50251 - "GET /api/portfolio/performance?days=30 HTTP/1.1" 500 Internal Server Error
+连接成功！账户: ['DUN994643']
+INFO:     127.0.0.1:50255 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+数据库连接成功
+数据库连接成功
+INFO:     127.0.0.1:50253 - "GET /api/portfolio/positions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50252 - "GET /api/portfolio/balance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50261 - "GET /api/factors/earnings?symbols=APA,CVX HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50264 - "GET /api/portfolio/performance?days=14 HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:50267 - "GET /api/portfolio/performance?days=90 HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:50270 - "GET /api/portfolio/performance?days=94 HTTP/1.1" 500 Internal Server Error
+INFO:     127.0.0.1:50274 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50277 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50305 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50311 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50314 - "GET /api/portfolio/balance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50310 - "GET /api/portfolio/positions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50335 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50338 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50350 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50356 - "GET /api/portfolio/balance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50360 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+数据库连接成功
+INFO:     127.0.0.1:50357 - "GET /api/portfolio/positions HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'web/services/performance_svc.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [28249]
+INFO:     Started server process [28705]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+[*********************100%***********************]  1 of 1 completed
+  [配置] 已从 DB 加载
+数据库连接成功
+  [调度器] 已启动
+数据库连接成功
+  [DataStore] 需更新 1 只，分 1 批下载...
+  [DataStore] 写入 0/1 只
+INFO:     127.0.0.1:50371 - "GET /api/portfolio/performance?days=94 HTTP/1.1" 200 OK
+正在连接 IB Gateway (127.0.0.1:4002)...
+连接成功！账户: ['DUN994643']
+INFO:     127.0.0.1:50405 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50414 - "GET /api/portfolio/balance HTTP/1.1" 200 OK
+数据库连接成功
+数据库连接成功
+INFO:     127.0.0.1:50416 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50415 - "GET /api/portfolio/positions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50456 - "GET /api/portfolio/balance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50459 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+数据库连接成功
+  [DataStore] 需更新 1 只，分 1 批下载...
+数据库连接成功
+INFO:     127.0.0.1:50457 - "GET /api/portfolio/positions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50458 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50462 - "GET /api/factors/earnings?symbols=APA,CVX HTTP/1.1" 200 OK
+[*********************100%***********************]  1 of 1 completed
+  [DataStore] 写入 0/1 只
+INFO:     127.0.0.1:50455 - "GET /api/portfolio/performance?days=30 HTTP/1.1" 200 OK
+[*********************100%***********************]  1 of 1 completed
+  [DataStore] 需更新 1 只，分 1 批下载...
+  [DataStore] 写入 0/1 只
+INFO:     127.0.0.1:50471 - "GET /api/portfolio/performance?days=14 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50478 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50481 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+[*********************100%***********************]  1 of 1 completed
+  [DataStore] 需更新 1 只，分 1 批下载...
+  [DataStore] 写入 0/1 只
+INFO:     127.0.0.1:50484 - "GET /api/portfolio/performance?days=90 HTTP/1.1" 200 OK
+[*********************100%***********************]  1 of 1 completed
+  [DataStore] 需更新 1 只，分 1 批下载...
+  [DataStore] 写入 0/1 只
+INFO:     127.0.0.1:50487 - "GET /api/portfolio/performance?days=94 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50501 - "GET /api/portfolio/balance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50504 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50507 - "GET /api/portfolio/positions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50510 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50516 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50519 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50533 - "GET /api/portfolio/balance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50538 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+数据库连接成功
+INFO:     127.0.0.1:50539 - "GET /api/portfolio/positions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50543 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50566 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50569 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50581 - "GET /api/portfolio/balance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50584 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50587 - "GET /api/portfolio/positions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50590 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50594 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50597 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50625 - "GET /api/portfolio/balance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50628 - "GET /api/portfolio/positions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50631 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50634 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50641 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50644 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50663 - "GET /api/portfolio/balance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50666 - "GET /api/portfolio/positions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50669 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50672 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50705 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50708 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'web/services/performance_svc.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [28705]
+INFO:     Started server process [29372]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'web/services/performance_svc.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [29372]
+INFO:     Started server process [29818]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+  [配置] 已从 DB 加载
+数据库连接成功
+  [调度器] 已启动
+正在连接 IB Gateway (127.0.0.1:4002)...
+数据库连接成功
+INFO:     127.0.0.1:51038 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+连接成功！账户: ['DUN994643']
+INFO:     127.0.0.1:51035 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+数据库连接成功
+数据库连接成功
+INFO:     127.0.0.1:51037 - "GET /api/portfolio/positions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51036 - "GET /api/portfolio/balance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51062 - "GET /api/portfolio/balance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51065 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51064 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+数据库连接成功
+INFO:     127.0.0.1:51063 - "GET /api/portfolio/positions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51067 - "GET /api/factors/earnings?symbols=APA,CVX HTTP/1.1" 200 OK
+[*********************100%***********************]  1 of 1 completed
+  [DataStore] 需更新 1 只，分 1 批下载...
+  [DataStore] 写入 0/1 只
+INFO:     127.0.0.1:51061 - "GET /api/portfolio/performance?days=30 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51102 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+数据库连接成功
+INFO:     127.0.0.1:51103 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51113 - "GET /api/portfolio/balance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51116 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51119 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51122 - "GET /api/portfolio/positions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51140 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51143 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51167 - "GET /api/portfolio/balance HTTP/1.1" 200 OK
+数据库连接成功
+INFO:     127.0.0.1:51168 - "GET /api/portfolio/positions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51198 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51213 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51216 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51451 - "GET /api/portfolio/balance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51456 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+  [DataStore] 需更新 1 只，分 1 批下载...
+数据库连接成功
+数据库连接成功
+INFO:     127.0.0.1:51455 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+[*********************100%***********************]  1 of 1 completed
+INFO:     127.0.0.1:51454 - "GET /api/portfolio/positions HTTP/1.1" 200 OK
+  [DataStore] 写入 0/1 只
+INFO:     127.0.0.1:51450 - "GET /api/portfolio/performance?days=30 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:51459 - "GET /api/factors/earnings?symbols=APA,CVX HTTP/1.1" 200 OK
+Run time of job "SchedulerService._reap_zombies (trigger: interval[0:01:00], next run at: 2026-04-05 12:24:12 CST)" was missed by 0:00:25.059575
+Run time of job "SchedulerService._reap_zombies (trigger: interval[0:01:00], next run at: 2026-04-05 12:41:12 CST)" was missed by 0:00:25.005838
+INFO:     127.0.0.1:53722 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53723 - "GET /api/portfolio/balance HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53724 - "GET /api/portfolio/positions HTTP/1.1" 200 OK
+数据库连接成功
+数据库连接成功
+INFO:     127.0.0.1:53725 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+[*********************100%***********************]  1 of 1 completed
+  [DataStore] 需更新 1 只，分 1 批下载...
+  [DataStore] 写入 0/1 只
+INFO:     127.0.0.1:53726 - "GET /api/portfolio/performance?days=30 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53751 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+数据库连接成功
+INFO:     127.0.0.1:53753 - "GET /api/portfolio/orders?limit=100 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:53760 - "GET /api/factors/registry HTTP/1.1" 200 OK
+  Wikipedia 获取成功：503 只 S&P 500 成分股
+  股票池共 503 只
+  Wikipedia 获取成功：503 只 S&P 500 成分股
+  股票池共 503 只
+  Wikipedia 获取成功：101 只 NASDAQ-100 成分股
+  股票池共 101 只
+  合并股票池：S&P500(503) + NDX独有(14) = 517 只
+INFO:     127.0.0.1:53766 - "GET /api/factors/insider HTTP/1.1" 200 OK
+[*********************100%***********************]  1 of 1 completed
+[*********************100%***********************]  1 of 1 completed
+[                       0%                       ][                       0%                       ]  2 of 516 completed[                       1%                       ]  3 of 516 completed[                       1%                       ]  4 of 516 completed[                       1%                       ]  5 of 516 completed[                       1%                       ]  6 of 516 completed[                       1%                       ]  7 of 516 completed[*                      2%                       ]  8 of 516 completed[*                      2%                       ]  9 of 516 completed[*                      2%                       ]  10 of 516 completed[*                      2%                       ]  10 of 516 completed[*                      2%                       ]  12 of 516 completed[*                      3%                       ]  13 of 516 completed[*                      3%                       ]  14 of 516 completed[*                      3%                       ]  15 of 516 completed[*                      3%                       ]  16 of 516 completed[*                      3%                       ]  17 of 516 completed[*                      3%                       ]  18 of 516 completed[**                     4%                       ]  19 of 516 completed[**                     4%                       ]  20 of 516 completed[**                     4%                       ]  21 of 516 completed[**                     4%                       ]  22 of 516 completed[**                     4%                       ]  22 of 516 completed[**                     5%                       ]  24 of 516 completed[**                     5%                       ]  25 of 516 completed[**                     5%                       ]  26 of 516 completed[**                     5%                       ]  27 of 516 completed[**                     5%                       ]  28 of 516 completed[***                    6%                       ]  29 of 516 completed[***                    6%                       ]  30 of 516 completed[***                    6%                       ]  31 of 516 completed[***                    6%                       ]  32 of 516 completed[***                    6%                       ]  33 of 516 completed[***                    7%                       ]  34 of 516 completed[***                    7%                       ]  35 of 516 completed[***                    7%                       ]  36 of 516 completed[***                    7%                       ]  37 of 516 completed[***                    7%                       ]  38 of 516 completed[****                   8%                       ]  39 of 516 completed[****                   8%                       ]  40 of 516 completed[****                   8%                       ]  41 of 516 completed[****                   8%                       ]  42 of 516 completed[****                   8%                       ]  43 of 516 completed[****                   8%                       ]  43 of 516 completed[****                   9%                       ]  45 of 516 completed[****                   9%                       ]  46 of 516 completed[****                   9%                       ]  47 of 516 completed[****                   9%                       ]  48 of 516 completed[****                   9%                       ]  49 of 516 completed[*****                 10%                       ]  50 of 516 completed[*****                 10%                       ]  51 of 516 completed[*****                 10%                       ]  52 of 516 completed[*****                 10%                       ]  53 of 516 completed[*****                 10%                       ]  54 of 516 completed[*****                 11%                       ]  55 of 516 completed[*****                 11%                       ]  55 of 516 completed[*****                 11%                       ]  57 of 516 completed[*****                 11%                       ]  58 of 516 completed[*****                 11%                       ]  59 of 516 completed[******                12%                       ]  60 of 516 completed[******                12%                       ]  61 of 516 completed[******                12%                       ]  62 of 516 completed[******                12%                       ]  63 of 516 completed[******                12%                       ]  63 of 516 completed[******                13%                       ]  65 of 516 completed[******                13%                       ]  66 of 516 completed[******                13%                       ]  67 of 516 completed[******                13%                       ]  68 of 516 completed[******                13%                       ]  69 of 516 completed[*******               14%                       ]  70 of 516 completed[*******               14%                       ]  71 of 516 completed[*******               14%                       ]  72 of 516 completed[*******               14%                       ]  73 of 516 completed[*******               14%                       ]  74 of 516 completed[*******               15%                       ]  75 of 516 completed[*******               15%                       ]  76 of 516 completed[*******               15%                       ]  77 of 516 completed[*******               15%                       ]  78 of 516 completed[*******               15%                       ]  79 of 516 completed[********              16%                       ]  80 of 516 completed[********              16%                       ]  81 of 516 completed[********              16%                       ]  82 of 516 completed[********              16%                       ]  83 of 516 completed[********              16%                       ]  84 of 516 completed[********              16%                       ]  85 of 516 completed[********              17%                       ]  86 of 516 completed[********              17%                       ]  87 of 516 completed[********              17%                       ]  88 of 516 completed[********              17%                       ]  89 of 516 completed[********              17%                       ]  90 of 516 completed[*********             18%                       ]  91 of 516 completed[*********             18%                       ]  92 of 516 completed[*********             18%                       ]  93 of 516 completed[*********             18%                       ]  94 of 516 completed[*********             18%                       ]  95 of 516 completed[*********             19%                       ]  96 of 516 completed[*********             19%                       ]  97 of 516 completed[*********             19%                       ]  98 of 516 completed[*********             19%                       ]  99 of 516 completed[*********             19%                       ]  100 of 516 completed[**********            20%                       ]  101 of 516 completed[**********            20%                       ]  102 of 516 completed[**********            20%                       ]  103 of 516 completed[**********            20%                       ]  104 of 516 completed[**********            20%                       ]  105 of 516 completed[**********            21%                       ]  106 of 516 completed[**********            21%                       ]  107 of 516 completed[**********            21%                       ]  108 of 516 completed[**********            21%                       ]  109 of 516 completed[**********            21%                       ]  110 of 516 completed[***********           22%                       ]  111 of 516 completed[***********           22%                       ]  112 of 516 completed[***********           22%                       ]  113 of 516 completed[***********           22%                       ]  114 of 516 completed[***********           22%                       ]  115 of 516 completed[***********           22%                       ]  116 of 516 completed[***********           23%                       ]  117 of 516 completed[***********           23%                       ]  118 of 516 completed[***********           23%                       ]  119 of 516 completed[***********           23%                       ]  120 of 516 completed[***********           23%                       ]  121 of 516 completed[************          24%                       ]  122 of 516 completed[************          24%                       ]  123 of 516 completed[************          24%                       ]  124 of 516 completed[************          24%                       ]  125 of 516 completed[************          24%                       ]  125 of 516 completed[************          25%                       ]  127 of 516 completed[************          25%                       ]  128 of 516 completed[************          25%                       ]  129 of 516 completed[************          25%                       ]  130 of 516 completed[************          25%                       ]  131 of 516 completed[************          26%                       ]  132 of 516 completed[************          26%                       ]  133 of 516 completed[************          26%                       ]  134 of 516 completed[************          26%                       ]  135 of 516 completed[************          26%                       ]  136 of 516 completed[*************         27%                       ]  137 of 516 completed[*************         27%                       ]  138 of 516 completed[*************         27%                       ]  139 of 516 completed[*************         27%                       ]  140 of 516 completed[*************         27%                       ]  141 of 516 completed[*************         28%                       ]  142 of 516 completed[*************         28%                       ]  143 of 516 completed[*************         28%                       ]  144 of 516 completed[*************         28%                       ]  145 of 516 completed[*************         28%                       ]  146 of 516 completed[*************         28%                       ]  147 of 516 completed[**************        29%                       ]  148 of 516 completed[**************        29%                       ]  149 of 516 completed[**************        29%                       ]  150 of 516 completed[**************        29%                       ]  151 of 516 completed[**************        29%                       ]  152 of 516 completed[**************        30%                       ]  153 of 516 completed[**************        30%                       ]  154 of 516 completed[**************        30%                       ]  155 of 516 completed[**************        30%                       ]  156 of 516 completed[**************        30%                       ]  157 of 516 completed[***************       31%                       ]  158 of 516 completed[***************       31%                       ]  159 of 516 completed[***************       31%                       ]  160 of 516 completed[***************       31%                       ]  161 of 516 completed[***************       31%                       ]  162 of 516 completed[***************       32%                       ]  163 of 516 completed[***************       32%                       ]  164 of 516 completed[***************       32%                       ]  165 of 516 completed[***************       32%                       ]  166 of 516 completed[***************       32%                       ]  167 of 516 completed[****************      33%                       ]  168 of 516 completed[****************      33%                       ]  169 of 516 completed[****************      33%                       ]  170 of 516 completed[****************      33%                       ]  171 of 516 completed[****************      33%                       ]  172 of 516 completed[****************      34%                       ]  173 of 516 completed[****************      34%                       ]  174 of 516 completed[****************      34%                       ]  175 of 516 completed[****************      34%                       ]  176 of 516 completed[****************      34%                       ]  177 of 516 completed[****************      34%                       ]  178 of 516 completed[*****************     35%                       ]  179 of 516 completed[*****************     35%                       ]  180 of 516 completed[*****************     35%                       ]  181 of 516 completed[*****************     35%                       ]  182 of 516 completed[*****************     35%                       ]  183 of 516 completed[*****************     36%                       ]  184 of 516 completed[*****************     36%                       ]  185 of 516 completed[*****************     36%                       ]  186 of 516 completed[*****************     36%                       ]  187 of 516 completed[*****************     36%                       ]  188 of 516 completed[******************    37%                       ]  189 of 516 completed[******************    37%                       ]  190 of 516 completed[******************    37%                       ]  191 of 516 completed[******************    37%                       ]  192 of 516 completed[******************    37%                       ]  193 of 516 completed[******************    38%                       ]  194 of 516 completed[******************    38%                       ]  195 of 516 completed[******************    38%                       ]  196 of 516 completed[******************    38%                       ]  197 of 516 completed[******************    38%                       ]  198 of 516 completed[*******************   39%                       ]  199 of 516 completed[*******************   39%                       ]  200 of 516 completed[*******************   39%                       ]  201 of 516 completed[*******************   39%                       ]  202 of 516 completed[*******************   39%                       ]  203 of 516 completed[*******************   39%                       ]  203 of 516 completed[*******************   40%                       ]  205 of 516 completed[*******************   40%                       ]  206 of 516 completed[*******************   40%                       ]  207 of 516 completed[*******************   40%                       ]  208 of 516 completed[********************  41%                       ]  209 of 516 completed[********************  41%                       ]  210 of 516 completed[********************  41%                       ]  211 of 516 completed[********************  41%                       ]  212 of 516 completed[********************  41%                       ]  213 of 516 completed[********************  41%                       ]  214 of 516 completed[********************  42%                       ]  215 of 516 completed[********************  42%                       ]  216 of 516 completed[********************  42%                       ]  216 of 516 completed[********************  42%                       ]  218 of 516 completed[********************  42%                       ]  219 of 516 completed[********************* 43%                       ]  220 of 516 completed[********************* 43%                       ]  221 of 516 completed[********************* 43%                       ]  222 of 516 completed[********************* 43%                       ]  223 of 516 completed[********************* 43%                       ]  224 of 516 completed[********************* 44%                       ]  225 of 516 completed[********************* 44%                       ]  226 of 516 completed[********************* 44%                       ]  227 of 516 completed[********************* 44%                       ]  228 of 516 completed[********************* 44%                       ]  229 of 516 completed[**********************45%                       ]  230 of 516 completed[**********************45%                       ]  231 of 516 completed[**********************45%                       ]  232 of 516 completed[**********************45%                       ]  233 of 516 completed[**********************45%                       ]  234 of 516 completed[**********************46%                       ]  235 of 516 completed[**********************46%                       ]  236 of 516 completed[**********************46%                       ]  237 of 516 completed[**********************46%                       ]  238 of 516 completed[**********************46%                       ]  239 of 516 completed[**********************47%                       ]  240 of 516 completed[**********************47%                       ]  241 of 516 completed[**********************47%                       ]  242 of 516 completed[**********************47%                       ]  243 of 516 completed[**********************47%                       ]  244 of 516 completed[**********************47%                       ]  245 of 516 completed[**********************48%                       ]  246 of 516 completed[**********************48%                       ]  247 of 516 completed[**********************48%                       ]  247 of 516 completed[**********************48%                       ]  249 of 516 completed[**********************48%                       ]  250 of 516 completed[**********************49%                       ]  251 of 516 completed[**********************49%                       ]  252 of 516 completed[**********************49%                       ]  253 of 516 completed[**********************49%                       ]  254 of 516 completed[**********************49%                       ]  255 of 516 completed[**********************49%                       ]  255 of 516 completed[**********************50%                       ]  257 of 516 completed[**********************50%                       ]  258 of 516 completed  Wikipedia 获取成功：101 只 NASDAQ-100 成分股
+  股票池共 101 只
+  合并股票池：S&P500(503) + NDX独有(14) = 517 只
+  [DataStore] 需更新 518 只，分 3 批下载...
+  [DataStore] 写入 0/1 只
+  [DataStore] 写入 0/1 只
+INFO:     127.0.0.1:54601 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+[**********************50%                       ]  259 of 516 completed[**********************50%                       ]  260 of 516 completed[**********************51%                       ]  261 of 516 completed[**********************51%                       ]  262 of 516 completed[**********************51%                       ]  263 of 516 completed[**********************51%                       ]  264 of 516 completed[**********************51%                       ]  265 of 516 completed[**********************52%                       ]  266 of 516 completed[**********************52%                       ]  267 of 516 completed[**********************52%                       ]  268 of 516 completed[**********************52%                       ]  269 of 516 completed[**********************52%                       ]  270 of 516 completed[**********************53%                       ]  271 of 516 completed[**********************53%                       ]  272 of 516 completed[**********************53%                       ]  273 of 516 completed[**********************53%                       ]  274 of 516 completed[**********************53%                       ]  275 of 516 completed[**********************53%                       ]  276 of 516 completed[**********************54%*                      ]  277 of 516 completed[**********************54%*                      ]  278 of 516 completed[**********************54%*                      ]  279 of 516 completed[**********************54%*                      ]  280 of 516 completed[**********************54%*                      ]  281 of 516 completed[**********************55%*                      ]  282 of 516 completed[**********************55%*                      ]  283 of 516 completed[**********************55%*                      ]  284 of 516 completed[**********************55%*                      ]  285 of 516 completed[**********************55%*                      ]  286 of 516 completed[**********************56%**                     ]  287 of 516 completed[**********************56%**                     ]  288 of 516 completed[**********************56%**                     ]  289 of 516 completed[**********************56%**                     ]  290 of 516 completed[**********************56%**                     ]  291 of 516 completed[**********************57%**                     ]  292 of 516 completed[**********************57%**                     ]  293 of 516 completed[**********************57%**                     ]  294 of 516 completed[**********************57%**                     ]  295 of 516 completed[**********************57%**                     ]  296 of 516 completed[**********************58%***                    ]  297 of 516 completed[**********************58%***                    ]  298 of 516 completed[**********************58%***                    ]  299 of 516 completed[**********************58%***                    ]  300 of 516 completed[**********************58%***                    ]  301 of 516 completed[**********************59%***                    ]  302 of 516 completed[**********************59%***                    ]  303 of 516 completed[**********************59%***                    ]  304 of 516 completed[**********************59%***                    ]  305 of 516 completed[**********************59%***                    ]  306 of 516 completed[**********************59%***                    ]  307 of 516 completed[**********************60%****                   ]  308 of 516 completed[**********************60%****                   ]  309 of 516 completed[**********************60%****                   ]  310 of 516 completed[**********************60%****                   ]  311 of 516 completed[**********************60%****                   ]  312 of 516 completed[**********************61%****                   ]  313 of 516 completed[**********************61%****                   ]  314 of 516 completed[**********************61%****                   ]  315 of 516 completed[**********************61%****                   ]  316 of 516 completed[**********************61%****                   ]  317 of 516 completed[**********************62%*****                  ]  318 of 516 completed[**********************62%*****                  ]  319 of 516 completed[**********************62%*****                  ]  320 of 516 completed[**********************62%*****                  ]  321 of 516 completed[**********************62%*****                  ]  322 of 516 completed[**********************63%*****                  ]  323 of 516 completed[**********************63%*****                  ]  324 of 516 completed[**********************63%*****                  ]  325 of 516 completed[**********************63%*****                  ]  325 of 516 completed[**********************63%*****                  ]  327 of 516 completed[**********************64%******                 ]  328 of 516 completed[**********************64%******                 ]  329 of 516 completed[**********************64%******                 ]  330 of 516 completed[**********************64%******                 ]  331 of 516 completed[**********************64%******                 ]  332 of 516 completed[**********************65%******                 ]  333 of 516 completed[**********************65%******                 ]  334 of 516 completed[**********************65%******                 ]  335 of 516 completed[**********************65%******                 ]  336 of 516 completed[**********************65%******                 ]  337 of 516 completed[**********************66%*******                ]  338 of 516 completed[**********************66%*******                ]  339 of 516 completed[**********************66%*******                ]  340 of 516 completed[**********************66%*******                ]  340 of 516 completed[**********************66%*******                ]  342 of 516 completed[**********************66%*******                ]  343 of 516 completed[**********************67%*******                ]  344 of 516 completed[**********************67%*******                ]  345 of 516 completed[**********************67%*******                ]  346 of 516 completed[**********************67%*******                ]  347 of 516 completed[**********************67%*******                ]  348 of 516 completed[**********************68%********               ]  349 of 516 completed[**********************68%********               ]  350 of 516 completed[**********************68%********               ]  351 of 516 completed[**********************68%********               ]  352 of 516 completed[**********************68%********               ]  353 of 516 completed[**********************69%********               ]  354 of 516 completed[**********************69%********               ]  355 of 516 completed[**********************69%********               ]  356 of 516 completed[**********************69%********               ]  357 of 516 completed[**********************69%********               ]  358 of 516 completed[**********************70%*********              ]  359 of 516 completed[**********************70%*********              ]  360 of 516 completed[**********************70%*********              ]  361 of 516 completed[**********************70%*********              ]  362 of 516 completed[**********************70%*********              ]  363 of 516 completed[**********************71%*********              ]  364 of 516 completed[**********************71%*********              ]  365 of 516 completed[**********************71%*********              ]  365 of 516 completed[**********************71%*********              ]  367 of 516 completed[**********************71%*********              ]  368 of 516 completed[**********************72%**********             ]  369 of 516 completed[**********************72%**********             ]  370 of 516 completed[**********************72%**********             ]  371 of 516 completed[**********************72%**********             ]  372 of 516 completed[**********************72%**********             ]  373 of 516 completed[**********************72%**********             ]  374 of 516 completed[**********************73%**********             ]  375 of 516 completed[**********************73%**********             ]  376 of 516 completed[**********************73%**********             ]  377 of 516 completed[**********************73%**********             ]  378 of 516 completed[**********************73%**********             ]  379 of 516 completed[**********************74%***********            ]  380 of 516 completed[**********************74%***********            ]  381 of 516 completed[**********************74%***********            ]  382 of 516 completed[**********************74%***********            ]  383 of 516 completed[**********************74%***********            ]  384 of 516 completed[**********************75%***********            ]  385 of 516 completed[**********************75%***********            ]  386 of 516 completed[**********************75%***********            ]  387 of 516 completed[**********************75%***********            ]  388 of 516 completed[**********************75%***********            ]  389 of 516 completed[**********************76%***********            ]  390 of 516 completed[**********************76%***********            ]  391 of 516 completed[**********************76%***********            ]  392 of 516 completed[**********************76%***********            ]  393 of 516 completed[**********************76%***********            ]  394 of 516 completed[**********************77%************           ]  395 of 516 completed[**********************77%************           ]  396 of 516 completed[**********************77%************           ]  397 of 516 completed[**********************77%************           ]  398 of 516 completed[**********************77%************           ]  399 of 516 completed[**********************78%************           ]  400 of 516 completed[**********************78%************           ]  401 of 516 completed[**********************78%************           ]  402 of 516 completed[**********************78%************           ]  403 of 516 completed[**********************78%************           ]  404 of 516 completed[**********************78%************           ]  405 of 516 completed[**********************79%*************          ]  406 of 516 completed[**********************79%*************          ]  407 of 516 completed[**********************79%*************          ]  408 of 516 completed[**********************79%*************          ]  409 of 516 completed[**********************79%*************          ]  410 of 516 completed[**********************80%*************          ]  411 of 516 completed[**********************80%*************          ]  411 of 516 completed[**********************80%*************          ]  413 of 516 completed[**********************80%*************          ]  414 of 516 completed[**********************80%*************          ]  415 of 516 completed[**********************81%**************         ]  416 of 516 completed[**********************81%**************         ]  417 of 516 completed[**********************81%**************         ]  418 of 516 completed[**********************81%**************         ]  419 of 516 completed[**********************81%**************         ]  419 of 516 completed[**********************82%**************         ]  421 of 516 completed[**********************82%**************         ]  422 of 516 completed[**********************82%**************         ]  423 of 516 completed[**********************82%**************         ]  424 of 516 completed[**********************82%**************         ]  425 of 516 completed[**********************83%***************        ]  426 of 516 completed[**********************83%***************        ]  427 of 516 completed[**********************83%***************        ]  428 of 516 completed[**********************83%***************        ]  429 of 516 completed[**********************83%***************        ]  430 of 516 completed[**********************84%***************        ]  431 of 516 completed[**********************84%***************        ]  432 of 516 completed[**********************84%***************        ]  433 of 516 completed[**********************84%***************        ]  434 of 516 completed[**********************84%***************        ]  435 of 516 completed[**********************84%***************        ]  436 of 516 completed[**********************85%****************       ]  437 of 516 completed[**********************85%****************       ]  438 of 516 completed[**********************85%****************       ]  439 of 516 completed[**********************85%****************       ]  440 of 516 completed[**********************85%****************       ]  441 of 516 completed[**********************85%****************       ]  441 of 516 completed[**********************86%****************       ]  443 of 516 completed[**********************86%****************       ]  444 of 516 completed[**********************86%****************       ]  445 of 516 completed[**********************86%****************       ]  446 of 516 completed[**********************87%*****************      ]  447 of 516 completed[**********************87%*****************      ]  448 of 516 completed[**********************87%*****************      ]  449 of 516 completed[**********************87%*****************      ]  450 of 516 completed[**********************87%*****************      ]  451 of 516 completed[**********************88%*****************      ]  452 of 516 completed[**********************88%*****************      ]  453 of 516 completed[**********************88%*****************      ]  454 of 516 completed[**********************88%*****************      ]  455 of 516 completed[**********************88%*****************      ]  456 of 516 completed[**********************89%******************     ]  457 of 516 completed[**********************89%******************     ]  458 of 516 completed[**********************89%******************     ]  459 of 516 completed[**********************89%******************     ]  460 of 516 completed[**********************89%******************     ]  461 of 516 completed[**********************90%******************     ]  462 of 516 completed[**********************90%******************     ]  463 of 516 completed[**********************90%******************     ]  464 of 516 completed[**********************90%******************     ]  465 of 516 completed[**********************90%******************     ]  466 of 516 completed[**********************91%*******************    ]  467 of 516 completed[**********************91%*******************    ]  468 of 516 completed[**********************91%*******************    ]  469 of 516 completed[**********************91%*******************    ]  470 of 516 completed[**********************91%*******************    ]  471 of 516 completed[**********************91%*******************    ]  472 of 516 completed[**********************92%*******************    ]  473 of 516 completed[**********************92%*******************    ]  474 of 516 completed[**********************92%*******************    ]  475 of 516 completed[**********************92%*******************    ]  476 of 516 completed[**********************92%*******************    ]  477 of 516 completed[**********************93%********************   ]  478 of 516 completed[**********************93%********************   ]  479 of 516 completed[**********************93%********************   ]  480 of 516 completed[**********************93%********************   ]  481 of 516 completed[**********************93%********************   ]  482 of 516 completed[**********************94%********************   ]  483 of 516 completed[**********************94%********************   ]  484 of 516 completed[**********************94%********************   ]  485 of 516 completed[**********************94%********************   ]  486 of 516 completed[**********************94%********************   ]  487 of 516 completed[**********************95%*********************  ]  488 of 516 completed[**********************95%*********************  ]  489 of 516 completed[**********************95%*********************  ]  490 of 516 completed[**********************95%*********************  ]  491 of 516 completed[**********************95%*********************  ]  492 of 516 completed[**********************96%*********************  ]  493 of 516 completed[**********************96%*********************  ]  494 of 516 completed[**********************96%*********************  ]  495 of 516 completed[**********************96%*********************  ]  496 of 516 completed[**********************96%*********************  ]  497 of 516 completed[**********************97%********************** ]  498 of 516 completed[**********************97%********************** ]  499 of 516 completed[**********************97%********************** ]  500 of 516 completed[**********************97%********************** ]  501 of 516 completed[**********************97%********************** ]  502 of 516 completed[**********************97%********************** ]  503 of 516 completed[**********************98%********************** ]  504 of 516 completed[**********************98%********************** ]  505 of 516 completed[**********************98%********************** ]  506 of 516 completed[**********************98%********************** ]  507 of 516 completed[**********************98%********************** ]  508 of 516 completed[**********************99%***********************]  509 of 516 completed[**********************99%***********************]  510 of 516 completed[**********************99%***********************]  511 of 516 completed[**********************99%***********************]  512 of 516 completed[**********************99%***********************]  513 of 516 completed[*********************100%***********************]  514 of 516 completed[*********************100%***********************]  515 of 516 completed[*********************100%***********************]  516 of 516 completed
+
+3 Failed downloads:
+['PRU', 'AMCR', 'VLO']: TypeError("'NoneType' object is not subscriptable")
+  [DataStore] 写入 0/516 只
+INFO:     127.0.0.1:53765 - "GET /api/factors/scan?universe=sp500%2Bndx&top=100&force=false HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55353 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+[                       0%                       ][*********************100%***********************]  2 of 2 completed
+  [DataStore] 需更新 2 只，分 1 批下载...
+  [DataStore] 写入 0/2 只
+INFO:     127.0.0.1:55356 - "GET /api/factors/stock/BG?days=120 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55374 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+[*********************100%***********************]  1 of 1 completed
+[*********************100%***********************]  1 of 1 completed
+  [DataStore] 需更新 2 只，分 2 批下载...
+  [DataStore] 写入 0/1 只
+  [DataStore] 写入 0/1 只
+INFO:     127.0.0.1:55377 - "GET /api/factors/stock/Q?days=120 HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/uvicorn/protocols/http/httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/applications.py", line 1159, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 715, in app
+    response = actual_response_class(content, **response_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 192, in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 45, in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 195, in render
+    return json.dumps(
+           ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/encoder.py", line 258, in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+ValueError: Out of range float values are not JSON compliant: nan
+[*********************100%***********************]  1 of 1 completed
+[*********************100%***********************]  1 of 1 completed
+  [DataStore] 需更新 2 只，分 2 批下载...
+  [DataStore] 写入 0/1 只
+  [DataStore] 写入 0/1 只
+INFO:     127.0.0.1:55383 - "GET /api/factors/stock/Q?days=120 HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/uvicorn/protocols/http/httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/applications.py", line 1159, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 715, in app
+    response = actual_response_class(content, **response_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 192, in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 45, in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 195, in render
+    return json.dumps(
+           ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/encoder.py", line 258, in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+ValueError: Out of range float values are not JSON compliant: nan
+[*********************100%***********************]  1 of 1 completed
+[*********************100%***********************]  1 of 1 completed
+  [DataStore] 需更新 2 只，分 2 批下载...
+  [DataStore] 写入 0/1 只
+  [DataStore] 写入 0/1 只
+INFO:     127.0.0.1:55386 - "GET /api/factors/stock/Q?days=120 HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/uvicorn/protocols/http/httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/applications.py", line 1159, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 715, in app
+    response = actual_response_class(content, **response_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 192, in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 45, in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 195, in render
+    return json.dumps(
+           ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/encoder.py", line 258, in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+ValueError: Out of range float values are not JSON compliant: nan
+[*********************100%***********************]  1 of 1 completed
+[*********************100%***********************]  1 of 1 completed
+  [DataStore] 需更新 2 只，分 2 批下载...
+  [DataStore] 写入 0/1 只
+  [DataStore] 写入 0/1 只
+INFO:     127.0.0.1:55389 - "GET /api/factors/stock/Q?days=120 HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/uvicorn/protocols/http/httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/applications.py", line 1159, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 715, in app
+    response = actual_response_class(content, **response_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 192, in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 45, in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 195, in render
+    return json.dumps(
+           ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/encoder.py", line 258, in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+ValueError: Out of range float values are not JSON compliant: nan
+INFO:     127.0.0.1:55454 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55465 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55468 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55491 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55508 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55537 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55572 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:55585 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+WARNING:  WatchFiles detected changes in 'core/universe.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [29818]
+INFO:     Started server process [32618]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+WARNING:  WatchFiles detected changes in 'core/universe.py'. Reloading...
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [32618]
+INFO:     Started server process [32664]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+  [配置] 已从 DB 加载
+数据库连接成功
+  [调度器] 已启动
+正在连接 IB Gateway (127.0.0.1:4002)...
+连接成功！账户: ['DUN994643']
+INFO:     127.0.0.1:56752 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56759 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56784 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56799 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56820 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56869 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56889 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56921 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56934 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56954 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56969 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56972 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56993 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:56996 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57001 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57026 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57044 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57052 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57078 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57087 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57094 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57097 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57102 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57105 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57110 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57148 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57163 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:57189 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+  iShares IVV 获取成功：504 只 S&P 500 成分股
+  股票池共 504 只
+  iShares IVV 获取成功：504 只 S&P 500 成分股
+  股票池共 504 只
+  Wikipedia 获取成功：101 只 NASDAQ-100 成分股
+  股票池共 101 只
+  合并股票池：S&P500(504) + NDX独有(14) = 518 只
+  Wikipedia 获取成功：101 只 NASDAQ-100 成分股
+  股票池共 101 只
+  合并股票池：S&P500(504) + NDX独有(14) = 518 只
+INFO:     127.0.0.1:57188 - "GET /api/factors/insider HTTP/1.1" 200 OK
+[                       0%                       ][*********************100%***********************]  2 of 2 completed
+[*********************100%***********************]  1 of 1 completed
+[                       0%                       ][                       0%                       ]  2 of 516 completed[                       1%                       ]  3 of 516 completed[                       1%                       ]  4 of 516 completed[                       1%                       ]  5 of 516 completed[                       1%                       ]  6 of 516 completed[                       1%                       ]  7 of 516 completed[*                      2%                       ]  8 of 516 completed[*                      2%                       ]  9 of 516 completed[*                      2%                       ]  10 of 516 completed[*                      2%                       ]  11 of 516 completed[*                      2%                       ]  12 of 516 completed[*                      3%                       ]  13 of 516 completed[*                      3%                       ]  14 of 516 completed[*                      3%                       ]  15 of 516 completed[*                      3%                       ]  16 of 516 completed[*                      3%                       ]  17 of 516 completed[*                      3%                       ]  18 of 516 completed[**                     4%                       ]  19 of 516 completed[**                     4%                       ]  20 of 516 completed[**                     4%                       ]  21 of 516 completed[**                     4%                       ]  22 of 516 completed[**                     4%                       ]  23 of 516 completed[**                     5%                       ]  24 of 516 completed[**                     5%                       ]  25 of 516 completed[**                     5%                       ]  26 of 516 completed[**                     5%                       ]  27 of 516 completed[**                     5%                       ]  28 of 516 completed[***                    6%                       ]  29 of 516 completed[***                    6%                       ]  30 of 516 completed[***                    6%                       ]  31 of 516 completed[***                    6%                       ]  32 of 516 completed[***                    6%                       ]  33 of 516 completed[***                    7%                       ]  34 of 516 completed[***                    7%                       ]  35 of 516 completed[***                    7%                       ]  36 of 516 completed[***                    7%                       ]  37 of 516 completed[***                    7%                       ]  38 of 516 completed[****                   8%                       ]  39 of 516 completed[****                   8%                       ]  40 of 516 completed[****                   8%                       ]  41 of 516 completed[****                   8%                       ]  42 of 516 completed[****                   8%                       ]  43 of 516 completed[****                   9%                       ]  44 of 516 completed[****                   9%                       ]  45 of 516 completed[****                   9%                       ]  46 of 516 completed[****                   9%                       ]  47 of 516 completed[****                   9%                       ]  48 of 516 completed[****                   9%                       ]  49 of 516 completed[*****                 10%                       ]  50 of 516 completed[*****                 10%                       ]  51 of 516 completed[*****                 10%                       ]  52 of 516 completed[*****                 10%                       ]  53 of 516 completed[*****                 10%                       ]  54 of 516 completed[*****                 11%                       ]  55 of 516 completed[*****                 11%                       ]  56 of 516 completed[*****                 11%                       ]  57 of 516 completed[*****                 11%                       ]  58 of 516 completed[*****                 11%                       ]  59 of 516 completed[******                12%                       ]  60 of 516 completed[******                12%                       ]  61 of 516 completed[******                12%                       ]  62 of 516 completed[******                12%                       ]  63 of 516 completed[******                12%                       ]  64 of 516 completed[******                13%                       ]  65 of 516 completed[******                13%                       ]  66 of 516 completed[******                13%                       ]  67 of 516 completed[******                13%                       ]  68 of 516 completed[******                13%                       ]  69 of 516 completed[*******               14%                       ]  70 of 516 completed[*******               14%                       ]  71 of 516 completed[*******               14%                       ]  72 of 516 completed[*******               14%                       ]  73 of 516 completed[*******               14%                       ]  74 of 516 completed[*******               15%                       ]  75 of 516 completed[*******               15%                       ]  76 of 516 completed[*******               15%                       ]  77 of 516 completed[*******               15%                       ]  78 of 516 completed[*******               15%                       ]  79 of 516 completed[********              16%                       ]  80 of 516 completed[********              16%                       ]  81 of 516 completed[********              16%                       ]  82 of 516 completed[********              16%                       ]  83 of 516 completed[********              16%                       ]  84 of 516 completed[********              16%                       ]  85 of 516 completed[********              17%                       ]  86 of 516 completed[********              17%                       ]  87 of 516 completed[********              17%                       ]  88 of 516 completed[********              17%                       ]  89 of 516 completed[********              17%                       ]  90 of 516 completed[********              17%                       ]  90 of 516 completed[*********             18%                       ]  92 of 516 completed[*********             18%                       ]  92 of 516 completed[*********             18%                       ]  94 of 516 completed[*********             18%                       ]  95 of 516 completed[*********             19%                       ]  96 of 516 completed[*********             19%                       ]  97 of 516 completed[*********             19%                       ]  98 of 516 completed[*********             19%                       ]  99 of 516 completed[*********             19%                       ]  100 of 516 completed[**********            20%                       ]  101 of 516 completed[**********            20%                       ]  102 of 516 completed[**********            20%                       ]  103 of 516 completed[**********            20%                       ]  104 of 516 completed[**********            20%                       ]  105 of 516 completed[**********            21%                       ]  106 of 516 completed[**********            21%                       ]  107 of 516 completed[**********            21%                       ]  108 of 516 completed[**********            21%                       ]  109 of 516 completed[**********            21%                       ]  110 of 516 completed[***********           22%                       ]  111 of 516 completed[***********           22%                       ]  112 of 516 completed[***********           22%                       ]  113 of 516 completed[***********           22%                       ]  114 of 516 completed[***********           22%                       ]  115 of 516 completed[***********           22%                       ]  116 of 516 completed[***********           23%                       ]  117 of 516 completed[***********           23%                       ]  118 of 516 completed[***********           23%                       ]  119 of 516 completed[***********           23%                       ]  120 of 516 completed[***********           23%                       ]  121 of 516 completed[************          24%                       ]  122 of 516 completed[************          24%                       ]  123 of 516 completed[************          24%                       ]  124 of 516 completed[************          24%                       ]  125 of 516 completed[************          24%                       ]  126 of 516 completed[************          25%                       ]  127 of 516 completed[************          25%                       ]  128 of 516 completed[************          25%                       ]  129 of 516 completed[************          25%                       ]  130 of 516 completed[************          25%                       ]  131 of 516 completed[************          26%                       ]  132 of 516 completed[************          26%                       ]  133 of 516 completed[************          26%                       ]  134 of 516 completed[************          26%                       ]  135 of 516 completed[************          26%                       ]  136 of 516 completed[*************         27%                       ]  137 of 516 completed[*************         27%                       ]  138 of 516 completed[*************         27%                       ]  139 of 516 completed[*************         27%                       ]  140 of 516 completed[*************         27%                       ]  141 of 516 completed[*************         28%                       ]  142 of 516 completed[*************         28%                       ]  143 of 516 completed[*************         28%                       ]  144 of 516 completed[*************         28%                       ]  145 of 516 completed[*************         28%                       ]  146 of 516 completed[*************         28%                       ]  147 of 516 completed[**************        29%                       ]  148 of 516 completed[**************        29%                       ]  149 of 516 completed[**************        29%                       ]  150 of 516 completed[**************        29%                       ]  151 of 516 completed[**************        29%                       ]  152 of 516 completed[**************        30%                       ]  153 of 516 completed[**************        30%                       ]  154 of 516 completed[**************        30%                       ]  155 of 516 completed[**************        30%                       ]  156 of 516 completed[**************        30%                       ]  157 of 516 completed[***************       31%                       ]  158 of 516 completed[***************       31%                       ]  159 of 516 completed[***************       31%                       ]  160 of 516 completed[***************       31%                       ]  161 of 516 completed[***************       31%                       ]  162 of 516 completed[***************       32%                       ]  163 of 516 completed[***************       32%                       ]  164 of 516 completed[***************       32%                       ]  165 of 516 completed[***************       32%                       ]  166 of 516 completed[***************       32%                       ]  167 of 516 completed[****************      33%                       ]  168 of 516 completed[****************      33%                       ]  169 of 516 completed[****************      33%                       ]  170 of 516 completed[****************      33%                       ]  171 of 516 completed[****************      33%                       ]  172 of 516 completed[****************      34%                       ]  173 of 516 completed[****************      34%                       ]  174 of 516 completed[****************      34%                       ]  175 of 516 completed[****************      34%                       ]  176 of 516 completed[****************      34%                       ]  177 of 516 completed[****************      34%                       ]  178 of 516 completed[*****************     35%                       ]  179 of 516 completed[*****************     35%                       ]  180 of 516 completed[*****************     35%                       ]  181 of 516 completed[*****************     35%                       ]  182 of 516 completed[*****************     35%                       ]  183 of 516 completed[*****************     36%                       ]  184 of 516 completed[*****************     36%                       ]  185 of 516 completed[*****************     36%                       ]  186 of 516 completed[*****************     36%                       ]  187 of 516 completed[*****************     36%                       ]  188 of 516 completed[******************    37%                       ]  189 of 516 completed[******************    37%                       ]  190 of 516 completed[******************    37%                       ]  191 of 516 completed[******************    37%                       ]  192 of 516 completed[******************    37%                       ]  193 of 516 completed[******************    38%                       ]  194 of 516 completed[******************    38%                       ]  195 of 516 completed[******************    38%                       ]  196 of 516 completed[******************    38%                       ]  197 of 516 completed[******************    38%                       ]  198 of 516 completed[*******************   39%                       ]  199 of 516 completed[*******************   39%                       ]  200 of 516 completed[*******************   39%                       ]  201 of 516 completed[*******************   39%                       ]  202 of 516 completed[*******************   39%                       ]  203 of 516 completed[*******************   40%                       ]  204 of 516 completed[*******************   40%                       ]  205 of 516 completed[*******************   40%                       ]  206 of 516 completed[*******************   40%                       ]  207 of 516 completed[*******************   40%                       ]  208 of 516 completed[********************  41%                       ]  209 of 516 completed[********************  41%                       ]  210 of 516 completed[********************  41%                       ]  211 of 516 completed[********************  41%                       ]  211 of 516 completed[********************  41%                       ]  213 of 516 completed[********************  41%                       ]  214 of 516 completed[********************  42%                       ]  215 of 516 completed[********************  42%                       ]  216 of 516 completed[********************  42%                       ]  217 of 516 completed[********************  42%                       ]  218 of 516 completed[********************  42%                       ]  219 of 516 completed[********************* 43%                       ]  220 of 516 completed[********************* 43%                       ]  221 of 516 completed[********************* 43%                       ]  222 of 516 completed[********************* 43%                       ]  223 of 516 completed[********************* 43%                       ]  224 of 516 completed[********************* 44%                       ]  225 of 516 completed[********************* 44%                       ]  226 of 516 completed[********************* 44%                       ]  227 of 516 completed[********************* 44%                       ]  228 of 516 completed[********************* 44%                       ]  229 of 516 completed[**********************45%                       ]  230 of 516 completed[**********************45%                       ]  231 of 516 completed[**********************45%                       ]  232 of 516 completed[**********************45%                       ]  233 of 516 completed[**********************45%                       ]  234 of 516 completed[**********************46%                       ]  235 of 516 completed[**********************46%                       ]  236 of 516 completed[**********************46%                       ]  237 of 516 completed[**********************46%                       ]  238 of 516 completed[**********************46%                       ]  239 of 516 completed[**********************47%                       ]  240 of 516 completed[**********************47%                       ]  241 of 516 completed[**********************47%                       ]  242 of 516 completed[**********************47%                       ]  243 of 516 completed[**********************47%                       ]  244 of 516 completed[**********************47%                       ]  245 of 516 completed[**********************48%                       ]  246 of 516 completed[**********************48%                       ]  247 of 516 completed[**********************48%                       ]  248 of 516 completed[**********************48%                       ]  249 of 516 completed[**********************48%                       ]  250 of 516 completed[**********************49%                       ]  251 of 516 completed[**********************49%                       ]  252 of 516 completed[**********************49%                       ]  253 of 516 completed[**********************49%                       ]  254 of 516 completed[**********************49%                       ]  255 of 516 completed[**********************50%                       ]  256 of 516 completed[**********************50%                       ]  257 of 516 completed[**********************50%                       ]  258 of 516 completed[**********************50%                       ]  259 of 516 completed[**********************50%                       ]  260 of 516 completed[**********************51%                       ]  261 of 516 completed[**********************51%                       ]  262 of 516 completed[**********************51%                       ]  263 of 516 completed[**********************51%                       ]  264 of 516 completed[**********************51%                       ]  264 of 516 completed[**********************52%                       ]  266 of 516 completed[**********************52%                       ]  267 of 516 completed[**********************52%                       ]  268 of 516 completed[**********************52%                       ]  269 of 516 completed[**********************52%                       ]  270 of 516 completed[**********************53%                       ]  271 of 516 completed[**********************53%                       ]  272 of 516 completed[**********************53%                       ]  273 of 516 completed[**********************53%                       ]  274 of 516 completed[**********************53%                       ]  275 of 516 completed[**********************53%                       ]  276 of 516 completed[**********************54%*                      ]  277 of 516 completed[**********************54%*                      ]  278 of 516 completed[**********************54%*                      ]  279 of 516 completed[**********************54%*                      ]  280 of 516 completed[**********************54%*                      ]  281 of 516 completed[**********************55%*                      ]  282 of 516 completed[**********************55%*                      ]  283 of 516 completed[**********************55%*                      ]  284 of 516 completed[**********************55%*                      ]  285 of 516 completed[**********************55%*                      ]  286 of 516 completed[**********************56%**                     ]  287 of 516 completed[**********************56%**                     ]  288 of 516 completed[**********************56%**                     ]  289 of 516 completed[**********************56%**                     ]  290 of 516 completed[**********************56%**                     ]  291 of 516 completed[**********************57%**                     ]  292 of 516 completed[**********************57%**                     ]  293 of 516 completed[**********************57%**                     ]  294 of 516 completed[**********************57%**                     ]  295 of 516 completed[**********************57%**                     ]  296 of 516 completed[**********************58%***                    ]  297 of 516 completed[**********************58%***                    ]  298 of 516 completed[**********************58%***                    ]  299 of 516 completed[**********************58%***                    ]  300 of 516 completed[**********************58%***                    ]  301 of 516 completed[**********************59%***                    ]  302 of 516 completed[**********************59%***                    ]  303 of 516 completed[**********************59%***                    ]  304 of 516 completed[**********************59%***                    ]  305 of 516 completed[**********************59%***                    ]  306 of 516 completed[**********************59%***                    ]  307 of 516 completed[**********************60%****                   ]  308 of 516 completed[**********************60%****                   ]  308 of 516 completed[**********************60%****                   ]  310 of 516 completed[**********************60%****                   ]  311 of 516 completed[**********************60%****                   ]  312 of 516 completed[**********************61%****                   ]  313 of 516 completed[**********************61%****                   ]  314 of 516 completed[**********************61%****                   ]  315 of 516 completed[**********************61%****                   ]  316 of 516 completed[**********************61%****                   ]  317 of 516 completed[**********************62%*****                  ]  318 of 516 completed[**********************62%*****                  ]  319 of 516 completed[**********************62%*****                  ]  320 of 516 completed[**********************62%*****                  ]  321 of 516 completed[**********************62%*****                  ]  322 of 516 completed[**********************63%*****                  ]  323 of 516 completed[**********************63%*****                  ]  324 of 516 completed[**********************63%*****                  ]  325 of 516 completed[**********************63%*****                  ]  326 of 516 completed[**********************63%*****                  ]  327 of 516 completed[**********************64%******                 ]  328 of 516 completed[**********************64%******                 ]  329 of 516 completed[**********************64%******                 ]  330 of 516 completed[**********************64%******                 ]  330 of 516 completed[**********************64%******                 ]  332 of 516 completed[**********************65%******                 ]  333 of 516 completed[**********************65%******                 ]  333 of 516 completed[**********************65%******                 ]  335 of 516 completed[**********************65%******                 ]  336 of 516 completed[**********************65%******                 ]  337 of 516 completed[**********************66%*******                ]  338 of 516 completed[**********************66%*******                ]  339 of 516 completed[**********************66%*******                ]  340 of 516 completed[**********************66%*******                ]  341 of 516 completed[**********************66%*******                ]  342 of 516 completed[**********************66%*******                ]  343 of 516 completed[**********************67%*******                ]  344 of 516 completed[**********************67%*******                ]  345 of 516 completed[**********************67%*******                ]  346 of 516 completed[**********************67%*******                ]  347 of 516 completed[**********************67%*******                ]  348 of 516 completed[**********************68%********               ]  349 of 516 completed[**********************68%********               ]  350 of 516 completed[**********************68%********               ]  351 of 516 completed[**********************68%********               ]  352 of 516 completed[**********************68%********               ]  353 of 516 completed[**********************69%********               ]  354 of 516 completed[**********************69%********               ]  355 of 516 completed[**********************69%********               ]  356 of 516 completed[**********************69%********               ]  357 of 516 completed[**********************69%********               ]  358 of 516 completed[**********************70%*********              ]  359 of 516 completed[**********************70%*********              ]  360 of 516 completed[**********************70%*********              ]  361 of 516 completed[**********************70%*********              ]  362 of 516 completed[**********************70%*********              ]  363 of 516 completed[**********************71%*********              ]  364 of 516 completed[**********************71%*********              ]  365 of 516 completed[**********************71%*********              ]  366 of 516 completed[**********************71%*********              ]  367 of 516 completed[**********************71%*********              ]  368 of 516 completed[**********************72%**********             ]  369 of 516 completed[**********************72%**********             ]  370 of 516 completed[**********************72%**********             ]  371 of 516 completed[**********************72%**********             ]  372 of 516 completed[**********************72%**********             ]  373 of 516 completed[**********************72%**********             ]  374 of 516 completed[**********************73%**********             ]  375 of 516 completed[**********************73%**********             ]  376 of 516 completed[**********************73%**********             ]  377 of 516 completed[**********************73%**********             ]  378 of 516 completed[**********************73%**********             ]  379 of 516 completed[**********************74%***********            ]  380 of 516 completed[**********************74%***********            ]  381 of 516 completed[**********************74%***********            ]  382 of 516 completed[**********************74%***********            ]  383 of 516 completed[**********************74%***********            ]  384 of 516 completed[**********************75%***********            ]  385 of 516 completed[**********************75%***********            ]  386 of 516 completed[**********************75%***********            ]  387 of 516 completed[**********************75%***********            ]  388 of 516 completed[**********************75%***********            ]  389 of 516 completed[**********************76%***********            ]  390 of 516 completed[**********************76%***********            ]  391 of 516 completed[**********************76%***********            ]  392 of 516 completed[**********************76%***********            ]  393 of 516 completed[**********************76%***********            ]  394 of 516 completed[**********************77%************           ]  395 of 516 completed[**********************77%************           ]  396 of 516 completed[**********************77%************           ]  397 of 516 completed[**********************77%************           ]  398 of 516 completed[**********************77%************           ]  399 of 516 completed[**********************78%************           ]  400 of 516 completed[**********************78%************           ]  401 of 516 completed[**********************78%************           ]  402 of 516 completed[**********************78%************           ]  403 of 516 completed[**********************78%************           ]  404 of 516 completed[**********************78%************           ]  405 of 516 completed[**********************79%*************          ]  406 of 516 completed[**********************79%*************          ]  407 of 516 completed[**********************79%*************          ]  408 of 516 completed[**********************79%*************          ]  409 of 516 completed[**********************79%*************          ]  410 of 516 completed[**********************80%*************          ]  411 of 516 completed[**********************80%*************          ]  412 of 516 completed[**********************80%*************          ]  413 of 516 completed[**********************80%*************          ]  414 of 516 completed[**********************80%*************          ]  415 of 516 completed[**********************81%**************         ]  416 of 516 completed[**********************81%**************         ]  417 of 516 completed[**********************81%**************         ]  418 of 516 completed[**********************81%**************         ]  419 of 516 completed[**********************81%**************         ]  420 of 516 completed[**********************82%**************         ]  421 of 516 completed[**********************82%**************         ]  422 of 516 completed[**********************82%**************         ]  423 of 516 completed[**********************82%**************         ]  424 of 516 completed[**********************82%**************         ]  425 of 516 completed[**********************83%***************        ]  426 of 516 completed[**********************83%***************        ]  427 of 516 completed[**********************83%***************        ]  428 of 516 completed[**********************83%***************        ]  429 of 516 completed[**********************83%***************        ]  430 of 516 completed[**********************84%***************        ]  431 of 516 completed[**********************84%***************        ]  432 of 516 completed[**********************84%***************        ]  433 of 516 completed[**********************84%***************        ]  434 of 516 completed[**********************84%***************        ]  435 of 516 completed[**********************84%***************        ]  436 of 516 completed[**********************85%****************       ]  437 of 516 completed[**********************85%****************       ]  438 of 516 completed[**********************85%****************       ]  439 of 516 completed[**********************85%****************       ]  440 of 516 completed[**********************85%****************       ]  441 of 516 completed[**********************86%****************       ]  442 of 516 completed[**********************86%****************       ]  443 of 516 completed[**********************86%****************       ]  444 of 516 completed[**********************86%****************       ]  445 of 516 completed[**********************86%****************       ]  446 of 516 completed[**********************87%*****************      ]  447 of 516 completed[**********************87%*****************      ]  448 of 516 completed[**********************87%*****************      ]  449 of 516 completed[**********************87%*****************      ]  450 of 516 completed[**********************87%*****************      ]  451 of 516 completed[**********************87%*****************      ]  451 of 516 completed[**********************88%*****************      ]  453 of 516 completed[**********************88%*****************      ]  454 of 516 completed[**********************88%*****************      ]  455 of 516 completed[**********************88%*****************      ]  456 of 516 completed[**********************89%******************     ]  457 of 516 completed[**********************89%******************     ]  458 of 516 completed[**********************89%******************     ]  459 of 516 completed[**********************89%******************     ]  460 of 516 completed[**********************89%******************     ]  461 of 516 completed[**********************90%******************     ]  462 of 516 completed[**********************90%******************     ]  463 of 516 completed[**********************90%******************     ]  463 of 516 completed[**********************90%******************     ]  465 of 516 completed[**********************90%******************     ]  466 of 516 completedRun time of job "SchedulerService._reap_zombies (trigger: interval[0:01:00], next run at: 2026-04-05 15:13:14 CST)" was missed by 0:00:25.013641
+[**********************91%*******************    ]  467 of 516 completed[**********************91%*******************    ]  468 of 516 completed[**********************91%*******************    ]  469 of 516 completed[**********************91%*******************    ]  470 of 516 completed[**********************91%*******************    ]  471 of 516 completed[**********************91%*******************    ]  472 of 516 completed[**********************92%*******************    ]  473 of 516 completed[**********************92%*******************    ]  474 of 516 completed[**********************92%*******************    ]  475 of 516 completed[**********************92%*******************    ]  476 of 516 completed[**********************92%*******************    ]  477 of 516 completed[**********************93%********************   ]  478 of 516 completed[**********************93%********************   ]  479 of 516 completed[**********************93%********************   ]  480 of 516 completed[**********************93%********************   ]  481 of 516 completed[**********************93%********************   ]  482 of 516 completed[**********************94%********************   ]  483 of 516 completed[**********************94%********************   ]  484 of 516 completed[**********************94%********************   ]  485 of 516 completed[**********************94%********************   ]  486 of 516 completed[**********************94%********************   ]  487 of 516 completed[**********************95%*********************  ]  488 of 516 completed[**********************95%*********************  ]  489 of 516 completed[**********************95%*********************  ]  490 of 516 completed[**********************95%*********************  ]  491 of 516 completed[**********************95%*********************  ]  492 of 516 completed[**********************96%*********************  ]  493 of 516 completed[**********************96%*********************  ]  494 of 516 completed[**********************96%*********************  ]  495 of 516 completed[**********************96%*********************  ]  496 of 516 completed[**********************96%*********************  ]  497 of 516 completed[**********************97%********************** ]  498 of 516 completed[**********************97%********************** ]  499 of 516 completed[**********************97%********************** ]  500 of 516 completed[**********************97%********************** ]  501 of 516 completed[**********************97%********************** ]  502 of 516 completed[**********************97%********************** ]  503 of 516 completed[**********************98%********************** ]  504 of 516 completed[**********************98%********************** ]  505 of 516 completed[**********************98%********************** ]  506 of 516 completed[**********************98%********************** ]  507 of 516 completed[**********************98%********************** ]  508 of 516 completed[**********************99%***********************]  509 of 516 completed[**********************99%***********************]  510 of 516 completed[**********************99%***********************]  511 of 516 completed[**********************99%***********************]  512 of 516 completed[**********************99%***********************]  513 of 516 completed[*********************100%***********************]  514 of 516 completed[*********************100%***********************]  515 of 516 completed[*********************100%***********************]  516 of 516 completed
+
+13 Failed downloads:
+['AXP', 'GDDY', 'QCOM', 'SNDK', 'TER', 'MCD', 'SPGI', 'JPM', 'TRMB', 'TROW', 'WELL', 'EBAY', 'ZBRA']: TypeError("'NoneType' object is not subscriptable")
+  [DataStore] 需更新 519 只，分 3 批下载...
+  [DataStore] 写入 1/2 只
+  [DataStore] 写入 0/1 只
+  [DataStore] 写入 0/516 只
+  [信息] 查询 1 只股票市值/行业（首次约需 1s）...
+INFO:     127.0.0.1:57187 - "GET /api/factors/scan?universe=sp500%2Bndx&top=100&force=false HTTP/1.1" 200 OK
+Run time of job "SchedulerService._reap_zombies (trigger: interval[0:01:00], next run at: 2026-04-05 15:29:14 CST)" was missed by 0:00:24.918770
+Run time of job "SchedulerService._reap_zombies (trigger: interval[0:01:00], next run at: 2026-04-05 15:46:14 CST)" was missed by 0:00:25.099420
+Run time of job "SchedulerService._reap_zombies (trigger: interval[0:01:00], next run at: 2026-04-05 17:12:14 CST)" was missed by 0:00:24.683554
+Run time of job "SchedulerService._reap_zombies (trigger: interval[0:01:00], next run at: 2026-04-05 18:28:14 CST)" was missed by 0:00:24.965827
+INFO:     127.0.0.1:63933 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64036 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64085 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64096 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64124 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64153 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64235 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64255 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64264 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64303 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64331 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64335 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64339 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64342 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:64428 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+  iShares IVV 获取成功：504 只 S&P 500 成分股
+  股票池共 504 只
+  iShares IVV 获取成功：504 只 S&P 500 成分股
+  股票池共 504 只
+  Wikipedia 获取成功：101 只 NASDAQ-100 成分股
+  股票池共 101 只
+  合并股票池：S&P500(504) + NDX独有(14) = 518 只
+INFO:     127.0.0.1:64427 - "GET /api/factors/insider HTTP/1.1" 200 OK
+[                       0%                       ][*********************100%***********************]  2 of 2 completed
+[*********************100%***********************]  1 of 1 completed
+[                       0%                       ][                       0%                       ]  2 of 516 completed[                       1%                       ]  3 of 516 completed[                       1%                       ]  4 of 516 completed[                       1%                       ]  5 of 516 completed[                       1%                       ]  6 of 516 completed[                       1%                       ]  7 of 516 completed[*                      2%                       ]  8 of 516 completed[*                      2%                       ]  9 of 516 completed[*                      2%                       ]  10 of 516 completed[*                      2%                       ]  11 of 516 completed[*                      2%                       ]  12 of 516 completed[*                      3%                       ]  13 of 516 completed[*                      3%                       ]  14 of 516 completed[*                      3%                       ]  15 of 516 completed[*                      3%                       ]  16 of 516 completed[*                      3%                       ]  17 of 516 completed[*                      3%                       ]  18 of 516 completed[**                     4%                       ]  19 of 516 completed[**                     4%                       ]  20 of 516 completed[**                     4%                       ]  21 of 516 completed[**                     4%                       ]  22 of 516 completed[**                     4%                       ]  23 of 516 completed[**                     5%                       ]  24 of 516 completed[**                     5%                       ]  25 of 516 completed[**                     5%                       ]  26 of 516 completed[**                     5%                       ]  27 of 516 completed[**                     5%                       ]  28 of 516 completed[**                     5%                       ]  28 of 516 completed[***                    6%                       ]  30 of 516 completed[***                    6%                       ]  31 of 516 completed[***                    6%                       ]  32 of 516 completed[***                    6%                       ]  33 of 516 completed[***                    7%                       ]  34 of 516 completed[***                    7%                       ]  35 of 516 completed[***                    7%                       ]  36 of 516 completed[***                    7%                       ]  37 of 516 completed[***                    7%                       ]  38 of 516 completed[****                   8%                       ]  39 of 516 completed[****                   8%                       ]  40 of 516 completed[****                   8%                       ]  41 of 516 completed[****                   8%                       ]  42 of 516 completed[****                   8%                       ]  43 of 516 completed[****                   9%                       ]  44 of 516 completed[****                   9%                       ]  45 of 516 completed[****                   9%                       ]  46 of 516 completed[****                   9%                       ]  47 of 516 completed[****                   9%                       ]  48 of 516 completed[****                   9%                       ]  49 of 516 completed[*****                 10%                       ]  50 of 516 completed[*****                 10%                       ]  51 of 516 completed[*****                 10%                       ]  52 of 516 completed[*****                 10%                       ]  53 of 516 completed[*****                 10%                       ]  53 of 516 completed[*****                 11%                       ]  55 of 516 completed[*****                 11%                       ]  56 of 516 completed[*****                 11%                       ]  57 of 516 completed[*****                 11%                       ]  58 of 516 completed[*****                 11%                       ]  59 of 516 completed[******                12%                       ]  60 of 516 completed[******                12%                       ]  61 of 516 completed[******                12%                       ]  62 of 516 completed[******                12%                       ]  63 of 516 completed[******                12%                       ]  64 of 516 completed[******                13%                       ]  65 of 516 completed[******                13%                       ]  66 of 516 completed[******                13%                       ]  67 of 516 completed[******                13%                       ]  68 of 516 completed[******                13%                       ]  69 of 516 completed[*******               14%                       ]  70 of 516 completed[*******               14%                       ]  71 of 516 completed[*******               14%                       ]  72 of 516 completed[*******               14%                       ]  73 of 516 completed[*******               14%                       ]  74 of 516 completed[*******               15%                       ]  75 of 516 completed[*******               15%                       ]  75 of 516 completed[*******               15%                       ]  77 of 516 completed[*******               15%                       ]  78 of 516 completed[*******               15%                       ]  79 of 516 completed[********              16%                       ]  80 of 516 completed[********              16%                       ]  81 of 516 completed[********              16%                       ]  82 of 516 completed[********              16%                       ]  83 of 516 completed[********              16%                       ]  84 of 516 completed[********              16%                       ]  85 of 516 completed[********              17%                       ]  86 of 516 completed[********              17%                       ]  87 of 516 completed[********              17%                       ]  88 of 516 completed[********              17%                       ]  89 of 516 completed[********              17%                       ]  90 of 516 completed[*********             18%                       ]  91 of 516 completed[*********             18%                       ]  92 of 516 completed[*********             18%                       ]  93 of 516 completed[*********             18%                       ]  94 of 516 completed[*********             18%                       ]  95 of 516 completed[*********             19%                       ]  96 of 516 completed[*********             19%                       ]  97 of 516 completed[*********             19%                       ]  98 of 516 completed[*********             19%                       ]  99 of 516 completed[*********             19%                       ]  100 of 516 completed[**********            20%                       ]  101 of 516 completed[**********            20%                       ]  102 of 516 completed[**********            20%                       ]  103 of 516 completed[**********            20%                       ]  103 of 516 completed[**********            20%                       ]  105 of 516 completed[**********            21%                       ]  106 of 516 completed[**********            21%                       ]  107 of 516 completed[**********            21%                       ]  108 of 516 completed[**********            21%                       ]  109 of 516 completed[**********            21%                       ]  110 of 516 completed[**********            21%                       ]  110 of 516 completed[***********           22%                       ]  112 of 516 completed[***********           22%                       ]  113 of 516 completed[***********           22%                       ]  114 of 516 completed[***********           22%                       ]  115 of 516 completed[***********           22%                       ]  116 of 516 completed[***********           23%                       ]  117 of 516 completed[***********           23%                       ]  118 of 516 completed[***********           23%                       ]  119 of 516 completed[***********           23%                       ]  120 of 516 completed[***********           23%                       ]  121 of 516 completed[************          24%                       ]  122 of 516 completed[************          24%                       ]  123 of 516 completed[************          24%                       ]  124 of 516 completed[************          24%                       ]  125 of 516 completed[************          24%                       ]  126 of 516 completed[************          25%                       ]  127 of 516 completed[************          25%                       ]  128 of 516 completed[************          25%                       ]  129 of 516 completed[************          25%                       ]  130 of 516 completed[************          25%                       ]  131 of 516 completed[************          26%                       ]  132 of 516 completed[************          26%                       ]  133 of 516 completed[************          26%                       ]  134 of 516 completed[************          26%                       ]  135 of 516 completed[************          26%                       ]  136 of 516 completed[*************         27%                       ]  137 of 516 completed[*************         27%                       ]  138 of 516 completed[*************         27%                       ]  139 of 516 completed[*************         27%                       ]  140 of 516 completed[*************         27%                       ]  141 of 516 completed[*************         28%                       ]  142 of 516 completed[*************         28%                       ]  143 of 516 completed[*************         28%                       ]  144 of 516 completed[*************         28%                       ]  145 of 516 completed[*************         28%                       ]  146 of 516 completed[*************         28%                       ]  147 of 516 completed[**************        29%                       ]  148 of 516 completed[**************        29%                       ]  149 of 516 completed[**************        29%                       ]  150 of 516 completed[**************        29%                       ]  151 of 516 completed[**************        29%                       ]  152 of 516 completed[**************        30%                       ]  153 of 516 completed[**************        30%                       ]  154 of 516 completed[**************        30%                       ]  155 of 516 completed[**************        30%                       ]  156 of 516 completed[**************        30%                       ]  157 of 516 completed[***************       31%                       ]  158 of 516 completed[***************       31%                       ]  159 of 516 completed[***************       31%                       ]  160 of 516 completed[***************       31%                       ]  161 of 516 completed[***************       31%                       ]  162 of 516 completed[***************       32%                       ]  163 of 516 completed[***************       32%                       ]  164 of 516 completed[***************       32%                       ]  165 of 516 completed[***************       32%                       ]  166 of 516 completed[***************       32%                       ]  167 of 516 completed[****************      33%                       ]  168 of 516 completed[****************      33%                       ]  169 of 516 completed[****************      33%                       ]  170 of 516 completed[****************      33%                       ]  171 of 516 completed[****************      33%                       ]  172 of 516 completed[****************      34%                       ]  173 of 516 completed[****************      34%                       ]  174 of 516 completed[****************      34%                       ]  175 of 516 completed[****************      34%                       ]  176 of 516 completed[****************      34%                       ]  177 of 516 completed[****************      34%                       ]  178 of 516 completed[*****************     35%                       ]  179 of 516 completed[*****************     35%                       ]  180 of 516 completed[*****************     35%                       ]  181 of 516 completed[*****************     35%                       ]  182 of 516 completed[*****************     35%                       ]  183 of 516 completed[*****************     36%                       ]  184 of 516 completed[*****************     36%                       ]  185 of 516 completed[*****************     36%                       ]  186 of 516 completed[*****************     36%                       ]  187 of 516 completed[*****************     36%                       ]  188 of 516 completed[******************    37%                       ]  189 of 516 completed[******************    37%                       ]  190 of 516 completed[******************    37%                       ]  191 of 516 completed[******************    37%                       ]  192 of 516 completed[******************    37%                       ]  193 of 516 completed[******************    38%                       ]  194 of 516 completed  Wikipedia 获取成功：101 只 NASDAQ-100 成分股
+  股票池共 101 只
+  合并股票池：S&P500(504) + NDX独有(14) = 518 只
+  [DataStore] 需更新 519 只，分 3 批下载...
+  [DataStore] 写入 0/2 只
+  [DataStore] 写入 0/1 只
+INFO:     127.0.0.1:65294 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+[******************    38%                       ]  195 of 516 completed[******************    38%                       ]  196 of 516 completed[******************    38%                       ]  197 of 516 completed[******************    38%                       ]  198 of 516 completed[*******************   39%                       ]  199 of 516 completed[*******************   39%                       ]  200 of 516 completed[*******************   39%                       ]  201 of 516 completed[*******************   39%                       ]  202 of 516 completed[*******************   39%                       ]  203 of 516 completed[*******************   40%                       ]  204 of 516 completed[*******************   40%                       ]  205 of 516 completed[*******************   40%                       ]  206 of 516 completed[*******************   40%                       ]  207 of 516 completed[*******************   40%                       ]  208 of 516 completed[********************  41%                       ]  209 of 516 completed[********************  41%                       ]  210 of 516 completed[********************  41%                       ]  211 of 516 completed[********************  41%                       ]  212 of 516 completed[********************  41%                       ]  213 of 516 completed[********************  41%                       ]  214 of 516 completed[********************  42%                       ]  215 of 516 completed[********************  42%                       ]  216 of 516 completed[********************  42%                       ]  217 of 516 completed[********************  42%                       ]  218 of 516 completed[********************  42%                       ]  219 of 516 completed[********************* 43%                       ]  220 of 516 completed[********************* 43%                       ]  221 of 516 completed[********************* 43%                       ]  222 of 516 completed[********************* 43%                       ]  223 of 516 completed[********************* 43%                       ]  224 of 516 completed[********************* 44%                       ]  225 of 516 completed[********************* 44%                       ]  226 of 516 completed[********************* 44%                       ]  227 of 516 completed[********************* 44%                       ]  228 of 516 completed[********************* 44%                       ]  229 of 516 completed[**********************45%                       ]  230 of 516 completed[**********************45%                       ]  231 of 516 completed[**********************45%                       ]  232 of 516 completed[**********************45%                       ]  233 of 516 completed[**********************45%                       ]  233 of 516 completed[**********************46%                       ]  235 of 516 completed[**********************46%                       ]  236 of 516 completed[**********************46%                       ]  237 of 516 completed[**********************46%                       ]  238 of 516 completed[**********************46%                       ]  239 of 516 completed[**********************47%                       ]  240 of 516 completed[**********************47%                       ]  241 of 516 completed[**********************47%                       ]  242 of 516 completed[**********************47%                       ]  243 of 516 completed[**********************47%                       ]  244 of 516 completed[**********************47%                       ]  245 of 516 completed[**********************48%                       ]  246 of 516 completed[**********************48%                       ]  247 of 516 completed[**********************48%                       ]  248 of 516 completed[**********************48%                       ]  249 of 516 completed[**********************48%                       ]  250 of 516 completed[**********************49%                       ]  251 of 516 completed[**********************49%                       ]  252 of 516 completed[**********************49%                       ]  253 of 516 completed[**********************49%                       ]  254 of 516 completed[**********************49%                       ]  255 of 516 completed[**********************50%                       ]  256 of 516 completed[**********************50%                       ]  257 of 516 completed[**********************50%                       ]  258 of 516 completed[**********************50%                       ]  259 of 516 completed[**********************50%                       ]  260 of 516 completed[**********************51%                       ]  261 of 516 completed[**********************51%                       ]  262 of 516 completed[**********************51%                       ]  263 of 516 completed[**********************51%                       ]  264 of 516 completed[**********************51%                       ]  265 of 516 completed[**********************52%                       ]  266 of 516 completed[**********************52%                       ]  267 of 516 completed[**********************52%                       ]  268 of 516 completed[**********************52%                       ]  269 of 516 completed[**********************52%                       ]  270 of 516 completed[**********************53%                       ]  271 of 516 completed[**********************53%                       ]  272 of 516 completed[**********************53%                       ]  273 of 516 completed[**********************53%                       ]  274 of 516 completed[**********************53%                       ]  275 of 516 completed[**********************53%                       ]  276 of 516 completed[**********************54%*                      ]  277 of 516 completed[**********************54%*                      ]  278 of 516 completed[**********************54%*                      ]  279 of 516 completed[**********************54%*                      ]  280 of 516 completed[**********************54%*                      ]  281 of 516 completed[**********************55%*                      ]  282 of 516 completed[**********************55%*                      ]  283 of 516 completed[**********************55%*                      ]  284 of 516 completed[**********************55%*                      ]  285 of 516 completed[**********************55%*                      ]  286 of 516 completed[**********************56%**                     ]  287 of 516 completed[**********************56%**                     ]  288 of 516 completed[**********************56%**                     ]  289 of 516 completed[**********************56%**                     ]  290 of 516 completed[**********************56%**                     ]  291 of 516 completed[**********************57%**                     ]  292 of 516 completed[**********************57%**                     ]  293 of 516 completed[**********************57%**                     ]  294 of 516 completed[**********************57%**                     ]  295 of 516 completed[**********************57%**                     ]  296 of 516 completed[**********************58%***                    ]  297 of 516 completed[**********************58%***                    ]  298 of 516 completed[**********************58%***                    ]  299 of 516 completed[**********************58%***                    ]  300 of 516 completed[**********************58%***                    ]  301 of 516 completed[**********************59%***                    ]  302 of 516 completed[**********************59%***                    ]  303 of 516 completed[**********************59%***                    ]  304 of 516 completed[**********************59%***                    ]  305 of 516 completed[**********************59%***                    ]  306 of 516 completed[**********************59%***                    ]  307 of 516 completed[**********************60%****                   ]  308 of 516 completed[**********************60%****                   ]  309 of 516 completed[**********************60%****                   ]  310 of 516 completed[**********************60%****                   ]  311 of 516 completed[**********************60%****                   ]  312 of 516 completed[**********************61%****                   ]  313 of 516 completed[**********************61%****                   ]  314 of 516 completed[**********************61%****                   ]  315 of 516 completed[**********************61%****                   ]  316 of 516 completed[**********************61%****                   ]  317 of 516 completed[**********************61%****                   ]  317 of 516 completed[**********************62%*****                  ]  319 of 516 completed[**********************62%*****                  ]  320 of 516 completed[**********************62%*****                  ]  321 of 516 completed[**********************62%*****                  ]  322 of 516 completed[**********************63%*****                  ]  323 of 516 completed[**********************63%*****                  ]  324 of 516 completed[**********************63%*****                  ]  325 of 516 completed[**********************63%*****                  ]  326 of 516 completed[**********************63%*****                  ]  327 of 516 completed[**********************64%******                 ]  328 of 516 completed[**********************64%******                 ]  329 of 516 completed[**********************64%******                 ]  330 of 516 completed[**********************64%******                 ]  331 of 516 completed[**********************64%******                 ]  332 of 516 completed[**********************65%******                 ]  333 of 516 completed[**********************65%******                 ]  334 of 516 completed[**********************65%******                 ]  335 of 516 completed[**********************65%******                 ]  336 of 516 completed[**********************65%******                 ]  337 of 516 completed[**********************66%*******                ]  338 of 516 completed[**********************66%*******                ]  339 of 516 completed[**********************66%*******                ]  340 of 516 completed[**********************66%*******                ]  341 of 516 completed[**********************66%*******                ]  342 of 516 completed[**********************66%*******                ]  343 of 516 completed[**********************67%*******                ]  344 of 516 completed[**********************67%*******                ]  345 of 516 completed[**********************67%*******                ]  346 of 516 completed[**********************67%*******                ]  347 of 516 completed[**********************67%*******                ]  348 of 516 completed[**********************68%********               ]  349 of 516 completed[**********************68%********               ]  350 of 516 completed[**********************68%********               ]  351 of 516 completed[**********************68%********               ]  352 of 516 completed[**********************68%********               ]  353 of 516 completed[**********************69%********               ]  354 of 516 completed[**********************69%********               ]  355 of 516 completed[**********************69%********               ]  356 of 516 completed[**********************69%********               ]  357 of 516 completed[**********************69%********               ]  358 of 516 completed[**********************70%*********              ]  359 of 516 completed[**********************70%*********              ]  360 of 516 completed[**********************70%*********              ]  361 of 516 completed[**********************70%*********              ]  362 of 516 completed[**********************70%*********              ]  363 of 516 completed[**********************71%*********              ]  364 of 516 completed[**********************71%*********              ]  365 of 516 completed[**********************71%*********              ]  366 of 516 completed[**********************71%*********              ]  367 of 516 completed[**********************71%*********              ]  368 of 516 completed[**********************72%**********             ]  369 of 516 completed[**********************72%**********             ]  370 of 516 completed[**********************72%**********             ]  371 of 516 completed[**********************72%**********             ]  372 of 516 completed[**********************72%**********             ]  373 of 516 completed[**********************72%**********             ]  374 of 516 completed[**********************73%**********             ]  375 of 516 completed[**********************73%**********             ]  376 of 516 completed[**********************73%**********             ]  377 of 516 completed[**********************73%**********             ]  378 of 516 completed[**********************73%**********             ]  379 of 516 completed[**********************74%***********            ]  380 of 516 completed[**********************74%***********            ]  381 of 516 completed[**********************74%***********            ]  382 of 516 completed[**********************74%***********            ]  383 of 516 completed[**********************74%***********            ]  384 of 516 completed[**********************75%***********            ]  385 of 516 completed[**********************75%***********            ]  386 of 516 completed[**********************75%***********            ]  387 of 516 completed[**********************75%***********            ]  388 of 516 completed[**********************75%***********            ]  389 of 516 completed[**********************76%***********            ]  390 of 516 completed[**********************76%***********            ]  391 of 516 completed[**********************76%***********            ]  392 of 516 completed[**********************76%***********            ]  393 of 516 completed[**********************76%***********            ]  394 of 516 completed[**********************77%************           ]  395 of 516 completed[**********************77%************           ]  396 of 516 completed[**********************77%************           ]  397 of 516 completed[**********************77%************           ]  398 of 516 completed[**********************77%************           ]  398 of 516 completed[**********************78%************           ]  400 of 516 completed[**********************78%************           ]  401 of 516 completed[**********************78%************           ]  402 of 516 completed[**********************78%************           ]  403 of 516 completed[**********************78%************           ]  404 of 516 completed[**********************78%************           ]  405 of 516 completed[**********************79%*************          ]  406 of 516 completed[**********************79%*************          ]  407 of 516 completed[**********************79%*************          ]  408 of 516 completed[**********************79%*************          ]  409 of 516 completed[**********************79%*************          ]  410 of 516 completed[**********************80%*************          ]  411 of 516 completed[**********************80%*************          ]  412 of 516 completed[**********************80%*************          ]  413 of 516 completed[**********************80%*************          ]  414 of 516 completed[**********************80%*************          ]  415 of 516 completed[**********************81%**************         ]  416 of 516 completed[**********************81%**************         ]  417 of 516 completed[**********************81%**************         ]  418 of 516 completed[**********************81%**************         ]  419 of 516 completed[**********************81%**************         ]  420 of 516 completed[**********************82%**************         ]  421 of 516 completed[**********************82%**************         ]  422 of 516 completed[**********************82%**************         ]  423 of 516 completed[**********************82%**************         ]  424 of 516 completed[**********************82%**************         ]  425 of 516 completed[**********************83%***************        ]  426 of 516 completed[**********************83%***************        ]  427 of 516 completed[**********************83%***************        ]  428 of 516 completed[**********************83%***************        ]  429 of 516 completed[**********************83%***************        ]  430 of 516 completed[**********************84%***************        ]  431 of 516 completed[**********************84%***************        ]  432 of 516 completed[**********************84%***************        ]  433 of 516 completed[**********************84%***************        ]  434 of 516 completed[**********************84%***************        ]  435 of 516 completed[**********************84%***************        ]  436 of 516 completed[**********************84%***************        ]  436 of 516 completed[**********************84%***************        ]  436 of 516 completed[**********************85%****************       ]  439 of 516 completed[**********************85%****************       ]  440 of 516 completed[**********************85%****************       ]  441 of 516 completed[**********************86%****************       ]  442 of 516 completed[**********************86%****************       ]  443 of 516 completed[**********************86%****************       ]  444 of 516 completed[**********************86%****************       ]  445 of 516 completed[**********************86%****************       ]  446 of 516 completed[**********************87%*****************      ]  447 of 516 completed[**********************87%*****************      ]  448 of 516 completed[**********************87%*****************      ]  449 of 516 completed[**********************87%*****************      ]  449 of 516 completed[**********************87%*****************      ]  451 of 516 completed[**********************88%*****************      ]  452 of 516 completed[**********************88%*****************      ]  453 of 516 completed[**********************88%*****************      ]  454 of 516 completed[**********************88%*****************      ]  455 of 516 completed[**********************88%*****************      ]  456 of 516 completed[**********************89%******************     ]  457 of 516 completed[**********************89%******************     ]  458 of 516 completed[**********************89%******************     ]  459 of 516 completed[**********************89%******************     ]  459 of 516 completed[**********************89%******************     ]  461 of 516 completed[**********************90%******************     ]  462 of 516 completed[**********************90%******************     ]  463 of 516 completed[**********************90%******************     ]  464 of 516 completed[**********************90%******************     ]  465 of 516 completed[**********************90%******************     ]  466 of 516 completed[**********************91%*******************    ]  467 of 516 completedINFO:     127.0.0.1:50024 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+[**********************91%*******************    ]  468 of 516 completed[**********************91%*******************    ]  469 of 516 completed[**********************91%*******************    ]  470 of 516 completed[**********************91%*******************    ]  471 of 516 completed[**********************91%*******************    ]  472 of 516 completed[**********************92%*******************    ]  473 of 516 completed[**********************92%*******************    ]  474 of 516 completed[**********************92%*******************    ]  475 of 516 completed[**********************92%*******************    ]  476 of 516 completed[**********************92%*******************    ]  477 of 516 completed[**********************93%********************   ]  478 of 516 completed[**********************93%********************   ]  479 of 516 completed[**********************93%********************   ]  480 of 516 completed[**********************93%********************   ]  481 of 516 completed[**********************93%********************   ]  482 of 516 completed[**********************94%********************   ]  483 of 516 completed[**********************94%********************   ]  483 of 516 completed[**********************94%********************   ]  485 of 516 completed[**********************94%********************   ]  486 of 516 completed[**********************94%********************   ]  487 of 516 completed[**********************95%*********************  ]  488 of 516 completed[**********************95%*********************  ]  489 of 516 completed[**********************95%*********************  ]  490 of 516 completed[**********************95%*********************  ]  490 of 516 completed[**********************95%*********************  ]  492 of 516 completed[**********************96%*********************  ]  493 of 516 completed[**********************96%*********************  ]  494 of 516 completed[**********************96%*********************  ]  495 of 516 completed[**********************96%*********************  ]  496 of 516 completed[**********************96%*********************  ]  497 of 516 completed[**********************97%********************** ]  498 of 516 completed[**********************97%********************** ]  499 of 516 completed[**********************97%********************** ]  500 of 516 completed[**********************97%********************** ]  501 of 516 completed[**********************97%********************** ]  502 of 516 completed[**********************97%********************** ]  503 of 516 completed[**********************98%********************** ]  504 of 516 completed[**********************98%********************** ]  505 of 516 completed[**********************98%********************** ]  506 of 516 completed[**********************98%********************** ]  507 of 516 completed[**********************98%********************** ]  508 of 516 completed[**********************99%***********************]  509 of 516 completed[**********************99%***********************]  510 of 516 completed[**********************99%***********************]  510 of 516 completed[**********************99%***********************]  512 of 516 completed[**********************99%***********************]  513 of 516 completed[*********************100%***********************]  514 of 516 completed[*********************100%***********************]  515 of 516 completed[*********************100%***********************]  516 of 516 completed
+
+1 Failed download:
+['IBKR']: TypeError("'NoneType' object is not subscriptable")
+  [DataStore] 写入 0/516 只
+INFO:     127.0.0.1:64426 - "GET /api/factors/scan?universe=sp500%2Bndx&top=100&force=false HTTP/1.1" 200 OK
+[*********************100%***********************]  1 of 1 completed
+[*********************100%***********************]  1 of 1 completed
+  [DataStore] 需更新 2 只，分 2 批下载...
+  [DataStore] 写入 0/1 只
+  [DataStore] 写入 0/1 只
+INFO:     127.0.0.1:50187 - "GET /api/factors/stock/Q?days=120 HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/uvicorn/protocols/http/httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/applications.py", line 1159, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 715, in app
+    response = actual_response_class(content, **response_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 192, in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 45, in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 195, in render
+    return json.dumps(
+           ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/encoder.py", line 258, in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+ValueError: Out of range float values are not JSON compliant: nan
+[*********************100%***********************]  1 of 1 completed
+[*********************100%***********************]  1 of 1 completed
+  [DataStore] 需更新 2 只，分 2 批下载...
+  [DataStore] 写入 0/1 只
+  [DataStore] 写入 0/1 只
+INFO:     127.0.0.1:50198 - "GET /api/factors/stock/Q?days=120 HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/uvicorn/protocols/http/httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/applications.py", line 1159, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 715, in app
+    response = actual_response_class(content, **response_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 192, in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 45, in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 195, in render
+    return json.dumps(
+           ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/encoder.py", line 258, in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+ValueError: Out of range float values are not JSON compliant: nan
+[*********************100%***********************]  1 of 1 completed
+[*********************100%***********************]  1 of 1 completed
+  [DataStore] 需更新 2 只，分 2 批下载...
+  [DataStore] 写入 0/1 只
+  [DataStore] 写入 0/1 只
+INFO:     127.0.0.1:50201 - "GET /api/factors/stock/Q?days=120 HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/uvicorn/protocols/http/httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/applications.py", line 1159, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 715, in app
+    response = actual_response_class(content, **response_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 192, in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 45, in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 195, in render
+    return json.dumps(
+           ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/encoder.py", line 258, in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+ValueError: Out of range float values are not JSON compliant: nan
+[*********************100%***********************]  1 of 1 completed
+[*********************100%***********************]  1 of 1 completed
+  [DataStore] 需更新 2 只，分 2 批下载...
+  [DataStore] 写入 0/1 只
+  [DataStore] 写入 0/1 只
+INFO:     127.0.0.1:50204 - "GET /api/factors/stock/Q?days=120 HTTP/1.1" 500 Internal Server Error
+ERROR:    Exception in ASGI application
+Traceback (most recent call last):
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/uvicorn/protocols/http/httptools_impl.py", line 416, in run_asgi
+    result = await app(  # type: ignore[func-returns-value]
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/uvicorn/middleware/proxy_headers.py", line 60, in __call__
+    return await self.app(scope, receive, send)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/applications.py", line 1159, in __call__
+    await super().__call__(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/applications.py", line 90, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 186, in __call__
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/errors.py", line 164, in __call__
+    await self.app(scope, receive, _send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/cors.py", line 88, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/middleware/exceptions.py", line 63, in __call__
+    await wrap_app_handling_exceptions(self.app, conn)(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/middleware/asyncexitstack.py", line 18, in __call__
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 660, in __call__
+    await self.middleware_stack(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 680, in app
+    await route.handle(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/routing.py", line 276, in handle
+    await self.app(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 134, in app
+    await wrap_app_handling_exceptions(app, request)(scope, receive, send)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 53, in wrapped_app
+    raise exc
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/_exception_handler.py", line 42, in wrapped_app
+    await app(scope, receive, sender)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 120, in app
+    response = await f(request)
+               ^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/fastapi/routing.py", line 715, in app
+    response = actual_response_class(content, **response_args)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 192, in __init__
+    super().__init__(content, status_code, headers, media_type, background)
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 45, in __init__
+    self.body = self.render(content)
+                ^^^^^^^^^^^^^^^^^^^^
+  File "/Users/xulinbin/aiProject/QuanTrading/.venv/lib/python3.12/site-packages/starlette/responses.py", line 195, in render
+    return json.dumps(
+           ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/__init__.py", line 238, in dumps
+    **kw).encode(obj)
+          ^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/encoder.py", line 200, in encode
+    chunks = self.iterencode(o, _one_shot=True)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Caskroom/miniconda/base/lib/python3.12/json/encoder.py", line 258, in iterencode
+    return _iterencode(o, 0)
+           ^^^^^^^^^^^^^^^^^
+ValueError: Out of range float values are not JSON compliant: nan
+INFO:     127.0.0.1:50207 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50231 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50250 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50264 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50268 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+[                       0%                       ][*********************100%***********************]  2 of 2 completed
+  [DataStore] 需更新 2 只，分 1 批下载...
+  [DataStore] 写入 0/2 只
+INFO:     127.0.0.1:50272 - "GET /api/factors/stock/KEYS?days=120 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50287 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+[                       0%                       ][*********************100%***********************]  2 of 2 completed
+  [DataStore] 需更新 2 只，分 1 批下载...
+  [DataStore] 写入 0/2 只
+INFO:     127.0.0.1:50290 - "GET /api/factors/stock/CIEN?days=120 HTTP/1.1" 200 OK
+[                       0%                       ][*********************100%***********************]  2 of 2 completed
+  [DataStore] 需更新 2 只，分 1 批下载...
+  [DataStore] 写入 0/2 只
+INFO:     127.0.0.1:50297 - "GET /api/factors/stock/LITE?days=120 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50305 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+[                       0%                       ][*********************100%***********************]  2 of 2 completed
+  [DataStore] 需更新 2 只，分 1 批下载...
+  [DataStore] 写入 0/2 只
+INFO:     127.0.0.1:50308 - "GET /api/factors/stock/DOW?days=120 HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50334 - "GET /api/factors/registry HTTP/1.1" 200 OK
+数据库连接成功
+INFO:     127.0.0.1:50335 - "GET /api/portfolio/positions HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50343 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50461 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50476 - "GET /api/factors/registry HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50477 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:50507 - "GET /api/portfolio/ib-status HTTP/1.1" 200 OK

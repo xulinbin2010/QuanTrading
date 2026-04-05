@@ -271,7 +271,6 @@ def main():
                         help='持仓均价，用于移动止损检查，如 NVDA:850 AMD:115')
     parser.add_argument('--extra',    nargs='+', default=[], help='追加自选股（如 TSLA BTC-USD）')
     parser.add_argument('--period',       default='1y',    help='历史数据跨度（默认 1y）')
-    parser.add_argument('--universe',     default='sp500', help='股票池：sp500 / nasdaq100 / russell2000')
     parser.add_argument('--no-insider',   action='store_true', help='跳过内部人士数据（离线/加速）')
     parser.add_argument('--insider-only', action='store_true', help='只显示有内部人买入的候选')
     parser.add_argument('--insider-days', type=int, default=None,
@@ -291,7 +290,7 @@ def main():
         avg_costs=avg_costs if avg_costs else None,
         top_n=args.top,
         period=args.period,
-        universe=args.universe,
+        universe='sp500+ndx',
         extra=args.extra,
         use_insider=not args.no_insider,
         insider_only=args.insider_only,

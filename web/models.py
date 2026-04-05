@@ -104,7 +104,7 @@ class BacktestRequest(BaseModel):
     period: Optional[str] = '3mo'
     start: Optional[str] = None
     end: Optional[str] = None
-    universe: str = 'sp500'
+    universe: str = 'sp500+ndx'  # 固定，不对外暴露选项
     top_n: int = 10
     min_cap_b: Optional[float] = None
     max_cap_b: Optional[float] = None

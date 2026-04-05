@@ -271,8 +271,8 @@ if __name__ == '__main__':
     from core.universe import get_tickers
 
     parser = argparse.ArgumentParser(description='Parquet 数据更新工具')
-    parser.add_argument('--universe', default='sp500',
-                        help='股票池：sp500 / nasdaq100 / russell2000')
+    parser.add_argument('--universe', default='sp500+ndx',
+                        help='股票池（默认 sp500+ndx）')
     parser.add_argument('--start',   default='2022-01-01',
                         help='历史起始日期（默认 2022-01-01）')
     parser.add_argument('--end',     default=None,

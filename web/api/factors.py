@@ -11,7 +11,7 @@ router = APIRouter(prefix='/api/factors', tags=['factors'])
 
 @router.get('/universes')
 def universes():
-    return ['sp500', 'nasdaq100', 'russell2000']
+    return ['sp500+ndx']
 
 
 @router.get('/tickers')
@@ -69,6 +69,27 @@ def stock_detail(symbol: str, days: int = Query(120, le=500)):
         return factor_svc.get_stock_factors(symbol=symbol.upper(), days=days)
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get('/insider')
+def insider(days: int = Query(None), min_value_k: int = Query(None)):
+    """内部人净买入扫描（OpenInsider，带 20 小时缓存）"""
+    try:
+        return factor_svc.get_insider_data(days=days, min_value_k=min_value_k)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get('/earnings')
+def earnings(symbols: str = Query(..., description='逗号分隔的股票代码，如 AAPL,NVDA')):
+    """批量查询下次财报日期（缓存 12 小时）"""
+    try:
+        from core.earnings import prefetch_earnings
+        sym_list = [s.strip().upper() for s in symbols.split(',') if s.strip()]
+        result = prefetch_earnings(sym_list)
+        return {k: (v.isoformat() if v else None) for k, v in result.items()}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

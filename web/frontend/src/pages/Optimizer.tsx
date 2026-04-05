@@ -154,6 +154,19 @@ function DatePicker({ value, onChange, label }: { value: string; onChange: (v: s
   )
 }
 
+// ── 稳定性 Badge（Walk-Forward 专用）──────────────────────────
+function StabilityBadge({ score }: { score: number }) {
+  const [cls, label] =
+    score >= 0.75 ? ['bg-green-900/50 text-green-300 border-green-800', '高'] :
+    score >= 0.5  ? ['bg-yellow-900/50 text-yellow-300 border-yellow-800', '中'] :
+                   ['bg-red-900/50 text-red-300 border-red-800', '低']
+  return (
+    <span className={`px-1.5 py-0.5 rounded border text-xs font-medium ${cls}`}>
+      {Math.round(score * 100)}% {label}
+    </span>
+  )
+}
+
 // ── 过拟合 Badge ───────────────────────────────────────────
 function OverfitBadge({ score }: { score: number }) {
   const [cls, label] =
@@ -226,53 +239,104 @@ function OptimizerResult({ taskId, mandatory, registryMap }: { taskId: string; m
   }
 
   const rows: any[] = result.results ?? []
+  const isWF = result.mode === 'walkforward'
 
   return (
     <div className="space-y-3">
+      {/* 摘要栏 */}
       <div className="bg-slate-800 rounded-lg border border-slate-700 px-4 py-3 flex items-center gap-6 flex-wrap text-sm">
         <div>
+          <span className={`px-2 py-0.5 rounded text-xs font-medium mr-2 ${isWF ? 'bg-blue-900/60 text-blue-300 border border-blue-700' : 'bg-slate-700 text-slate-300'}`}>
+            {isWF ? 'Walk-Forward' : '单次切分'}
+          </span>
           <span className="text-slate-400">共测试 </span>
           <span className="text-white font-medium">{result.total_tested}</span>
           <span className="text-slate-400"> / {result.total_combos} 组合</span>
         </div>
-        <div><span className="text-slate-400">训练期：</span><span className="text-slate-300">{result.train_period}</span></div>
-        <div><span className="text-slate-400">测试期：</span><span className="text-slate-300">{result.test_period}</span></div>
+        {isWF ? (
+          <>
+            <div>
+              <span className="text-slate-400">窗口数：</span>
+              <span className="text-slate-300 font-medium">{result.window_count}</span>
+              <span className="text-slate-500 ml-1 text-xs">
+                （训练 {result.wf_params?.train_months}m + 测试 {result.wf_params?.test_months}m，步长 {result.wf_params?.step_months}m）
+              </span>
+            </div>
+            <div><span className="text-slate-400">整体区间：</span><span className="text-slate-300">{result.train_period?.split(' ~ ')[0]} ~ {result.test_period?.split('~ ')[1]?.trim()}</span></div>
+          </>
+        ) : (
+          <>
+            <div><span className="text-slate-400">训练期：</span><span className="text-slate-300">{result.train_period}</span></div>
+            <div><span className="text-slate-400">测试期：</span><span className="text-slate-300">{result.test_period}</span></div>
+          </>
+        )}
         <div><span className="text-slate-400">排名指标：</span><span className="text-slate-300">{result.metric}</span></div>
       </div>
 
       <div className="text-xs text-slate-500 bg-slate-800/50 border border-slate-700 rounded px-3 py-2">
-        <span className="text-slate-400 font-medium">防过拟合：</span>
-        按<strong className="text-white">测试期</strong>指标排名（非训练期）。过拟合分数 = 训练 Sharpe - 测试 Sharpe，越低越稳定。
-        相同分数优先选因子数少的组合。
+        {isWF ? (
+          <><span className="text-slate-400 font-medium">Walk-Forward：</span>
+          每个因子组合在 <strong className="text-white">{result.window_count}</strong> 个滚动窗口上独立训练+测试，
+          按<strong className="text-white">均值测试 Sharpe − 0.3×标准差</strong>排名。稳定性 = 测试 Sharpe &gt; 0 的窗口占比。</>
+        ) : (
+          <><span className="text-slate-400 font-medium">防过拟合：</span>
+          按<strong className="text-white">测试期</strong>指标排名（非训练期）。过拟合分数 = 训练 Sharpe - 测试 Sharpe，越低越稳定。</>
+        )}
       </div>
 
       <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-x-auto">
         <table className="w-full text-xs">
           <thead>
             <tr className="text-slate-400 border-b border-slate-700 bg-slate-800/80">
-              {['#', '因子组合', '数量', '过拟合', '训练收益', '训练Sharpe', '测试收益', '测试Sharpe', '测试回撤', '胜率', '交易数'].map(h => (
-                <th key={h} className="px-3 py-2 text-left font-medium whitespace-nowrap">{h}</th>
-              ))}
+              {isWF
+                ? ['#', '因子组合', '数量', '稳定性', '均过拟合', '均训练Sharpe', '均测试Sharpe', '±std', '均测试收益', '均回撤', '均交易数', '有效窗口'].map(h => (
+                    <th key={h} className="px-3 py-2 text-left font-medium whitespace-nowrap">{h}</th>
+                  ))
+                : ['#', '因子组合', '数量', '过拟合', '训练收益', '训练Sharpe', '测试收益', '测试Sharpe', '测试回撤', '胜率', '交易数'].map(h => (
+                    <th key={h} className="px-3 py-2 text-left font-medium whitespace-nowrap">{h}</th>
+                  ))
+              }
             </tr>
           </thead>
           <tbody>
             {rows.map((r: any, i: number) => (
-              <tr key={i} className="border-b border-slate-700/50 hover:bg-slate-700/30">
-                <td className="px-3 py-2 text-slate-500">{i + 1}</td>
-                <td className="px-3 py-2"><FactorPills factors={r.factors} mandatory={mandatory} registryMap={registryMap} /></td>
-                <td className="px-3 py-2 text-slate-400">{r.factor_count}</td>
-                <td className="px-3 py-2"><OverfitBadge score={r.overfit_score} /></td>
-                <td className={`px-3 py-2 font-mono ${r.train.return >= 0 ? 'text-green-400' : 'text-red-400'}`}>{pct(r.train.return)}</td>
-                <td className="px-3 py-2 font-mono text-slate-300">{r.train.sharpe.toFixed(2)}</td>
-                <td className={`px-3 py-2 font-mono font-medium ${r.test.return >= 0 ? 'text-green-400' : 'text-red-400'}`}>{pct(r.test.return)}</td>
-                <td className="px-3 py-2 font-mono font-medium text-white">{r.test.sharpe.toFixed(2)}</td>
-                <td className="px-3 py-2 font-mono text-red-400">{pct(r.test.max_dd)}</td>
-                <td className="px-3 py-2 font-mono text-slate-300">{pct(r.test.win_rate, 0)}</td>
-                <td className="px-3 py-2 text-slate-400">{r.test.trades}</td>
-              </tr>
+              isWF ? (
+                <tr key={i} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                  <td className="px-3 py-2 text-slate-500">{i + 1}</td>
+                  <td className="px-3 py-2"><FactorPills factors={r.factors} mandatory={mandatory} registryMap={registryMap} /></td>
+                  <td className="px-3 py-2 text-slate-400">{r.factor_count}</td>
+                  <td className="px-3 py-2"><StabilityBadge score={r.stability} /></td>
+                  <td className="px-3 py-2"><OverfitBadge score={r.avg_overfit} /></td>
+                  <td className="px-3 py-2 font-mono text-slate-300">{r.avg_train.sharpe.toFixed(2)}</td>
+                  <td className="px-3 py-2 font-mono font-medium text-white">{r.avg_test.sharpe.toFixed(2)}</td>
+                  <td className="px-3 py-2 font-mono text-slate-500">±{r.avg_test.std_sharpe.toFixed(2)}</td>
+                  <td className={`px-3 py-2 font-mono font-medium ${r.avg_test.return >= 0 ? 'text-green-400' : 'text-red-400'}`}>{pct(r.avg_test.return)}</td>
+                  <td className="px-3 py-2 font-mono text-red-400">{pct(r.avg_test.max_dd)}</td>
+                  <td className="px-3 py-2 text-slate-400">{r.avg_test.trades}</td>
+                  <td className="px-3 py-2 text-slate-400">{r.window_count} / {result.window_count}</td>
+                </tr>
+              ) : (
+                <tr key={i} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                  <td className="px-3 py-2 text-slate-500">{i + 1}</td>
+                  <td className="px-3 py-2"><FactorPills factors={r.factors} mandatory={mandatory} registryMap={registryMap} /></td>
+                  <td className="px-3 py-2 text-slate-400">{r.factor_count}</td>
+                  <td className="px-3 py-2"><OverfitBadge score={r.overfit_score} /></td>
+                  <td className={`px-3 py-2 font-mono ${r.train.return >= 0 ? 'text-green-400' : 'text-red-400'}`}>{pct(r.train.return)}</td>
+                  <td className="px-3 py-2 font-mono text-slate-300">{r.train.sharpe.toFixed(2)}</td>
+                  <td className={`px-3 py-2 font-mono font-medium ${r.test.return >= 0 ? 'text-green-400' : 'text-red-400'}`}>{pct(r.test.return)}</td>
+                  <td className="px-3 py-2 font-mono font-medium text-white">{r.test.sharpe.toFixed(2)}</td>
+                  <td className="px-3 py-2 font-mono text-red-400">{pct(r.test.max_dd)}</td>
+                  <td className="px-3 py-2 font-mono text-slate-300">{pct(r.test.win_rate, 0)}</td>
+                  <td className="px-3 py-2 text-slate-400">{r.test.trades}</td>
+                </tr>
+              )
             ))}
             {rows.length === 0 && (
-              <tr><td colSpan={11} className="px-4 py-8 text-center text-slate-500">无有效结果（所有组合的测试期交易笔数均不足 5）</td></tr>
+              <tr>
+                <td colSpan={12} className="px-4 py-8 text-center text-slate-500">
+                  无有效结果（交易笔数不足 / 有效窗口数不足一半）
+                </td>
+              </tr>
             )}
           </tbody>
         </table>
@@ -282,7 +346,6 @@ function OptimizerResult({ taskId, mandatory, registryMap }: { taskId: string; m
 }
 
 // ── 主页面 ────────────────────────────────────────────────
-const UNIVERSES = ['sp500', 'nasdaq100', 'russell2000']
 const PERIODS   = ['1y', '2y', '3y', '5y']
 const METRICS   = [
   { value: 'sharpe',        label: 'Sharpe 比率' },
@@ -295,7 +358,7 @@ export default function Optimizer() {
   const [tab, setTab] = useState<'config' | 'history'>('config')
   const [activeTask, setActiveTask] = useState<string | null>(null)
   const [params, setParams] = useState({
-    universe:          'sp500',
+    universe:          'sp500+ndx',
     period:            '2y',
     start:             '',
     end:               '',
@@ -307,6 +370,11 @@ export default function Optimizer() {
     metric:            'sharpe',
     top_n_results:     20,
     bt_top_n:          6,
+    // Walk-Forward 专属
+    wf_mode:           false,
+    wf_train_months:   12,
+    wf_test_months:    3,
+    wf_step_months:    3,
   })
 
   const { data: registry = [] } = useQuery({
@@ -334,10 +402,14 @@ export default function Optimizer() {
       mandatory_factors: params.mandatory_factors,
       min_combo_size:    params.min_combo_size,
       max_combo_size:    params.max_combo_size,
-      train_ratio:       params.train_ratio,
+      train_ratio:       params.wf_mode ? undefined : params.train_ratio,
       metric:            params.metric,
       top_n_results:     params.top_n_results,
       bt_top_n:          params.bt_top_n,
+      mode:              params.wf_mode ? 'walkforward' : 'single',
+      wf_train_months:   params.wf_mode ? params.wf_train_months : undefined,
+      wf_test_months:    params.wf_mode ? params.wf_test_months  : undefined,
+      wf_step_months:    params.wf_mode ? params.wf_step_months  : undefined,
     }),
     onSuccess: (data) => {
       setActiveTask(data.task_id)
@@ -365,7 +437,7 @@ export default function Optimizer() {
     URL.revokeObjectURL(url)
   }
 
-  // 预估组合数
+  // 预估组合数 + WF 窗口数
   const mandatoryCount = params.mandatory_factors.length
   const optionalCount  = techFactors.length - mandatoryCount
   const estimateCombos = (() => {
@@ -378,6 +450,14 @@ export default function Optimizer() {
     }
     return n
   })()
+  const periodMonths = params.useCustomDate
+    ? 24  // 自定义区间无法精确计算，用 24 月作估算
+    : ({ '1y': 12, '2y': 24, '3y': 36, '5y': 60 } as Record<string, number>)[params.period] ?? 24
+  const estimateWFWindows = params.wf_mode
+    ? Math.max(0, Math.floor(
+        (periodMonths - params.wf_train_months - params.wf_test_months) / params.wf_step_months
+      ) + 1)
+    : 0
 
   return (
     <div className="space-y-5">
@@ -414,28 +494,64 @@ export default function Optimizer() {
           </div>
 
           <div className="bg-slate-800 rounded-lg border border-slate-700 p-4 space-y-4">
-            <div className="text-sm font-medium text-slate-300">优化参数</div>
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium text-slate-300">优化参数</div>
+              {/* 模式切换 */}
+              <div className="flex items-center gap-1 bg-slate-700 rounded-lg p-0.5 text-xs">
+                {[
+                  { key: false, label: '单次切分' },
+                  { key: true,  label: 'Walk-Forward' },
+                ].map(m => (
+                  <button key={String(m.key)}
+                    onClick={() => setParams(p => ({ ...p, wf_mode: m.key }))}
+                    className={`px-3 py-1 rounded-md transition-colors ${
+                      params.wf_mode === m.key
+                        ? 'bg-blue-600 text-white font-medium'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}>
+                    {m.label}
+                  </button>
+                ))}
+              </div>
+            </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              {/* 股票池 */}
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">股票池</label>
-                <select className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
-                  value={params.universe} onChange={e => setParams(p => ({ ...p, universe: e.target.value }))}>
-                  {UNIVERSES.map(u => <option key={u}>{u}</option>)}
-                </select>
-              </div>
-
-              {/* 训练比例 */}
-              <div>
-                <label className="block text-xs text-slate-400 mb-1">
-                  训练/测试比例：{Math.round(params.train_ratio * 100)}% / {Math.round((1 - params.train_ratio) * 100)}%
-                </label>
-                <input type="range" min={50} max={85} step={5}
-                  value={params.train_ratio * 100}
-                  onChange={e => setParams(p => ({ ...p, train_ratio: +e.target.value / 100 }))}
-                  className="w-full accent-blue-500" />
-              </div>
+              {/* 训练比例（单次模式） / WF 窗口参数 */}
+              {!params.wf_mode ? (
+                <div>
+                  <label className="block text-xs text-slate-400 mb-1">
+                    训练/测试比例：{Math.round(params.train_ratio * 100)}% / {Math.round((1 - params.train_ratio) * 100)}%
+                  </label>
+                  <input type="range" min={50} max={85} step={5}
+                    value={params.train_ratio * 100}
+                    onChange={e => setParams(p => ({ ...p, train_ratio: +e.target.value / 100 }))}
+                    className="w-full accent-blue-500" />
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">训练窗口（月）</label>
+                    <input type="number" min={6} max={36}
+                      className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                      value={params.wf_train_months}
+                      onChange={e => setParams(p => ({ ...p, wf_train_months: +e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">测试窗口（月）</label>
+                    <input type="number" min={1} max={12}
+                      className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                      value={params.wf_test_months}
+                      onChange={e => setParams(p => ({ ...p, wf_test_months: +e.target.value }))} />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-slate-400 mb-1">步长（月）</label>
+                    <input type="number" min={1} max={12}
+                      className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                      value={params.wf_step_months}
+                      onChange={e => setParams(p => ({ ...p, wf_step_months: +e.target.value }))} />
+                  </div>
+                </>
+              )}
 
               {/* 排名指标 */}
               <div>
@@ -541,10 +657,22 @@ export default function Optimizer() {
                 {isPending ? '提交中...' : '▶ 开始优化'}
               </button>
               <div className="text-xs text-slate-400">
-                预估 <span className="text-white font-medium">{estimateCombos}</span> 个组合
-                × 2（训练+测试）≈
-                <span className="text-white font-medium"> {Math.round(estimateCombos * 2 * 3 / 60)} 分钟</span>
-                （4 线程并行）
+                {params.wf_mode ? (
+                  <>
+                    预估 <span className="text-white font-medium">{estimateCombos}</span> 个组合
+                    × <span className="text-white font-medium">{estimateWFWindows}</span> 窗口
+                    × 2（训练+测试）≈
+                    <span className="text-white font-medium"> {Math.round(estimateCombos * estimateWFWindows * 2 * 3 / 60)} 分钟</span>
+                    （4 线程并行）
+                  </>
+                ) : (
+                  <>
+                    预估 <span className="text-white font-medium">{estimateCombos}</span> 个组合
+                    × 2（训练+测试）≈
+                    <span className="text-white font-medium"> {Math.round(estimateCombos * 2 * 3 / 60)} 分钟</span>
+                    （4 线程并行）
+                  </>
+                )}
               </div>
             </div>
           </div>
@@ -563,7 +691,7 @@ export default function Optimizer() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="text-slate-400 border-b border-slate-700 bg-slate-800/80">
-                  {['时间', '回测区间', '训练期', '测试期', '最佳组合', '测试Sharpe', '指标', '组合数', '操作'].map(h => (
+                  {['时间', '模式', '回测区间', '最佳组合', '最佳得分', '指标', '组合数', '操作'].map(h => (
                     <th key={h} className="px-3 py-2 text-left font-medium whitespace-nowrap">{h}</th>
                   ))}
                 </tr>
@@ -572,13 +700,17 @@ export default function Optimizer() {
                 {(history as any[]).map((h: any) => (
                   <tr key={h.task_id} className="border-b border-slate-700/50 hover:bg-slate-700/30">
                     <td className="px-3 py-2 text-slate-400 whitespace-nowrap">{h.created_at}</td>
+                    <td className="px-3 py-2 whitespace-nowrap">
+                      {h.mode === 'walkforward'
+                        ? <span className="px-1.5 py-0.5 rounded text-xs bg-blue-900/50 text-blue-300 border border-blue-700">WF {h.window_count}窗口</span>
+                        : <span className="text-slate-500 text-xs">单次</span>
+                      }
+                    </td>
                     <td className="px-3 py-2 text-slate-400 whitespace-nowrap">
                       {h.train_period && h.test_period
-                        ? `${h.train_period.split(' ~ ')[0]} ~ ${h.test_period.split(' ~ ')[1]}`
+                        ? `${h.train_period.split(' ~ ')[0]} ~ ${(h.test_period.split('~ ')[1] ?? h.test_period.split(' ~ ')[1] ?? '').trim()}`
                         : '-'}
                     </td>
-                    <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{h.train_period || '-'}</td>
-                    <td className="px-3 py-2 text-slate-500 whitespace-nowrap">{h.test_period || '-'}</td>
                     <td className="px-3 py-2">
                       {h.best_factors?.length > 0 ? (
                         <div className="flex flex-wrap gap-1">

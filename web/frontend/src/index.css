@@ -122,6 +122,11 @@ html.day body {
   color: #1a2636;
 }
 
+/* 输入框背景强制白色，避免比页面背景更深 */
+html.day input, html.day select, html.day textarea {
+  background-color: #ffffff !important;
+}
+
 html.day ::-webkit-scrollbar-track { background: #e8edf4; }
 html.day ::-webkit-scrollbar-thumb { background: #b0bbcc; border-radius: 3px; }
 
@@ -184,6 +189,11 @@ html.night {
 html.night body {
   background-color: #f0ede7;
   color: #1c1a14;
+}
+
+/* 输入框背景强制白色，避免比页面背景更深 */
+html.night input, html.night select, html.night textarea {
+  background-color: #ffffff !important;
 }
 
 html.night ::-webkit-scrollbar-track { background: #eeede9; }

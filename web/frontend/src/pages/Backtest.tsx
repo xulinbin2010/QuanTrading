@@ -140,7 +140,7 @@ function DatePicker({ value, onChange, label }: { value: string; onChange: (v: s
       <button
         type="button"
         onClick={() => setOpen(s => !s)}
-        className="flex items-center gap-2 bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-sm hover:border-slate-400 focus:outline-none focus:border-blue-500 transition-colors min-w-[140px]"
+        className="flex items-center gap-2 bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm hover:border-slate-400 focus:outline-none focus:border-blue-500 transition-colors min-w-[140px]"
       >
         <svg className="w-4 h-4 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}

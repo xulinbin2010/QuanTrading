@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { runOptimizer, getOptimizerStatus, getOptimizerResult, getOptimizerHistory, getFactorRegistry } from '../api/client'
 
@@ -132,7 +133,7 @@ function DatePicker({ value, onChange, label }: { value: string; onChange: (v: s
     <div className="relative" ref={ref}>
       {label && <span className="block text-xs text-slate-400 mb-1">{label}</span>}
       <button type="button" onClick={() => setOpen(s => !s)}
-        className="flex items-center gap-2 bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-sm hover:border-slate-400 focus:outline-none focus:border-blue-500 transition-colors min-w-[140px]">
+        className="flex items-center gap-2 bg-slate-800 border border-slate-600 rounded px-3 py-1.5 text-sm hover:border-slate-400 focus:outline-none focus:border-blue-500 transition-colors min-w-[140px]">
         <svg className="w-4 h-4 text-slate-400 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5}
             d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
@@ -197,7 +198,12 @@ function FactorPills({ factors, mandatory, registryMap = {} }: { factors: string
 }
 
 // ── 结果展示 ───────────────────────────────────────────────
-function OptimizerResult({ taskId, mandatory, registryMap }: { taskId: string; mandatory: string[]; registryMap: Record<string, any> }) {
+function OptimizerResult({ taskId, mandatory, registryMap, onVerify }: {
+  taskId: string
+  mandatory: string[]
+  registryMap: Record<string, any>
+  onVerify: (factors: string[]) => void
+}) {
   const { data: status } = useQuery({
     queryKey: ['opt-status', taskId],
     queryFn: () => getOptimizerStatus(taskId),
@@ -262,6 +268,11 @@ function OptimizerResult({ taskId, mandatory, registryMap }: { taskId: string; m
                 （训练 {result.wf_params?.train_months}m + 测试 {result.wf_params?.test_months}m，步长 {result.wf_params?.step_months}m）
               </span>
             </div>
+            {result.windows_overlapping && (
+              <div className="bg-yellow-900/40 border border-yellow-700/60 rounded px-3 py-1 text-xs text-yellow-300">
+                ⚠ 步长 &lt; 测试窗口，测试期存在重叠——链式收益率已自动修正为非重叠子集
+              </div>
+            )}
             <div><span className="text-slate-400">整体区间：</span><span className="text-slate-300">{result.train_period?.split(' ~ ')[0]} ~ {result.test_period?.split('~ ')[1]?.trim()}</span></div>
           </>
         ) : (
@@ -289,10 +300,10 @@ function OptimizerResult({ taskId, mandatory, registryMap }: { taskId: string; m
           <thead>
             <tr className="text-slate-400 border-b border-slate-700 bg-slate-800/80">
               {isWF
-                ? ['#', '因子组合', '数量', '稳定性', '均过拟合', '均训练Sharpe', '均测试Sharpe', '±std', '均测试收益', '均回撤', '均交易数', '有效窗口'].map(h => (
+                ? ['#', '因子组合', '数量', '稳定性', '均过拟合', '均训练Sharpe', '均测试Sharpe', '±std', '年化收益', '均窗口收益', '均超额收益', '均回撤', '均交易数', '有效窗口', '验证'].map(h => (
                     <th key={h} className="px-3 py-2 text-left font-medium whitespace-nowrap">{h}</th>
                   ))
-                : ['#', '因子组合', '数量', '过拟合', '训练收益', '训练Sharpe', '测试收益', '测试Sharpe', '测试回撤', '胜率', '交易数'].map(h => (
+                : ['#', '因子组合', '数量', '过拟合', '训练收益', '训练Sharpe', '测试收益', '测试Sharpe', '测试回撤', '胜率', '交易数', '验证'].map(h => (
                     <th key={h} className="px-3 py-2 text-left font-medium whitespace-nowrap">{h}</th>
                   ))
               }
@@ -310,10 +321,23 @@ function OptimizerResult({ taskId, mandatory, registryMap }: { taskId: string; m
                   <td className="px-3 py-2 font-mono text-slate-300">{r.avg_train.sharpe.toFixed(2)}</td>
                   <td className="px-3 py-2 font-mono font-medium text-white">{r.avg_test.sharpe.toFixed(2)}</td>
                   <td className="px-3 py-2 font-mono text-slate-500">±{r.avg_test.std_sharpe.toFixed(2)}</td>
-                  <td className={`px-3 py-2 font-mono font-medium ${r.avg_test.return >= 0 ? 'text-green-400' : 'text-red-400'}`}>{pct(r.avg_test.return)}</td>
+                  <td className={`px-3 py-2 font-mono font-medium ${(r.avg_test.chain_annual_return ?? 0) >= 0 ? 'text-green-400' : 'text-red-400'}`}
+                      title={`链式原始: ${pct(r.avg_test.total_return ?? 0, 1)}`}>
+                    {pct(r.avg_test.chain_annual_return ?? r.avg_test.total_return ?? r.avg_test.return)}
+                  </td>
+                  <td className={`px-3 py-2 font-mono ${(r.avg_test.avg_window_return ?? 0) >= 0 ? 'text-green-300' : 'text-red-300'}`}>
+                    {pct(r.avg_test.avg_window_return ?? r.avg_test.return)}
+                  </td>
+                  <td className={`px-3 py-2 font-mono ${(r.avg_test.excess_return ?? 0) >= 0 ? 'text-green-300' : 'text-red-300'}`}>{pct(r.avg_test.excess_return ?? 0)}</td>
                   <td className="px-3 py-2 font-mono text-red-400">{pct(r.avg_test.max_dd)}</td>
                   <td className="px-3 py-2 text-slate-400">{r.avg_test.trades}</td>
                   <td className="px-3 py-2 text-slate-400">{r.window_count} / {result.window_count}</td>
+                  <td className="px-3 py-2">
+                    <button onClick={() => onVerify(r.factors)}
+                      className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded transition-colors whitespace-nowrap">
+                      回测验证
+                    </button>
+                  </td>
                 </tr>
               ) : (
                 <tr key={i} className="border-b border-slate-700/50 hover:bg-slate-700/30">
@@ -328,12 +352,18 @@ function OptimizerResult({ taskId, mandatory, registryMap }: { taskId: string; m
                   <td className="px-3 py-2 font-mono text-red-400">{pct(r.test.max_dd)}</td>
                   <td className="px-3 py-2 font-mono text-slate-300">{pct(r.test.win_rate, 0)}</td>
                   <td className="px-3 py-2 text-slate-400">{r.test.trades}</td>
+                  <td className="px-3 py-2">
+                    <button onClick={() => onVerify(r.factors)}
+                      className="px-2 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded transition-colors whitespace-nowrap">
+                      回测验证
+                    </button>
+                  </td>
                 </tr>
               )
             ))}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={12} className="px-4 py-8 text-center text-slate-500">
+                <td colSpan={14} className="px-4 py-8 text-center text-slate-500">
                   无有效结果（交易笔数不足 / 有效窗口数不足一半）
                 </td>
               </tr>
@@ -353,29 +383,74 @@ const METRICS   = [
   { value: 'excess_return', label: '超额收益（vs SPY）' },
 ]
 
+// ── localStorage 持久化 ────────────────────────────────────
+const STORAGE_KEY = 'optimizer_state'
+
+type OptimizerParams = {
+  universe:          string
+  period:            string
+  start:             string
+  end:               string
+  useCustomDate:     boolean
+  mandatory_factors: string[]
+  min_combo_size:    number
+  max_combo_size:    number
+  train_ratio:       number
+  metric:            string
+  top_n_results:     number
+  bt_top_n:          number
+  wf_mode:           boolean
+  wf_train_months:   number
+  wf_test_months:    number
+  wf_step_months:    number
+}
+
+const DEFAULT_PARAMS: OptimizerParams = {
+  universe:          'sp500+ndx',
+  period:            '2y',
+  start:             '',
+  end:               '',
+  useCustomDate:     false,
+  mandatory_factors: ['rs_score'],
+  min_combo_size:    2,
+  max_combo_size:    5,
+  train_ratio:       0.7,
+  metric:            'sharpe',
+  top_n_results:     20,
+  bt_top_n:          6,
+  wf_mode:           false,
+  wf_train_months:   12,
+  wf_test_months:    3,
+  wf_step_months:    3,
+}
+
+function loadState(): { params: OptimizerParams; activeTask: string | null; tab: 'config' | 'history' } {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY)
+    if (!raw) return { params: DEFAULT_PARAMS, activeTask: null, tab: 'config' }
+    const saved = JSON.parse(raw)
+    return {
+      params:     { ...DEFAULT_PARAMS, ...saved.params } as OptimizerParams,
+      activeTask: saved.activeTask ?? null,
+      tab:        saved.tab ?? 'config',
+    }
+  } catch {
+    return { params: DEFAULT_PARAMS, activeTask: null, tab: 'config' }
+  }
+}
+
 export default function Optimizer() {
+  const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const [tab, setTab] = useState<'config' | 'history'>('config')
-  const [activeTask, setActiveTask] = useState<string | null>(null)
-  const [params, setParams] = useState({
-    universe:          'sp500+ndx',
-    period:            '2y',
-    start:             '',
-    end:               '',
-    useCustomDate:     false,
-    mandatory_factors: ['rs_score'],
-    min_combo_size:    2,
-    max_combo_size:    5,
-    train_ratio:       0.7,
-    metric:            'sharpe',
-    top_n_results:     20,
-    bt_top_n:          6,
-    // Walk-Forward 专属
-    wf_mode:           false,
-    wf_train_months:   12,
-    wf_test_months:    3,
-    wf_step_months:    3,
-  })
+  const initial = loadState()
+  const [tab, setTab] = useState<'config' | 'history'>(initial.tab)
+  const [activeTask, setActiveTask] = useState<string | null>(initial.activeTask)
+  const [params, setParams] = useState<OptimizerParams>(initial.params)
+
+  // 任何状态变化都同步到 localStorage
+  useEffect(() => {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify({ params, activeTask, tab }))
+  }, [params, activeTask, tab])
 
   const { data: registry = [] } = useQuery({
     queryKey: ['factor-registry'],
@@ -385,6 +460,24 @@ export default function Optimizer() {
   const techFactors = (registry as any[]).filter((f: any) => f.data_type === 'technical' && !f.is_dependency)
   // key → {name} 映射，用于把 key 转为 "中文名 key" 格式
   const registryMap: Record<string, any> = Object.fromEntries((registry as any[]).map((f: any) => [f.key, f]))
+
+  const handleVerify = (factors: string[]) => {
+    // 将因子组合 + optimizer 参数注入到 Backtest 页面的 localStorage 键
+    const btParams = {
+      period:           params.useCustomDate ? '3mo' : params.period,
+      start:            params.useCustomDate ? params.start : '',
+      end:              params.useCustomDate ? params.end : '',
+      universe:         params.universe,
+      top_n:            params.bt_top_n,
+      min_cap_b:        10,
+      max_cap_b:        5000,
+      deny_industries:  [] as string[],
+      useCustomDate:    params.useCustomDate,
+    }
+    localStorage.setItem('bt_params',  JSON.stringify(btParams))
+    localStorage.setItem('bt_factors', JSON.stringify(factors))
+    navigate('/backtest')
+  }
 
   const toggleMandatory = (key: string) => {
     setParams(p => {
@@ -662,15 +755,15 @@ export default function Optimizer() {
                     预估 <span className="text-white font-medium">{estimateCombos}</span> 个组合
                     × <span className="text-white font-medium">{estimateWFWindows}</span> 窗口
                     × 2（训练+测试）≈
-                    <span className="text-white font-medium"> {Math.round(estimateCombos * estimateWFWindows * 2 * 3 / 60)} 分钟</span>
-                    （4 线程并行）
+                    <span className="text-white font-medium"> {Math.max(1, Math.round(estimateCombos * estimateWFWindows * 2 * 0.3 / 60))} 分钟</span>
+                    （因子预计算加速）
                   </>
                 ) : (
                   <>
                     预估 <span className="text-white font-medium">{estimateCombos}</span> 个组合
                     × 2（训练+测试）≈
-                    <span className="text-white font-medium"> {Math.round(estimateCombos * 2 * 3 / 60)} 分钟</span>
-                    （4 线程并行）
+                    <span className="text-white font-medium"> {Math.max(1, Math.round(estimateCombos * 2 * 0.3 / 60))} 分钟</span>
+                    （因子预计算加速）
                   </>
                 )}
               </div>
@@ -679,7 +772,7 @@ export default function Optimizer() {
 
           {/* 当前任务结果 */}
           {activeTask && (
-            <OptimizerResult taskId={activeTask} mandatory={params.mandatory_factors} registryMap={registryMap} />
+            <OptimizerResult taskId={activeTask} mandatory={params.mandatory_factors} registryMap={registryMap} onVerify={handleVerify} />
           )}
         </>
       )}

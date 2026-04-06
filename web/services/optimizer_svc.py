@@ -156,15 +156,20 @@ def _get_tech_factor_keys() -> list[str]:
 
 
 def _run_one(combo: list[str], start: str, end: str, universe: str,
-             bt_top: int, min_cap_b: float | None, max_cap_b: float | None) -> dict:
+             bt_top: int, min_cap_b: float | None, max_cap_b: float | None,
+             preloaded_data: dict = None, preloaded_info: dict = None,
+             precomputed_cache=None) -> dict:
     """跑单次回测，返回 summary 或 {'_error': ...}（出错时）"""
     from tests.backtest_rs import run_backtest
     try:
         result = run_backtest(
             start=start, end=end, period=None,
-            universe=universe, top=bt_top,  # run_backtest 参数名是 top，不是 top_n
+            universe=universe, top=bt_top,
             min_cap_b=min_cap_b, max_cap_b=max_cap_b,
             factors=combo,
+            preloaded_data=preloaded_data,
+            preloaded_info=preloaded_info,
+            precomputed_cache=precomputed_cache,
         )
         return result.get('summary', {})
     except Exception as e:
@@ -209,6 +214,32 @@ def _run(task_id: str, params: dict):
             _tasks[task_id]['total']   = total
             _tasks[task_id]['current'] = 0
 
+        # ── 预加载数据（整个优化只加载一次，所有组合共用）────────
+        import pandas as pd
+        from datetime import timedelta
+        from core.data_store import DataStore
+        from core.universe import get_tickers, get_stock_info
+
+        tickers  = get_tickers(universe)
+        all_syms = list(set(tickers + ['SPY', '^VIX']))
+
+        # 向前多留 140 天用于指标预热（与 run_backtest 保持一致）
+        dl_start = (pd.Timestamp(start) - timedelta(days=140)).strftime('%Y-%m-%d')
+        dl_end   = end
+
+        _store = DataStore()
+        _store.update(all_syms, dl_start, dl_end)          # 增量更新只做一次
+        preloaded_data = _store.get(all_syms, dl_start, dl_end,
+                                    min_rows=0, auto_update=False)
+        preloaded_info = get_stock_info(tickers)            # 基本面/行业只拉一次
+
+        # ── 因子信号预计算（整个优化只算一次，所有 combo × window 共用）─
+        from strategies.precompute import precompute_all_factors
+        spy_close = preloaded_data['SPY']['close'] if 'SPY' in preloaded_data else pd.Series(dtype=float)
+        _stock_data_for_cache = {s: preloaded_data[s] for s in tickers if s in preloaded_data}
+        precomputed_cache = precompute_all_factors(_stock_data_for_cache, spy_close)
+        # ──────────────────────────────────────────────────────────────────
+
         results: list[dict] = []
 
         # ── 单次切分模式 ───────────────────────────────────────
@@ -216,8 +247,10 @@ def _run(task_id: str, params: dict):
             train_start, train_end, test_start, test_end = _split_dates(start, end, train_ratio)
 
             def _submit_single(combo):
-                ts = _run_one(combo, train_start, train_end, universe, bt_top_n, min_cap_b, max_cap_b)
-                vs = _run_one(combo, test_start,  test_end,  universe, bt_top_n, min_cap_b, max_cap_b)
+                ts = _run_one(combo, train_start, train_end, universe, bt_top_n, min_cap_b, max_cap_b,
+                              preloaded_data, preloaded_info, precomputed_cache)
+                vs = _run_one(combo, test_start,  test_end,  universe, bt_top_n, min_cap_b, max_cap_b,
+                              preloaded_data, preloaded_info, precomputed_cache)
                 return combo, ts, vs
 
             done = 0
@@ -301,8 +334,10 @@ def _run(task_id: str, params: dict):
             def _submit_wf(combo):
                 pairs = []
                 for w in windows:
-                    ts = _run_one(combo, w['train_start'], w['train_end'], universe, bt_top_n, min_cap_b, max_cap_b)
-                    vs = _run_one(combo, w['test_start'],  w['test_end'],  universe, bt_top_n, min_cap_b, max_cap_b)
+                    ts = _run_one(combo, w['train_start'], w['train_end'], universe, bt_top_n, min_cap_b, max_cap_b,
+                                  preloaded_data, preloaded_info, precomputed_cache)
+                    vs = _run_one(combo, w['test_start'],  w['test_end'],  universe, bt_top_n, min_cap_b, max_cap_b,
+                                  preloaded_data, preloaded_info, precomputed_cache)
                     pairs.append((w, ts, vs))
                 return combo, pairs
 
@@ -326,29 +361,63 @@ def _run(task_id: str, params: dict):
                     if len(valid) < max(1, len(windows) // 2):
                         continue
 
-                    train_sharpes = [float(ts.get('sharpe', 0) or 0) for _, ts, _ in valid]
-                    test_sharpes  = [float(vs.get('sharpe', 0) or 0) for _, _, vs in valid]
-                    test_returns  = [float(vs.get('total_return', 0) or 0) for _, _, vs in valid]
-                    test_dds      = [float(vs.get('max_drawdown', 0) or 0) for _, _, vs in valid]
-                    test_wrs      = [float(vs.get('win_rate', 0) or 0) for _, _, vs in valid]
-                    test_trades   = [int(vs.get('total_trades', 0) or 0) for _, _, vs in valid]
+                    train_sharpes  = [float(ts.get('sharpe', 0) or 0) for _, ts, _ in valid]
+                    test_sharpes   = [float(vs.get('sharpe', 0) or 0) for _, _, vs in valid]
+                    test_returns   = [float(vs.get('total_return', 0) or 0) for _, _, vs in valid]
+                    test_excesses  = [float(vs.get('excess_return', 0) or 0) for _, _, vs in valid]
+                    test_dds       = [float(vs.get('max_drawdown', 0) or 0) for _, _, vs in valid]
+                    test_wrs       = [float(vs.get('win_rate', 0) or 0) for _, _, vs in valid]
+                    test_trades    = [int(vs.get('total_trades', 0) or 0) for _, _, vs in valid]
 
                     n = len(valid)
-                    avg_train_sharpe = sum(train_sharpes) / n
-                    avg_test_sharpe  = sum(test_sharpes)  / n
-                    std_test_sharpe  = (sum((x - avg_test_sharpe) ** 2 for x in test_sharpes) / n) ** 0.5
-                    avg_overfit      = avg_train_sharpe - avg_test_sharpe
+                    avg_train_sharpe  = sum(train_sharpes) / n
+                    avg_test_sharpe   = sum(test_sharpes)  / n
+                    std_test_sharpe   = (sum((x - avg_test_sharpe) ** 2 for x in test_sharpes) / n) ** 0.5
+                    avg_overfit       = avg_train_sharpe - avg_test_sharpe
+                    avg_excess_return = sum(test_excesses) / n
                     # stability = 全部窗口（含失效）中测试 Sharpe > 0 的比例
-                    stability        = sum(1 for s in test_sharpes if s > 0) / len(windows)
+                    stability         = sum(1 for s in test_sharpes if s > 0) / len(windows)
+                    # 链式累计总收益率：只用互不重叠的测试窗口连乘
+                    # 当 step < test 时贪心选取，避免同一市场区间被重复计入导致虚高
+                    non_overlap_returns: list[float] = []
+                    nonoverlap_first_start: str | None = None
+                    last_test_end: str | None = None
+                    for w, _ts, vs in valid:
+                        if last_test_end is None or w['test_start'] > last_test_end:
+                            non_overlap_returns.append(float(vs.get('total_return', 0) or 0))
+                            if nonoverlap_first_start is None:
+                                nonoverlap_first_start = w['test_start']
+                            last_test_end = w['test_end']
+                    chain_total_return = 1.0
+                    for r in non_overlap_returns:
+                        chain_total_return *= (1 + r)
+                    chain_total_return -= 1
+                    windows_overlapping = wf_step < wf_test
+
+                    # 年化链式收益率（主要展示指标，消除窗口数量对幅度的影响）
+                    avg_window_return = (
+                        sum(non_overlap_returns) / len(non_overlap_returns)
+                        if non_overlap_returns else 0.0
+                    )
+                    if non_overlap_returns and nonoverlap_first_start and last_test_end:
+                        from datetime import date as _date
+                        _chain_days = (
+                            _date.fromisoformat(last_test_end)
+                            - _date.fromisoformat(nonoverlap_first_start)
+                        ).days
+                        chain_annual_return = (
+                            (1 + chain_total_return) ** (365 / max(_chain_days, 1)) - 1
+                            if chain_total_return > -1 else -1.0
+                        )
+                    else:
+                        chain_annual_return = 0.0
 
                     if metric == 'sharpe':
                         base_score = avg_test_sharpe
                     elif metric == 'total_return':
                         base_score = sum(test_returns) / n
                     elif metric == 'excess_return':
-                        base_score = sum(
-                            float(vs.get('excess_return', 0) or 0) for _, _, vs in valid
-                        ) / n
+                        base_score = avg_excess_return
                     else:
                         base_score = avg_test_sharpe
 
@@ -377,15 +446,21 @@ def _run(task_id: str, params: dict):
                             'sharpe':  round(avg_train_sharpe, 3),
                         },
                         'avg_test': {
-                            'sharpe':     round(avg_test_sharpe, 3),
-                            'std_sharpe': round(std_test_sharpe, 3),
-                            'return':     round(sum(test_returns) / n, 4),
-                            'max_dd':     round(sum(test_dds) / n, 4),
-                            'win_rate':   round(sum(test_wrs) / n, 4),
-                            'trades':     round(sum(test_trades) / n, 1),
+                            'sharpe':             round(avg_test_sharpe, 3),
+                            'std_sharpe':         round(std_test_sharpe, 3),
+                            'return':             round(sum(test_returns) / n, 4),
+                            'avg_window_return':  round(avg_window_return, 4),    # 均窗口收益（主要）
+                            'chain_annual_return':round(chain_annual_return, 4),  # 年化链式（主要）
+                            'total_return':       round(chain_total_return, 4),   # 原始链式（次要）
+                            'excess_return':      round(avg_excess_return, 4),
+                            'max_dd':             round(sum(test_dds) / n, 4),
+                            'win_rate':           round(sum(test_wrs) / n, 4),
+                            'trades':             round(sum(test_trades) / n, 1),
                         },
-                        'window_count': n,
-                        'windows':      per_window,
+                        'window_count':        n,
+                        'non_overlap_windows': len(non_overlap_returns),
+                        'windows_overlapping': windows_overlapping,
+                        'windows':             per_window,
                     })
 
             results.sort(key=lambda r: r['score'], reverse=True)
@@ -395,7 +470,8 @@ def _run(task_id: str, params: dict):
                 'total_tested': len(results),
                 'total_combos': total,
                 'window_count': len(windows),
-                'wf_params':    {'train_months': wf_train, 'test_months': wf_test, 'step_months': wf_step},
+                'wf_params':           {'train_months': wf_train, 'test_months': wf_test, 'step_months': wf_step},
+                'windows_overlapping': wf_step < wf_test,  # step<test 时测试期有重叠，链式收益率已自动修正
                 # 供历史表格展示用的整体区间
                 'train_period': f'{windows[0]["train_start"]} ~ {windows[-1]["train_end"]}',
                 'test_period':  f'{windows[0]["test_start"]}  ~ {windows[-1]["test_end"]}',

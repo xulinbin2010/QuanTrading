@@ -53,7 +53,8 @@
       "Bash(bash /tmp/detailed_scan.sh)",
       "Bash(xargs cat:*)",
       "Bash(npx tsc:*)",
-      "Bash(python3 -c ':*)"
+      "Bash(python3 -c ':*)",
+      "Bash(.venv/bin/python -c ':*)"
     ]
   }
 }

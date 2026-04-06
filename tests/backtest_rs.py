@@ -70,6 +70,9 @@ def run_backtest(
     deny_industries: list = None,
     factors: list = None,
     factor_params: dict = None,
+    preloaded_data: dict = None,        # {symbol: DataFrame}，由优化器预加载传入，跳过 IO
+    preloaded_info: dict = None,        # {symbol: info_dict}，由优化器预加载传入，跳过 API 调用
+    precomputed_cache=None,             # PrecomputedCache，跳过因子/ATR/breadth 计算
 ) -> dict:
     """
     纯计算函数，返回回测结果 dict（不打印任何内容）。
@@ -133,8 +136,12 @@ def run_backtest(
 
     # ── 加载数据 ──────────────────────────────────────────
     all_syms = list(set(tickers + ['SPY', '^VIX']))
-    store    = DataStore()
-    all_data = store.get(all_syms, start=dl_start, end=dl_end, min_rows=40)
+    if preloaded_data is not None:
+        # 优化器已预加载：直接使用，跳过磁盘 IO 和增量检查
+        all_data = {sym: preloaded_data[sym] for sym in all_syms if sym in preloaded_data}
+    else:
+        store    = DataStore()
+        all_data = store.get(all_syms, start=dl_start, end=dl_end, min_rows=40)
 
     spy_df = all_data.get('SPY')
     if spy_df is None:
@@ -151,30 +158,49 @@ def run_backtest(
 
     # ── 准备股票数据 + 信号 ───────────────────────────────
     stock_data = {sym: df for sym, df in all_data.items() if sym != 'SPY'}
-    if factors:
-        from strategies.dynamic_factor import DynamicFactorStrategy
-        strategy = DynamicFactorStrategy(factors, factor_params)
-    else:
-        strategy = RSMomentum(vol_shrink_ratio=VOL_SHRINK_RATIO)
-    strategy.set_spy(spy_close)
-    signals = {}
-    for sym, df in stock_data.items():
-        try:
-            signals[sym] = strategy.generate_signals(df)
-        except Exception:
-            pass
 
-    # ── 预计算 ATR14（用于自适应止损） ───────────────────────
-    atr_series: dict[str, pd.Series] = {}
-    for sym, df in stock_data.items():
-        try:
-            atr_df = compute_atr(df.copy())
-            atr_series[sym] = atr_df['atr14']
-        except Exception:
-            pass
+    if precomputed_cache is not None and factors:
+        # 快速路径：从预计算缓存生成信号，跳过所有 rolling-window 计算
+        from strategies.precompute import build_signal_from_cache
+        from strategies.factors.registry import get_registry
+        _registry = get_registry()
+        signals: dict = {}
+        for sym, full_df in precomputed_cache.signals.items():
+            if sym in stock_data:
+                try:
+                    signals[sym] = build_signal_from_cache(full_df, factors, _registry)
+                except Exception:
+                    pass
+        atr_series: dict[str, pd.Series] = dict(precomputed_cache.atr_series)
+    else:
+        # 标准路径：逐股计算（独立回测 / Web 回测 / CLI，向后兼容）
+        if factors:
+            from strategies.dynamic_factor import DynamicFactorStrategy
+            strategy = DynamicFactorStrategy(factors, factor_params)
+        else:
+            strategy = RSMomentum(vol_shrink_ratio=VOL_SHRINK_RATIO)
+        strategy.set_spy(spy_close)
+        signals = {}
+        for sym, df in stock_data.items():
+            try:
+                signals[sym] = strategy.generate_signals(df)
+            except Exception:
+                pass
+
+        # 预计算 ATR14（用于自适应止损）
+        atr_series: dict[str, pd.Series] = {}
+        for sym, df in stock_data.items():
+            try:
+                atr_df = compute_atr(df.copy())
+                atr_series[sym] = atr_df['atr14']
+            except Exception:
+                pass
 
     # ── 批量获取基本面 / 行业数据（复用于过滤 + 行业分类）────
-    _sector_batch = get_stock_info(list(stock_data.keys()))
+    if preloaded_info is not None:
+        _sector_batch = {sym: preloaded_info[sym] for sym in stock_data if sym in preloaded_info}
+    else:
+        _sector_batch = get_stock_info(list(stock_data.keys()))
     _sector_map: dict[str, str] = {
         s: (_sector_batch.get(s, {}).get('sector') or 'Unknown')
         for s in stock_data
@@ -221,12 +247,15 @@ def run_backtest(
         vix_close_series = vix_df['close']
 
     # ── 市场宽度时间序列（% 股票站上 MA200） ─────────────────
-    breadth_series = pd.Series(dtype=float)
-    _close_cols = {s: df['close'] for s, df in stock_data.items() if len(df) >= 201}
-    if _close_cols:
-        _close_matrix = pd.DataFrame(_close_cols)
-        _ma200_matrix = _close_matrix.rolling(200).mean()
-        breadth_series = (_close_matrix > _ma200_matrix).mean(axis=1)
+    if precomputed_cache is not None:
+        breadth_series = precomputed_cache.breadth_series
+    else:
+        breadth_series = pd.Series(dtype=float)
+        _close_cols = {s: df['close'] for s, df in stock_data.items() if len(df) >= 201}
+        if _close_cols:
+            _close_matrix = pd.DataFrame(_close_cols)
+            _ma200_matrix = _close_matrix.rolling(200).mean()
+            breadth_series = (_close_matrix > _ma200_matrix).mean(axis=1)
 
     # ── 逐日模拟 ────────────────────────────────────────────
     cash           = INITIAL_CASH

@@ -18,3 +18,4 @@ logs/
 .idea/
 .vscode/
 *.swp
+*.log

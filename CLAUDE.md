@@ -18,7 +18,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-pip install ib_insync pymysql yfinance numpy pandas requests lxml html5lib fastapi "uvicorn[standard]" apscheduler
+pip install ib_insync pymysql yfinance numpy pandas requests lxml html5lib fastapi "uvicorn[standard]" apscheduler python-dotenv
 ```
 
 **注意：** 需手动创建 `.env` 文件（已加入 .gitignore），填写连接参数：
@@ -35,7 +35,7 @@ IB_CLIENT_ID=1
 IB_TIMEOUT=60
 ```
 
-策略/风控参数在 DB 中管理，通过 Web UI 的「系统配置」页修改，无需手动编辑文件。
+策略/风控参数在 DB `config_store` 表中管理，通过 Web UI 的「系统配置」页修改，无需手动编辑文件。
 
 ---
 
@@ -55,44 +55,55 @@ IB_TIMEOUT=60
 cd web/frontend && npm install && npm run build && cd ../..
 ```
 
-**四个功能模块：**
+**七个功能页面：**
 
 | 模块 | URL | IB 依赖 | 说明 |
 |------|-----|---------|------|
 | 持仓总览 | `/#/` | 可选 | 余额/持仓需 IB，订单历史/净值曲线不需要 |
-| 因子看板 | `/#/factors` | 否 | 全股票池因子扫描，缓存1小时，点行展开K线详情 |
+| 因子看板 | `/#/factors` | 否 | 因子注册表管理：开启/关闭因子、调整参数 |
+| 市场扫描 | `/#/scanner` | 否 | 全股票池因子扫描 + 内幕买入面板，缓存1小时，点行展开K线详情 |
+| 因子优化 | `/#/optimizer` | 否 | 穷举因子组合 × 参数网格，按 Sharpe 排名，含预计算加速 |
 | 策略回测 | `/#/backtest` | 否 | 参数化回测，异步执行，含净值曲线/交易明细 |
 | 任务调度 | `/#/scheduler` | 否 | 管理定时任务，查看执行日志 |
+| 系统配置 | `/#/config` | 否 | 风控/策略参数实时修改，持久化到 DB |
 
 **Web 模块目录结构：**
 ```
 web/
   server.py           FastAPI 入口（端口 3001）
-  api/                路由：portfolio / factors / backtest / scheduler
+  api/                路由：portfolio / factors / backtest / scheduler / config / optimizer
   services/           服务层：封装现有 Python 模块
+    factor_svc.py     因子扫描、预览、内幕数据
+    backtest_svc.py   异步回测执行
+    optimizer_svc.py  因子组合优化（含预计算缓存）
+    performance_svc.py 净值/业绩指标计算
+    portfolio_svc.py  持仓/账户数据
+    scheduler_svc.py  APScheduler 任务管理
+  models.py           Pydantic 请求/响应模型
   frontend/           React + TypeScript + Vite + ECharts + Tailwind
-    src/pages/        四个页面组件
+    src/pages/        七个页面组件
     dist/             生产构建产物（由 FastAPI 静态服务）
+start_web.sh          一键启动脚本
 ```
 
 **调度器预设任务（默认关闭，需在 UI 中手动开启）：**
 
-| Task ID | 说明 | Cron（UTC） |
-|---------|------|-------------|
-| `auto_trader` | OPG 下单 | `0 14 * * 1-5`（美东 9:00） |
-| `confirm_fills` | 成交确认 | `35 14 * * 1-5`（美东 9:35） |
-| `sp500_scanner` | 收盘扫描 | `0 22 * * 1-5`（美东 17:00） |
-| `data_update` | 数据更新 | `0 23 * * 1-5`（美东 18:00） |
+| Task ID | 说明 | Cron（北京时间） |
+|---------|------|----------------|
+| `auto_trader` | OPG 下单 | `0 22 * * 1-5`（北京 22:00） |
+| `confirm_fills` | 成交确认 | `35 22 * * 1-5`（北京 22:35） |
+| `sp500_scanner` | 收盘扫描 | `0 6 * * 2-6`（北京周二至六 06:00） |
+| `data_update` | 数据更新 | `0 7 * * 2-6`（北京周二至六 07:00） |
 
 ---
 
 ## 每日操作流程
 
 ```bash
-# 北京时间 晚 9:00（美东 9:00 AM，开盘前30分钟）
+# 北京时间 晚 22:00（美东 9:00 AM，开盘前30分钟）
 python auto_trader.py --run              # 提交 OPG 单，提交完即可断开
 
-# 北京时间 晚 9:35+（美东 9:35 AM，开盘后5分钟）
+# 北京时间 晚 22:35（美东 9:35 AM，开盘后5分钟）
 python confirm_fills.py                  # 查询成交回报，回写 MySQL，写日志
 ```
 
@@ -138,13 +149,21 @@ python auto_trader.py --run                              # 正式下单（盘前
 python auto_trader.py --run --held NVDA AMD STX          # 同时监控持仓止损/背离
 python auto_trader.py --run --extra MSFT TSM             # 追加非 S&P500 股票
 python auto_trader.py --dry-run                          # 仅预览信号不下单
+python auto_trader.py --dry-run --universe nasdaq100     # 切换股票池
 ```
 
-**OPG 限价保护：** 买入限价 = 昨收 × (1 + `MAX_ENTRY_SLIPPAGE`)，默认 1%。开盘跳空超过阈值则自动放弃，不追高。
+**OPG 限价保护：** 买入限价 = 昨收 × (1 + `MAX_ENTRY_SLIPPAGE`)，默认 1%。开盘跳空超阈值则自动放弃，不追高。
 
-**止损/卖出报警卖单：** 盘前（OPG）时改用限价卖出（止损下限 95%，报警下限 97%），防止 IBKR 拒绝 MKT+OPG 组合。
+**止损/卖出报警卖单：** 盘前（OPG）改用限价卖出，防止 IBKR 拒绝 MKT+OPG 组合。
 
 **现金等价 ETF（SGOV/BIL/USFR）：** 自动识别，市值计入现金，不占仓位槽，跳过止损和信号扫描。
+
+**`auto_trader.py` 内部常量（不在 config.py）：**
+
+| 常量 | 值 | 说明 |
+|------|----|------|
+| `CASH_EQUIV` | `{'SGOV','BIL','USFR'}` | 现金等价 ETF 白名单 |
+| `SELL_ON_ALERT` | True | 量价背离时是否自动卖出 |
 
 ---
 
@@ -166,7 +185,7 @@ python confirm_fills.py --date 2026-03-21    # 补确认历史某天
 sp500_scanner.py   # 【选股】RS 扫描器，独立运行，无需 IB
 auto_trader.py     # 【执行】自动交易，需要 IB Gateway
 confirm_fills.py   # 【确认】成交回报查询，9:35 AM ET 后运行
-config.py          # IB + MySQL 配置（git-ignored，需手动创建）
+config.py          # 统一配置：连接参数从 .env 读，风控参数从 DB config_store 读
 
 # ── 核心基础设施 ──────────────────────────────────────────
 core/
@@ -174,18 +193,43 @@ core/
   trading.py         # 下单：market_buy/sell、limit_buy/sell，支持 tif=DAY/OPG
   account.py         # 账户余额 + 持仓查询，自动快照存库
   market_data.py     # 实时行情订阅 + 价格报警
-  database.py        # MySQL：orders / account_snapshots / klines / signals 四张表
+  database.py        # MySQL：orders / account_snapshots / klines / signals / config_store 等
   historical_data.py # IBKR K 线拉取，支持增量更新
   universe.py        # 股票池：get_tickers(universe) 支持 sp500/nasdaq100/russell2000
-  data_store.py      # Parquet 本地数据存储（替代 MySQL），回测/实盘共用
+  data_store.py      # Parquet 本地数据存储（yfinance），回测/实盘共用
+  ibkr_data_store.py # Parquet 本地数据存储（IBKR），接口与 DataStore 一致，存 data/stocks_ibkr/
+  historical_data.py # IBKR K 线拉取原始模块（写 MySQL，IBKRDataStore 的底层逻辑参考）
+  earnings.py        # 财报日期查询 + 回避逻辑（prefetch_earnings / has_upcoming_earnings）
+  insider.py         # OpenInsider 内幕买入数据抓取（20小时缓存）
   logger.py          # 全局日志模块：logs/trading.log，每天切割，保留30天
   fmt.py             # 终端输出格式化工具（lj/rj 对齐函数）
 
 # ── 策略层 ───────────────────────────────────────────────
 strategies/
   base.py            # 抽象基类：generate_signals(df) → df（含 signal 列）
-  rs_momentum.py     # 主策略：RS 动量 + 突破 + 放量 + 趋势过滤（见下方）
+  rs_momentum.py     # 主策略：调用 factors/ 模块组合计算，输出买卖信号
+                     #   支持 extra_filters 参数（注册表 filter 因子，验证后可推入生产）
+  dynamic_factor.py  # Web 预览用：从注册表动态组合因子，支持 set_sector_etf()
+  precompute.py      # 优化器专用：预计算全股票池因子，加速组合回测
   ma_crossover.py    # 均线交叉策略（辅助/测试用）
+  factors/           # 因子模块库（每个因子独立文件）
+    registry.py      # 因子注册表：get_registry() 返回所有因子元数据（共 20 个因子）
+    rs_score.py      # 相对强度因子（个股 vs SPY）
+    breakout.py      # 价格突破因子
+    volume.py        # 成交量均线 / 放量突破 / 量价背离
+    volume_profile.py # OBV 趋势因子（obv_trend）
+    trend.py         # 趋势过滤（MA50 > MA200）
+    drawdown.py      # 崩跌过滤（距高点最大回撤）
+    atr.py           # ATR 波动率（供自适应止损使用，is_dependency）
+    volatility.py    # 波动率过滤（atr_pct / vol_ok，ATR/价格过高则排除）
+    momentum_quality.py # 动量质量（log价格线性回归 R²，衡量趋势平稳性）
+    sector_rs.py     # 行业相对强度（sector_rs / stock_vs_sector，用11个行业ETF代理）
+    earnings_avoid.py # 财报回避（display_only，在市场扫描面板标记临近财报）
+    fundamental.py   # 基本面因子（PE/PB/ROE 等，仅展示，不参与时序信号）
+
+# ── 运维工具 ─────────────────────────────────────────────
+tools/
+  compare_data.py    # yfinance vs IBKR 数据比对工具（检测价格/成交量差异）
 
 # ── 回测层 ───────────────────────────────────────────────
 tests/
@@ -199,11 +243,11 @@ logs/
 # ── Web UI ───────────────────────────────────────────────
 web/
   server.py          # FastAPI 入口，端口 3001
-  api/               # 路由：portfolio / factors / backtest / scheduler
+  api/               # 路由：portfolio / factors / backtest / scheduler / config / optimizer
   services/          # 服务层：封装现有模块供 API 调用
   models.py          # Pydantic 请求/响应模型
   frontend/          # React + TS + Vite 前端
-    src/pages/       # 持仓总览 / 因子看板 / 策略回测 / 任务调度
+    src/pages/       # 七个页面组件
     dist/            # 生产构建（npm run build 生成，FastAPI 静态服务）
 start_web.sh         # 一键启动脚本
 ```
@@ -212,7 +256,7 @@ start_web.sh         # 一键启动脚本
 
 ## RS 动量策略买入/卖出逻辑
 
-文件：`strategies/rs_momentum.py`
+文件：`strategies/rs_momentum.py` + `strategies/factors/`
 
 **买入信号（5个条件同时满足）：**
 
@@ -224,34 +268,111 @@ start_web.sh         # 一键启动脚本
 | 崩跌过滤 | `max_drawdown=-30%` | 距52周高点跌幅不超过30% |
 | 趋势向上 | MA50 > MA200 | 黄金交叉过滤，减少熊市假突破 |
 
-**卖出信号：** 价格创50日新高但成交量低于均量（量价背离，顶部信号）
+**卖出信号：** 价格创50日新高但成交量低于均量 × `VOL_SHRINK_RATIO`（量价背离，顶部信号）
 
-**硬止损：** 跌破入场价 -15% 强制卖出
+**止损体系（多层）：**
+- 硬止损：跌破入场价 `STOP_LOSS_PCT`（默认 -15%）
+- ATR 自适应止损：入场价 - `ATR_STOP_MULTIPLIER` × ATR14，上限 `ATR_STOP_FLOOR`（默认 -20%）
+- 移动止损：浮盈超过 `TRAIL_STOP_ACTIVATE_PCT` 后启用，从峰值回撤 `TRAIL_STOP_PCT` 触发
+- 时间止损：持仓超过 `TIME_STOP_DAYS` 交易日且未达 `TIME_STOP_MIN_RETURN` 则卖出
 
 ---
 
 ## 风控参数（$60K 资金配置）
 
-所有参数统一定义在 `config.py`，`auto_trader.py` 和 `tests/backtest_rs.py` 均从中读取，**两处不要硬编码**：
+所有参数统一在 `config.py` 定义默认值，运行时从 DB `config_store` 表读取（Web UI 系统配置页可修改）。**任何地方不要硬编码这些值。**
 
-| 参数 | 当前值                        | 说明                      |
-|------|----------------------------|-------------------------|
-| `MAX_POSITIONS` | 6                          | 最多同时持有6只                |
-| `POSITION_PCT` | 0.15                       | 每仓占净值15%（约$9,000/仓）     |
-| `CASH_RESERVE_PCT` | 0.25                       | 永远保留25%现金（黑天鹅保护）        |
-| `STOP_LOSS_PCT` | -0.15                      | 硬止损线                    |
-| `INITIAL_CASH` | 60,000                     | 回测初始资金                  |
-| `MIN_CAP_B` | 10                         | 最小市值 $10B（排除微盘股）        |
-| `MAX_CAP_B` | 500                        | 最大市值 $500B（排除 mega-cap） |
-| `DENY_INDUSTRIES` | `['Software—Application']` | 拒绝 SaaS 行业（模糊匹配）        |
+**仓位管理：**
 
-**`auto_trader.py` 内部常量（不在 config.py）：**
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `MAX_POSITIONS` | 6 | 最多同时持有只数 |
+| `POSITION_PCT` | 0.15 | 每仓占净值比例（15% ≈ $9,000/仓） |
+| `CASH_RESERVE_PCT` | 派生 | = 1 - MAX_POSITIONS × POSITION_PCT，自动计算 |
+| `MAX_PER_SECTOR` | 3 | 同一 GICS 行业最多持有只数 |
+| `TARGET_RISK_PER_POS` | 0.03 | 每仓目标风险比例（ATR止损触发最大亏损） |
 
-| 常量 | 值 | 说明 |
-|------|----|------|
+**止损参数：**
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `STOP_LOSS_PCT` | -0.15 | 硬止损线（跌破入场价此幅度强制卖出） |
+| `ATR_STOP_MULTIPLIER` | 2.5 | ATR自适应止损倍数 |
+| `ATR_STOP_FLOOR` | -0.20 | ATR止损最大亏损下限（防止高波动股止损太宽） |
+| `TRAIL_STOP_ACTIVATE_PCT` | 0.08 | 浮盈超过此值后启用移动止损 |
+| `TRAIL_STOP_PCT` | -0.07 | 从峰值回撤超过此值触发移动止损 |
+| `TIME_STOP_DAYS` | 20 | 时间止损观察期（交易日数，0=禁用） |
+| `TIME_STOP_MIN_RETURN` | 0.05 | 时间止损最低盈利门槛 |
+
+**熔断/过滤：**
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `SPY_BRAKE_PERIOD` | 20 | SPY 观察窗口（交易日数） |
+| `SPY_BRAKE_PCT` | -0.08 | SPY 近 N 日跌超此幅度时暂停买入 |
+| `VIX_BRAKE_LEVEL` | 30 | VIX 超过此值时暂停新建仓 |
+| `BREADTH_MIN_PCT` | 0.35 | S&P500 中站上 MA200 的比例低于此值时触发宽度过滤 |
+| `BREADTH_MAX_POS` | 4 | 市场宽度不足时最多持有的仓位数 |
+| `MIN_CAP_B` | 10.0 | 最小市值（十亿美元，排除微盘股） |
+| `MAX_CAP_B` | 5000.0 | 最大市值（十亿美元，实际不过滤 mega-cap） |
+| `DENY_INDUSTRIES` | `['Software—Application']` | 拒绝行业关键词（模糊匹配） |
+| `FUND_FILTER_ENABLED` | True | 是否启用基本面硬门槛（无数据时放行） |
+| `FUND_MIN_ROE` | 0.0 | ROE 最低门槛（排除亏损公司） |
+| `FUND_MAX_DE` | 2.0 | 负债权益比上限 |
+| `FUND_MIN_REV_GROWTH` | -0.20 | 营收增长最低门槛 |
+| `EARNINGS_AVOID_DAYS` | 2 | 财报前 N 日历日内不开新仓（0=禁用） |
 | `MAX_ENTRY_SLIPPAGE` | 0.01 | OPG 买入限价保护：最多接受昨收 +1% |
-| `CASH_EQUIV` | `{'SGOV','BIL','USFR'}` | 现金等价 ETF 白名单 |
-| `SELL_ON_ALERT` | True | 量价背离时是否自动卖出 |
+
+**内幕数据配置：**
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `INSIDER_DAYS` | 30 | 内幕买入观察窗口（天） |
+| `INSIDER_MIN_VALUE_K` | 100 | 内幕单笔最小金额（千美元） |
+
+**策略参数：**
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `INITIAL_CASH` | 60,000 | 回测初始资金（实盘忽略） |
+| `VOL_SHRINK_RATIO` | 0.7 | 量价背离判定：成交量低于均量×此值触发 |
+
+---
+
+## 因子系统架构
+
+**因子注册表**（`strategies/factors/registry.py`）是整个因子体系的核心，当前共 20 个因子：
+
+| 因子 key | 类型 | signal_type | 说明 |
+|----------|------|-------------|------|
+| `rs_score` | technical | score | RS 相对强度（个股 vs SPY） |
+| `breakout` | technical | filter | 价格突破近50日高点 |
+| `volume_ma` | technical | score | 成交量均线（is_dependency） |
+| `volume_surge` | technical | filter | 放量突破（量 > 均量×倍数） |
+| `volume_divergence` | technical | sell_alert | 量价背离顶部信号 |
+| `trend_filter` | technical | filter | MA50 > MA200 趋势过滤 |
+| `drawdown_filter` | technical | filter | 崩跌过滤（距高点最大回撤） |
+| `atr` | technical | score | ATR14（is_dependency，供止损用） |
+| `volatility_filter` | technical | filter | ATR/价格 > max_atr_pct 则过滤（默认5%） |
+| `momentum_quality` | technical | score | log价格线性回归 R²，衡量趋势平稳性 |
+| `obv_trend` | technical | score | OBV 斜率归一化，正值=资金流入 |
+| `sector_rs` | technical | score | 个股 vs 行业ETF vs SPY（双层相对强度） |
+| `revenue_growth` | fundamental | score | 营收增长率（快照，display_only 效果） |
+| `earnings_growth` | fundamental | score | 盈利增长率（快照） |
+| `roe` | fundamental | score | ROE 净资产收益率（快照） |
+| `debt_to_equity` | fundamental | score | 负债权益比（快照） |
+| `fcf_yield` | fundamental | score | 自由现金流收益率（快照） |
+| `pe_ratio` | fundamental | score | 市盈率 PE（快照） |
+| `pb_ratio` | fundamental | score | 市净率 PB（快照） |
+| `earnings_avoid` | fundamental | filter | 财报临近标记（display_only=True） |
+
+**关键设计原则：**
+- `RSMomentum`（生产策略）硬编码核心5个条件，不读注册表。支持 `extra_filters` 参数传入额外注册表因子，用于将验证通过的因子推入生产：`RSMomentum(extra_filters=['volatility_filter'])`
+- `DynamicFactorStrategy`（Web 预览/优化器）从注册表动态组合，支持 `set_spy()` 和 `set_sector_etf()`
+- **基本面因子和 `earnings_avoid` 只做展示，不参与时序回测**（快照数据无法逐日计算）
+- **新因子推荐工作流**：加入注册表（默认关闭）→ Web 因子看板/优化器实验 → 验证后通过 `extra_filters` 推入 RSMomentum
+- 因子开关（`FACTOR_*_ENABLED`）存在 DB `config_store` 表，通过 Web UI 因子看板管理
+- `sector_rs` 依赖 11 个行业 ETF 价格（`_load_price_map` 统一预加载），各行业映射见 `strategies/factors/sector_rs.py::SECTOR_ETFS`
 
 ---
 
@@ -273,8 +394,14 @@ start_web.sh         # 一键启动脚本
 ## 数据流
 
 ```
-信号生成（全部 yfinance）：
-  yfinance → DataStore（data/ Parquet 文件）→ RSMomentum.generate_signals() → 买卖信号
+信号生成（主数据源 yfinance）：
+  yfinance → DataStore（data/stocks/ Parquet）→ RSMomentum.generate_signals() → 买卖信号
+  core/earnings.py → 财报日期缓存 → 财报回避过滤
+  core/insider.py  → OpenInsider 内幕数据 → 信号参考
+
+数据质量验证（第二数据源 IBKR）：
+  IBKR Gateway → IBKRDataStore（data/stocks_ibkr/ Parquet）
+  tools/compare_data.py → 比对 yfinance vs IBKR OHLCV → 价格/成交量差异报告
 
 实盘执行：
   auto_trader.py → core/trading.py → IBKR 下单 → core/database.py（orders 表）
@@ -282,16 +409,24 @@ start_web.sh         # 一键启动脚本
 
 回测路径：
   DataStore → RSMomentum → tests/backtest_rs.py 输出报告
+
+Web 优化路径：
+  DataStore → strategies/precompute.py（预计算全因子）→ optimizer_svc 穷举组合 → 排名结果
 ```
 
----
+### 数据比对工具
 
-## 已知待做事项
+```bash
+# 需要 IB Gateway 运行（模拟盘 4002）
+python -m tools.compare_data --symbols AAPL NVDA MSFT --start 2024-01-01
+python -m tools.compare_data --universe sp500 --sample 30 --start 2024-06-01
 
-| 优先级 | 内容 | 文件 |
-|--------|------|------|
-| P2 | 回测加入 OPG 滑点保护（与实盘对齐） | `tests/backtest_rs.py` |
-| P2 | scanner 加入市值/行业过滤 | `sp500_scanner.py` |
+# 离线模式（已有 data/stocks_ibkr/ 缓存时可不连 IB）
+python -m tools.compare_data --symbols AAPL --start 2024-01-01 --port 9999
+```
+
+**比对逻辑：** OHLC 差异 > 0.5% 标红，成交量差异 > 10% 标红。
+**常见原因：** 价格差异通常源于复权调整（yfinance 复权价 vs IBKR 原始价），属正常现象；成交量差异源于 yfinance 可能含盘后。
 
 ---
 

@@ -616,7 +616,6 @@ export default function Backtest() {
   const [params, setParams] = useState(() => loadStored('bt_params', DEFAULT_PARAMS))
   const [activeTask, setActiveTask] = useState<string | null>(null)
   const [tab, setTab] = useState<'config' | 'history' | 'vix'>('config')
-  const [showFactors, setShowFactors] = useState(false)
   const [selectedFactors, setSelectedFactors] = useState<string[]>(() => loadStored('bt_factors', []))
 
   useEffect(() => { localStorage.setItem('bt_params', JSON.stringify(params)) }, [params])
@@ -764,80 +763,61 @@ export default function Backtest() {
           )}
         </div>
 
-        {/* 因子选择（可折叠） */}
+        {/* 因子组合 */}
         <div className="mt-4">
-          <button
-            type="button"
-            onClick={() => setShowFactors(s => !s)}
-            className="flex items-center gap-1.5 text-xs text-slate-400 hover:text-white transition-colors"
-          >
-            <span className={`transition-transform ${showFactors ? 'rotate-90' : ''}`}>▶</span>
-            自定义因子组合
-            {selectedFactors.length > 0
-              ? <span className="ml-1 px-1.5 py-0.5 bg-blue-700 text-blue-200 rounded text-xs">{selectedFactors.length} 个因子已选</span>
-              : <span className="ml-1 text-slate-500">（默认：RSMomentum 全部因子）</span>
-            }
-          </button>
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs text-slate-400">
+              因子组合
+              {selectedFactors.length === 0
+                ? <span className="ml-1.5 text-slate-500">（未选择 = 默认 RSMomentum）</span>
+                : <span className="ml-1.5 text-blue-400">{selectedFactors.length} 个已选</span>
+              }
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedFactors(['rs_score', 'breakout', 'volume_surge', 'volume_divergence', 'trend_filter', 'drawdown_filter'])}
+              className="text-xs text-slate-500 hover:text-slate-200 transition-colors"
+            >
+              ↺ Reset RSMomentum
+            </button>
+          </div>
 
-          {showFactors && (
-            <div className="mt-3 bg-slate-700/40 rounded-lg p-3 border border-slate-600/50">
-              <div className="text-xs text-slate-400 mb-3">
-                勾选后使用自定义因子组合回测（买入 = 所有过滤因子通过 + 得分因子 &gt; 0）。
-                <span className="text-slate-500 ml-1">不勾选任何 = 默认 RSMomentum 策略。</span>
-              </div>
-
-              {/* 按分类展示 */}
-              {Object.entries(
-                techFactors.reduce((acc: any, f: any) => {
-                  ;(acc[f.category] = acc[f.category] || []).push(f)
-                  return acc
-                }, {} as Record<string, any[]>)
-              ).map(([cat, factors]: any) => (
-                <div key={cat} className="mb-3">
-                  <div className="text-xs text-slate-500 mb-1.5 font-medium uppercase tracking-wide">
-                    {CATEGORY_LABELS[cat] ?? cat}
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {factors.map((f: any) => {
-                      const checked = selectedFactors.includes(f.key)
-                      return (
-                        <label
-                          key={f.key}
-                          className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs cursor-pointer transition-colors ${
-                            checked
-                              ? 'bg-blue-700/50 border-blue-500 text-blue-200'
-                              : 'border-slate-600 text-slate-400 hover:border-slate-400 hover:text-slate-200'
-                          }`}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => toggleFactor(f.key)}
-                            className="hidden"
-                          />
-                          {f.name}
-                          <span className="font-mono opacity-50">{f.key}</span>
-                          <span className="text-slate-500">
-                            {f.signal_type === 'sell_alert' ? '卖出' : f.signal_type === 'filter' ? '✓过滤' : '↑分数'}
-                          </span>
-                        </label>
-                      )
-                    })}
-                  </div>
+          <div className="bg-slate-700/40 rounded-lg p-3 border border-slate-600/50">
+            {Object.entries(
+              techFactors.reduce((acc: any, f: any) => {
+                ;(acc[f.category] = acc[f.category] || []).push(f)
+                return acc
+              }, {} as Record<string, any[]>)
+            ).map(([cat, factors]: any) => (
+              <div key={cat} className="mb-3 last:mb-0">
+                <div className="text-xs text-slate-500 mb-1.5 font-medium uppercase tracking-wide">
+                  {CATEGORY_LABELS[cat] ?? cat}
                 </div>
-              ))}
-
-              {selectedFactors.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => setSelectedFactors([])}
-                  className="mt-1 text-xs text-slate-500 hover:text-slate-300"
-                >
-                  清除选择（恢复默认）
-                </button>
-              )}
-            </div>
-          )}
+                <div className="flex flex-wrap gap-2">
+                  {factors.map((f: any) => {
+                    const checked = selectedFactors.includes(f.key)
+                    return (
+                      <label
+                        key={f.key}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs cursor-pointer transition-colors ${
+                          checked
+                            ? 'bg-blue-700/50 border-blue-500 text-blue-200'
+                            : 'border-slate-600 text-slate-400 hover:border-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        <input type="checkbox" checked={checked} onChange={() => toggleFactor(f.key)} className="hidden" />
+                        {f.name}
+                        <span className="font-mono opacity-50">{f.key}</span>
+                        <span className="text-slate-500">
+                          {f.signal_type === 'sell_alert' ? '卖出' : f.signal_type === 'filter' ? '✓过滤' : '↑分数'}
+                        </span>
+                      </label>
+                    )
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="mt-4 flex gap-3">

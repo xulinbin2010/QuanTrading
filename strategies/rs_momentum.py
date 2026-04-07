@@ -37,6 +37,7 @@ class RSMomentum(Strategy):
         vol_multiplier: float = 1.5,  # 放量倍数阈值
         max_drawdown_from_high: float = -0.30,  # 从52周最高跌超此比例不买入
         vol_shrink_ratio: float = 0.7,  # 量价背离判定：成交量需低于均量×此比例
+        extra_filters: list[str] | None = None,  # 额外注册表因子键（filter 类型）
     ):
         self.rs_period = rs_period
         self.breakout_period = breakout_period
@@ -44,6 +45,7 @@ class RSMomentum(Strategy):
         self.vol_multiplier = vol_multiplier
         self.max_drawdown_from_high = max_drawdown_from_high
         self.vol_shrink_ratio = vol_shrink_ratio
+        self.extra_filters = list(extra_filters) if extra_filters else []
         self._spy_close: pd.Series = None
 
     @property
@@ -86,6 +88,22 @@ class RSMomentum(Strategy):
         # 卖出报警：价格创新高但成交量萎缩（优先级低于买入信号）
         sell_alert = df['at_new_high'] & df['vol_shrink'] & (df['signal'] == 0)
         df.loc[sell_alert, 'signal'] = -1
+
+        # ── 额外注册表 filter 因子（实验验证后从 extra_filters 推入生产）──
+        if self.extra_filters:
+            from .factors.registry import get_registry
+            registry = get_registry()
+            for key in self.extra_filters:
+                meta = registry.get(key)
+                if meta is None or meta.data_type != 'technical' or meta.signal_type != 'filter':
+                    continue
+                # 先确保因子已计算
+                if meta.signal_column not in df.columns:
+                    params = {p: v[0] for p, v in meta.params.items()}
+                    df = meta.compute_fn(df, **params)
+                # 将不满足额外过滤条件的买入信号清零
+                col = meta.signal_column
+                df.loc[(df['signal'] == 1) & ~df[col].fillna(False).astype(bool), 'signal'] = 0
 
         # 清理中间列（只删 prev_high，at_new_high 保留供 scanner 使用）
         df.drop(columns=['prev_high'], inplace=True)

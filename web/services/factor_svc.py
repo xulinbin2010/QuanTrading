@@ -142,16 +142,24 @@ def get_factor_params_from_db(key: str) -> dict:
 # ── 公共数据加载 ───────────────────────────────────────────
 
 def _load_price_map(universe: str):
-    """加载股票池价格数据，返回 (tickers, price_map, spy_close, stock_info)"""
+    """
+    加载股票池价格数据。
+
+    返回：(tickers, price_map, spy_close, stock_info)
+      price_map 包含股票 + SPY + 11 个行业 ETF（供 sector_rs 因子使用）。
+    """
     from core.data_store import DataStore
     from core.universe import get_tickers, get_stock_info
+    from strategies.factors.sector_rs import ALL_SECTOR_ETFS
 
     tickers = get_tickers(universe)
     end_date = date.today().strftime('%Y-%m-%d')
     start_date = (date.today() - timedelta(days=300)).strftime('%Y-%m-%d')
 
     store = DataStore()
-    price_map = store.get(tickers + ['SPY'], start=start_date, end=end_date,
+    # 一并加载 SPY 和所有行业 ETF
+    extra = ['SPY'] + ALL_SECTOR_ETFS
+    price_map = store.get(tickers + extra, start=start_date, end=end_date,
                           min_rows=60, auto_update=True)
 
     spy_df = price_map.get('SPY')
@@ -190,7 +198,21 @@ def scan_factors(universe: str = 'sp500', top: int = 50, force: bool = False) ->
         for k in fundamental_keys
     }
 
+    # 财报回避因子是否启用
+    earnings_avoid_enabled = bool(config.get('FACTOR_earnings_avoid_ENABLED') or False)
+    earnings_avoid_days    = int(config.get('EARNINGS_AVOID_DAYS') or 2)
+    earnings_cache: dict   = {}
+    if earnings_avoid_enabled:
+        from core.earnings import prefetch_earnings
+
     tickers, price_map, spy_close, stock_info = _load_price_map(universe)
+
+    # 预取财报日期（批量一次，避免逐只联网）
+    if earnings_avoid_enabled:
+        earnings_cache = prefetch_earnings(tickers)
+
+    sector_rs_enabled = bool(config.get('FACTOR_sector_rs_ENABLED') or False)
+    from strategies.factors.sector_rs import SECTOR_ETFS, compute_sector_rs
 
     strategy = RSMomentum()
     if spy_close is not None:
@@ -230,6 +252,13 @@ def scan_factors(universe: str = 'sp500', top: int = 50, force: bool = False) ->
                 "fcf_yield": _compute_fcf_yield(info),
                 "pe_ratio": info.get('pe_ratio'),
                 "pb_ratio": info.get('pb_ratio'),
+                # 行业相对强度（仅当 sector_rs 启用时有意义）
+                **_compute_sector_rs_vals(sym, info, price_map, spy_close, sector_rs_enabled),
+                # 财报回避（display_only，仅当 earnings_avoid 启用时有意义）
+                "earnings_safe": (
+                    _earnings_safe(sym, earnings_cache, earnings_avoid_days)
+                    if earnings_avoid_enabled else None
+                ),
             }
             rows.append(row)
         except Exception:
@@ -281,8 +310,10 @@ def preview_signals(universe: str, factors: list[str], top: int = 100) -> dict:
     }
     """
     from strategies.dynamic_factor import DynamicFactorStrategy
+    from strategies.factors.sector_rs import SECTOR_ETFS
 
-    tickers, price_map, spy_close, _ = _load_price_map(universe)
+    tickers, price_map, spy_close, stock_info = _load_price_map(universe)
+    sector_rs_enabled = 'sector_rs' in factors
 
     strategy = DynamicFactorStrategy(factors)
     if spy_close is not None:
@@ -294,6 +325,15 @@ def preview_signals(universe: str, factors: list[str], top: int = 100) -> dict:
         if df is None or len(df) < 60:
             continue
         try:
+            # 为 sector_rs 因子传入对应行业 ETF 数据
+            if sector_rs_enabled:
+                info = stock_info.get(sym, {})
+                etf_sym = SECTOR_ETFS.get(info.get('sector', ''))
+                etf_df  = price_map.get(etf_sym) if etf_sym else None
+                strategy.set_sector_etf(
+                    info.get('sector'),
+                    etf_df['close'] if etf_df is not None else None,
+                )
             sig_df = strategy.generate_signals(df)
             last = sig_df.iloc[-1]
 
@@ -346,6 +386,55 @@ def _compute_fcf_yield(info: dict) -> float | None:
     if fcf is not None and mc is not None and mc > 0:
         return round(float(fcf) / (float(mc) * 1e9), 4)
     return None
+
+
+def _compute_sector_rs_vals(
+    sym: str,
+    info: dict,
+    price_map: dict,
+    spy_close,
+    enabled: bool,
+) -> dict:
+    """计算单股的行业相对强度值，供 scan_factors 行数据使用。"""
+    if not enabled or spy_close is None:
+        return {"sector_rs": None, "stock_vs_sector": None}
+
+    from strategies.factors.sector_rs import SECTOR_ETFS, compute_sector_rs
+
+    df = price_map.get(sym)
+    if df is None:
+        return {"sector_rs": None, "stock_vs_sector": None}
+
+    etf_sym = SECTOR_ETFS.get(info.get('sector', ''))
+    etf_df  = price_map.get(etf_sym) if etf_sym else None
+    sector_etf_close = etf_df['close'] if etf_df is not None else None
+
+    try:
+        result_df = compute_sector_rs(df.copy(), sector_etf_close, spy_close)
+        last = result_df.iloc[-1]
+        sr   = last.get('sector_rs')
+        svs  = last.get('stock_vs_sector')
+        return {
+            "sector_rs":       round(float(sr),  4) if sr  is not None and sr  == sr  else None,
+            "stock_vs_sector": round(float(svs), 4) if svs is not None and svs == svs else None,
+        }
+    except Exception:
+        return {"sector_rs": None, "stock_vs_sector": None}
+
+
+def _earnings_safe(
+    symbol: str,
+    earnings_cache: dict,
+    within_days: int,
+) -> bool | None:
+    """根据预取的财报缓存判断当前是否临近财报。True=安全，False=临近财报。"""
+    from datetime import date, timedelta
+    ed = earnings_cache.get(symbol)
+    if ed is None:
+        return None  # 无数据，不确定
+    today  = date.today()
+    cutoff = today + timedelta(days=within_days)
+    return not (today <= ed <= cutoff)
 
 
 # ── 单股因子时序 ───────────────────────────────────────────

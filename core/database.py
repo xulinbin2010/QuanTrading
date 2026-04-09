@@ -29,17 +29,16 @@ class Database:
             self.cursor = None
 
     def _ensure_conn(self):
-        """检查连接是否有效，断了就带超时重连"""
-        if not self.conn:
-            return False
-        try:
-            self.conn.ping(reconnect=False)
-            self.cursor = self.conn.cursor()
-            self.cursor.execute(f"USE `{config.DB_NAME}`")
-            return True
-        except Exception:
-            pass
-        # ping 失败 → 手动重连（带 3s 超时）
+        """检查连接是否有效，断了就带超时重连（conn 为 None 时同样尝试重连）"""
+        if self.conn:
+            try:
+                self.conn.ping(reconnect=False)
+                self.cursor = self.conn.cursor()
+                self.cursor.execute(f"USE `{config.DB_NAME}`")
+                return True
+            except Exception:
+                pass
+        # conn 为 None 或 ping 失败 → 手动重连（带 3s 超时）
         try:
             self.conn = pymysql.connect(
                 host=config.DB_HOST,

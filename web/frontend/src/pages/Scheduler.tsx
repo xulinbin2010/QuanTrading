@@ -54,6 +54,8 @@ export default function Scheduler() {
   const [editTask, setEditTask] = useState<any | null>(null)
   const [cronTimes, setCronTimes] = useState<string[]>([])
   const [cronError, setCronError] = useState<string>('')
+  // 记录每个 task_id 是否刚被手动触发（乐观显示 running 状态）
+  const [localRunning, setLocalRunning] = useState<Set<string>>(new Set())
   const queryClient = useQueryClient()
 
   // cron 预览：输入后 600ms debounce 调用后端
@@ -78,7 +80,8 @@ export default function Scheduler() {
     queryFn: getSchedulerTasks,
     refetchInterval: (query) => {
       const data = query.state.data as any[] | undefined
-      return data?.some(t => t.last_run?.status === 'running') ? 3_000 : 15_000
+      const hasRunning = data?.some(t => t.last_run?.status === 'running') || localRunning.size > 0
+      return hasRunning ? 3_000 : 15_000
     },
     retry: 1,
   })
@@ -88,7 +91,8 @@ export default function Scheduler() {
     queryFn: () => getTaskRuns(undefined, 50),
     refetchInterval: (query) => {
       const data = query.state.data as any[] | undefined
-      return data?.some(r => r.status === 'running') ? 3_000 : 10_000
+      const hasRunning = data?.some(r => r.status === 'running') || localRunning.size > 0
+      return hasRunning ? 3_000 : 10_000
     },
     retry: 1,
   })
@@ -99,17 +103,35 @@ export default function Scheduler() {
   })
 
   const runNowMutation = useMutation({
-    mutationFn: (taskId: string) => runTaskNow(taskId),
+    mutationFn: (taskId: string) => {
+      setLocalRunning(prev => new Set(prev).add(taskId))
+      return runTaskNow(taskId)
+    },
     onSuccess: () => {
-      // 立即刷新，之后动态 refetchInterval 在 running 期间自动3秒轮询
       queryClient.invalidateQueries({ queryKey: ['task-runs'] })
       queryClient.invalidateQueries({ queryKey: ['scheduler-tasks'] })
+      // 不在此处删除 localRunning，等 runs 数据刷回后由 useEffect 接管，避免闪回
+    },
+    onError: (_err, taskId) => {
+      setLocalRunning(prev => { const s = new Set(prev); s.delete(taskId); return s })
     },
   })
 
-  const runningTaskIds = new Set(
-    (runs as any[]).filter(r => r.status === 'running').map(r => r.task_id)
-  )
+  // 当 runs 数据中已出现该任务记录（running / 完成），解除乐观标记
+  useEffect(() => {
+    if (localRunning.size === 0) return
+    const knownIds = new Set((runs as any[]).map((r: any) => r.task_id))
+    setLocalRunning(prev => {
+      const next = new Set(prev)
+      prev.forEach(id => { if (knownIds.has(id)) next.delete(id) })
+      return next.size === prev.size ? prev : next
+    })
+  }, [runs])
+
+  const runningTaskIds = new Set([
+    ...(runs as any[]).filter(r => r.status === 'running').map(r => r.task_id),
+    ...Array.from(localRunning),
+  ])
 
   const deleteRunMutation = useMutation({
     mutationFn: (runId: number) => deleteTaskRun(runId),
@@ -204,13 +226,33 @@ export default function Scheduler() {
             </div>
 
             <div className="flex gap-2">
-              <button
-                onClick={() => runNowMutation.mutate(task.task_id)}
-                disabled={runNowMutation.isPending || runningTaskIds.has(task.task_id)}
-                className="px-2.5 py-1 text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 rounded transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                {runningTaskIds.has(task.task_id) ? '⏳ 运行中' : '▶ 立即执行'}
-              </button>
+              {(() => {
+                const isPending = runNowMutation.isPending && runNowMutation.variables === task.task_id
+                const isRunning = runningTaskIds.has(task.task_id)
+                return (
+                  <button
+                    onClick={() => runNowMutation.mutate(task.task_id)}
+                    disabled={isPending || isRunning}
+                    className="px-2.5 py-1 text-xs rounded transition-all active:scale-95 disabled:cursor-not-allowed
+                      bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-slate-300
+                      disabled:opacity-60"
+                  >
+                    {isPending ? (
+                      <span className="flex items-center gap-1">
+                        <span className="inline-block w-2.5 h-2.5 border border-slate-400 border-t-transparent rounded-full animate-spin" />
+                        触发中
+                      </span>
+                    ) : isRunning ? (
+                      <span className="flex items-center gap-1 text-yellow-400">
+                        <span className="inline-block w-2 h-2 rounded-full bg-yellow-400 animate-pulse" />
+                        运行中
+                      </span>
+                    ) : (
+                      '▶ 立即执行'
+                    )}
+                  </button>
+                )
+              })()}
               <button
                 onClick={() => setEditTask({ ...task })}
                 className="px-2.5 py-1 text-xs border border-slate-600 text-slate-400 hover:text-white rounded transition-colors"

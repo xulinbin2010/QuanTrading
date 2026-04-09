@@ -49,6 +49,8 @@ class DataStore:
         self.root       = Path(data_dir)
         self.stocks_dir = self.root / 'stocks'
         self.stocks_dir.mkdir(parents=True, exist_ok=True)
+        # update() 期间发现 yfinance 无数据（同批其他有数据）的 symbol，_load() 直接过滤
+        self._no_data_syms: set[str] = set()
 
     # ── 主入口 ────────────────────────────────────────────────
 
@@ -75,6 +77,7 @@ class DataStore:
         返回 True 表示有新数据被写入。
         """
         end = self._cap_end(end)
+        self._no_data_syms = set()   # 每次 update 重置
 
         groups: dict[str, list[str]] = {}
         for sym in symbols:
@@ -88,9 +91,18 @@ class DataStore:
 
         total = sum(len(v) for v in groups.values())
         print(f'  [DataStore] 需更新 {total} 只，分 {len(groups)} 批下载...')
-        written = 0
+        written     = 0
+        all_got     : set[str] = set()   # yfinance 有返回数据（含重复）的 symbol
+        all_no_data : set[str] = set()   # yfinance 完全无数据的 symbol
         for dl_from, syms in sorted(groups.items()):
-            written += self._download_and_save(syms, dl_from, end)
+            saved, got, no_data = self._download_and_save(syms, dl_from, end)
+            written     += saved
+            all_got     |= got
+            all_no_data |= no_data
+        # 只有当其他 symbol 确实有数据时，才把无数据的标记为疑似退市，并删除其 parquet
+        if all_got and all_no_data:
+            self._no_data_syms = all_no_data
+            self._purge_delisted(all_no_data)
         return written > 0
 
     def load_multi(
@@ -155,9 +167,14 @@ class DataStore:
 
     # ── 内部：下载 & 存储 ─────────────────────────────────────
 
-    def _download_and_save(self, symbols: list[str], start: str, end: str) -> int:
-        """批量下载并 append-save 到个股 parquet 文件。"""
-        # yfinance end 是左闭右开，需要 +1 天才能包含 end 当天的数据
+    def _download_and_save(
+        self, symbols: list[str], start: str, end: str
+    ) -> tuple[int, set[str], set[str]]:
+        """批量下载并 append-save 到个股 parquet 文件。
+        返回 (written, got_data_syms, no_data_syms)：
+          got_data_syms  — yfinance 有返回数据（含重复/无新行）的 symbol
+          no_data_syms   — yfinance 完全无数据的 symbol
+        """
         end_exclusive = (date.fromisoformat(end) + timedelta(days=1)).strftime('%Y-%m-%d')
         try:
             raw = yf.download(
@@ -171,13 +188,17 @@ class DataStore:
             )
         except Exception as e:
             print(f'  [DataStore] 下载失败：{e}')
-            return 0
+            return 0, set(), set(symbols)   # 整批失败，全部归入 no_data
 
-        saved = 0
+        saved    = 0
+        got_syms : set[str] = set()
+        bad_syms : set[str] = set()
         for sym in symbols:
             df = self._extract(raw, sym, len(symbols))
             if df is None or df.empty:
+                bad_syms.add(sym)
                 continue
+            got_syms.add(sym)
             path = self.stocks_dir / f'{sym}.parquet'
             if path.exists():
                 old      = pd.read_parquet(path)
@@ -189,32 +210,68 @@ class DataStore:
             df.index.name = 'date'
             df.to_parquet(path)
             saved += 1
+        if bad_syms:
+            print(f'  [DataStore] yfinance 无数据（疑似退市）：{sorted(bad_syms)}')
         print(f'  [DataStore] 写入 {saved}/{len(symbols)} 只')
-        return saved
+        return saved, got_syms, bad_syms
 
     # ── 内部：读取 ───────────────────────────────────────────
 
     def _load(
         self,
-        symbols:  list[str],
-        start:    str,
-        end:      str,
-        min_rows: int,
+        symbols:   list[str],
+        start:     str,
+        end:       str,
+        min_rows:  int,
+        max_stale: int = 4,   # 最后一条 K 线比 SPY 最新日早超过 N 日历天，视为退市/停牌
     ) -> dict[str, pd.DataFrame]:
         result = {}
         ts_start = pd.Timestamp(start)
         ts_end   = pd.Timestamp(end)
+        stale_syms = []
+
+        # 用 SPY 的实际最后 K 线日期作为参考基准（比 _last_trading_day() 更精确，自动处理节假日）
+        spy_path = self.stocks_dir / 'SPY.parquet'
+        if spy_path.exists():
+            spy_idx = pd.read_parquet(spy_path, columns=['close']).index
+            ref_date = spy_idx.max() if not spy_idx.empty else pd.Timestamp(self._last_trading_day())
+        else:
+            ref_date = pd.Timestamp(self._last_trading_day())
+        stale_limit = ref_date - pd.Timedelta(days=max_stale)
         for sym in symbols:
+            # update() 中 yfinance 对此 symbol 无数据（同批其他有）→ 疑似退市，直接过滤
+            if sym in self._no_data_syms:
+                stale_syms.append(sym)
+                continue
             path = self.stocks_dir / f'{sym}.parquet'
             if not path.exists():
                 continue
             df = pd.read_parquet(path)
             df = df[(df.index >= ts_start) & (df.index <= ts_end)]
-            if len(df) >= min_rows:
-                result[sym] = df
+            if len(df) < min_rows:
+                continue
+            # 最后一条 K 线比 SPY 最新日早超过 max_stale 天 → 数据过期，疑似退市/停牌
+            if df.index[-1] < stale_limit:
+                stale_syms.append(sym)
+                self._purge_delisted({sym})   # 删除过期 parquet
+                continue
+            result[sym] = df
+        if stale_syms:
+            print(f'  [DataStore] 数据过期跳过 {len(stale_syms)} 只（疑似退市/停牌）：{stale_syms}')
         return result
 
     # ── 内部：工具函数 ────────────────────────────────────────
+
+    def _purge_delisted(self, symbols: set[str]):
+        """删除疑似退市/停牌股票的本地 parquet 文件，避免历史数据污染后续扫描。"""
+        deleted = []
+        for sym in symbols:
+            path = self.stocks_dir / f'{sym}.parquet'
+            if path.exists():
+                path.unlink()
+                deleted.append(sym)
+        if deleted:
+            print(f'  [DataStore] 已删除退市/停牌数据文件：{sorted(deleted)}')
 
     def _date_range(self, symbol: str) -> tuple[date | None, date | None]:
         """返回 (最新日期, 最早日期)，文件不存在时返回 (None, None)。"""

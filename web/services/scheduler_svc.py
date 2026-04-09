@@ -148,10 +148,13 @@ class SchedulerService:
             replace_existing=True,
         )
 
-    def _execute_task(self, task_id: str, command: str):
-        """在子进程执行任务，记录日志到 DB"""
-        db = self._get_db()
-        run_id = db.start_task_run(task_id)
+    def _execute_task(self, task_id: str, command: str, run_id: int = None):
+        """在子进程执行任务，记录日志到 DB。run_id 由调用方预先创建时传入。
+        注意：后台线程使用独立的 DB 连接，避免与主线程 cursor 竞争。"""
+        db = Database()
+        db.connect()
+        if run_id is None:
+            run_id = db.start_task_run(task_id)
         log_lines = []
         try:
             proc = subprocess.Popen(
@@ -228,20 +231,22 @@ class SchedulerService:
             pass
 
     def run_now(self, task_id: str) -> dict:
-        """立即在后台线程执行任务"""
+        """立即在后台线程执行任务。在主线程预先写入 running 记录，保证前端刷新时立即可见状态。"""
         db = self._get_db()
         rows = db.get_tasks()
         task = next((r for r in rows if r[0] == task_id), None)
         if task is None:
             raise ValueError(f"任务 {task_id} 不存在")
         command = task[2]
+        # 在主线程预先创建 run 记录（status=running），前端刷新时立即可见
+        run_id = db.start_task_run(task_id)
         t = threading.Thread(
             target=self._execute_task,
-            args=[task_id, command],
+            args=[task_id, command, run_id],
             daemon=True,
         )
         t.start()
-        return {'task_id': task_id, 'status': 'triggered'}
+        return {'task_id': task_id, 'status': 'triggered', 'run_id': run_id}
 
     def get_runs(self, task_id: str = None, limit: int = 50) -> list[dict]:
         db = self._get_db()

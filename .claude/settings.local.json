@@ -54,7 +54,8 @@
       "Bash(xargs cat:*)",
       "Bash(npx tsc:*)",
       "Bash(python3 -c ':*)",
-      "Bash(.venv/bin/python -c ':*)"
+      "Bash(.venv/bin/python -c ':*)",
+      "Bash(mysql:*)"
     ]
   }
 }

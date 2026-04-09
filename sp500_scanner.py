@@ -62,11 +62,13 @@ def run_scanner(
     store    = DataStore()
     all_data = store.get(all_tickers, start=start, end=end, min_rows=80)
 
-    data      = {sym: df for sym, df in all_data.items() if sym != 'SPY'}
-    spy_close = all_data['SPY']['close'] if 'SPY' in all_data else None
+    spy_df    = all_data.get('SPY')
+    spy_close = spy_df['close'] if spy_df is not None else None
     if spy_close is None:
         print('SPY 数据获取失败')
         return
+
+    data = {sym: df for sym, df in all_data.items() if sym != 'SPY'}
 
     # ── 内部人士买入数据 ─────────────────────────────────────
     insider_map: dict[str, dict] = {}

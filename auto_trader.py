@@ -75,28 +75,15 @@ def _entry_date(sym: str, db) -> date | None:
     return None
 
 
-def _peak_price(sym: str, avg_cost: float, db) -> float:
-    """从 DataStore 计算该持仓自建仓以来的峰值收盘价。
-    入场日期从 orders 表查最近一笔 BUY 成交记录；若无记录则以 avg_cost 为峰值。
+def _peak_price(sym: str, avg_cost: float, df) -> float:
+    """从历史数据计算持仓峰值收盘价：只取高于均价的收盘价的最大值。
+    与因子看板 check_trail_stops 逻辑一致，不依赖 orders 表入场日期。
+    df: 该股票的历史 DataFrame（含 close 列）。
     """
-    from core.data_store import DataStore
-    # orders 列：id, symbol, action, order_type, qty, price, filled_price, status, order_id, created_at
-    rows = db.get_orders(symbol=sym, limit=50)
-    entry_date = None
-    for r in rows:
-        if r[2] == 'BUY' and r[6] is not None:   # action=BUY, filled_price 有值
-            entry_date = r[9]                      # created_at (datetime)
-            break
-    if entry_date is None:
-        return avg_cost
-
-    start = (entry_date.date() if hasattr(entry_date, 'date') else entry_date).strftime('%Y-%m-%d')
-    end   = date.today().strftime('%Y-%m-%d')
-    data  = DataStore().get([sym], start=start, end=end, auto_update=False)
-    df    = data.get(sym)
     if df is None or df.empty:
         return avg_cost
-    return max(float(df['close'].max()), avg_cost)
+    above = df['close'][df['close'] >= avg_cost]
+    return float(above.max()) if not above.empty else avg_cost
 
 # 现金等价 ETF：占仓时计入现金、不占槽位、跳过止损和信号扫描
 CASH_EQUIV = {'SGOV', 'BIL', 'USFR'}
@@ -439,6 +426,13 @@ def execute(signals: dict, dry_run: bool = True):
     account.print_balance()   # 顺带存快照到 DB，便于事后审计
     account.print_positions()
 
+    # ── 预加载持仓历史数据（用于移动止损峰值计算，与因子看板逻辑一致）──
+    from core.data_store import DataStore
+    held_syms   = [s for s in stock_positions if s not in CASH_EQUIV]
+    dl_start    = (date.today() - timedelta(days=400)).strftime('%Y-%m-%d')
+    held_data   = DataStore().get(held_syms, start=dl_start, end=date.today().strftime('%Y-%m-%d'),
+                                  auto_update=False) if held_syms else {}
+
     # ── 止损检查 ──────────────────────────────────────────────
     stop_loss_list = []
     for sym, pos in stock_positions.items():
@@ -499,7 +493,7 @@ def execute(signals: dict, dry_run: bool = True):
         cur_price = signals.get('_prices', {}).get(sym)
         if avg_cost <= 0 or qty <= 0 or cur_price is None:
             continue
-        peak      = _peak_price(sym, avg_cost, db)
+        peak      = _peak_price(sym, avg_cost, held_data.get(sym))
         peak_ret  = (peak - avg_cost) / avg_cost
         trail_ret = (cur_price - peak) / peak
         if peak_ret >= TRAIL_STOP_ACTIVATE_PCT and trail_ret <= TRAIL_STOP_PCT:
@@ -631,6 +625,29 @@ def execute(signals: dict, dry_run: bool = True):
         print(f"  持仓无卖出报警")
         print(f"{'='*54}")
 
+    # ── 重新计算可用仓位和资金（含本次止损/卖出释放的仓位和回笼资金）──
+    exiting_syms = (
+        {s['symbol'] for s in stop_loss_list} |
+        {s['symbol'] for s in trail_stop_list} |
+        {s['symbol'] for s in time_stop_list} |
+        {s['symbol'] for s in sell_list
+         if SELL_ON_ALERT and s['symbol'] in stock_positions}
+    )
+    freed_cash   = sum(
+        int(stock_positions[sym].position) * (signals.get('_prices', {}).get(sym) or 0)
+        for sym in exiting_syms if sym in stock_positions
+    )
+    effective_held = n_held - len(exiting_syms)
+    slots          = MAX_POSITIONS - effective_held
+    deployable     = max(0.0, cash + freed_cash - min_cash)
+    budget_per_pos = min(
+        deployable / max(1, slots),
+        net_liq * POSITION_PCT,
+    )
+    if exiting_syms:
+        print(f"\n  [仓位更新] 本次卖出 {len(exiting_syms)} 只 → 有效持仓 {effective_held} 只"
+              f"  回笼资金 ${freed_cash:,.0f}  可用槽位 {slots} 个")
+
     # ── 买入信号 ──────────────────────────────────────────────
     buy_list = signals.get('buy', [])
 
@@ -641,7 +658,7 @@ def execute(signals: dict, dry_run: bool = True):
         buy_list = []
     elif breadth_cap_active:
         effective_max_pos = min(MAX_POSITIONS, config.BREADTH_MAX_POS)
-        slots = max(0, effective_max_pos - n_held)
+        slots = max(0, effective_max_pos - effective_held)
 
     print(f"\n{'='*54}")
     print(f"  买入信号：{len(buy_list)} 只  可用仓位：{slots} 个")
@@ -652,7 +669,7 @@ def execute(signals: dict, dry_run: bool = True):
     elif deployable < budget_per_pos * 0.5:
         print(f"  可用资金 ${deployable:,.0f} 不足（保留现金规则：须保留 ${min_cash:,.0f}）")
     elif slots <= 0:
-        print(f"  仓位已满（{n_held}/{MAX_POSITIONS}），今日不开新仓")
+        print(f"  仓位已满（{effective_held}/{MAX_POSITIONS}），今日不开新仓")
     elif not buy_list:
         print(f"  今日无买入信号")
     else:

@@ -55,17 +55,28 @@ IB_TIMEOUT=60
 cd web/frontend && npm install && npm run build && cd ../..
 ```
 
+**顶部导航栏（所有页面共享）：**
+- ET 时钟（纽约时间实时显示）
+- IB 账号状态：`● 实盘 · U12345678` / `● 模拟 · U12345678`，多账号时可下拉切换
+- 主题切换：浅色 / 深色 / 跟随系统
+
 **七个功能页面：**
 
 | 模块 | URL | IB 依赖 | 说明 |
 |------|-----|---------|------|
-| 持仓总览 | `/#/` | 可选 | 余额/持仓需 IB，订单历史/净值曲线不需要 |
+| 持仓总览 | `/#/` | 可选 | 余额/持仓/资产配比需 IB；订单历史/净值曲线不需要；支持 CSV 导出 |
 | 因子看板 | `/#/factors` | 否 | 因子注册表管理：开启/关闭因子、调整参数 |
 | 市场扫描 | `/#/scanner` | 否 | 全股票池因子扫描 + 内幕买入面板，缓存1小时，点行展开K线详情 |
 | 因子优化 | `/#/optimizer` | 否 | 穷举因子组合 × 参数网格，按 Sharpe 排名，含预计算加速 |
 | 策略回测 | `/#/backtest` | 否 | 参数化回测，异步执行，含净值曲线/交易明细 |
 | 任务调度 | `/#/scheduler` | 否 | 管理定时任务，查看执行日志 |
 | 系统配置 | `/#/config` | 否 | 风控/策略参数实时修改，持久化到 DB |
+
+**持仓总览页关键实现细节：**
+- 资产配比以 `net_liquidation`（IB实时净值）为分母，百分比始终准确
+- 期权垂直价差自动识别：数量匹配（+N/-N）为一组，显示为 `GOOGL C325/340`；余下单腿单独显示
+- 价格获取用 `reqHistoricalData`（不依赖 Level 1 行情订阅），盘中/盘后均可用
+- ib_insync 在 FastAPI AnyIO 线程中通过 `ThreadPoolExecutor` + 固定 event loop 调用
 
 **Web 模块目录结构：**
 ```
@@ -193,12 +204,13 @@ core/
   trading.py         # 下单：market_buy/sell、limit_buy/sell，支持 tif=DAY/OPG
   account.py         # 账户余额 + 持仓查询，自动快照存库
   market_data.py     # 实时行情订阅 + 价格报警
-  database.py        # MySQL：orders / account_snapshots / klines / signals / config_store 等
-  historical_data.py # IBKR K 线拉取，支持增量更新
+  database.py        # MySQL：orders / account_snapshots / signals / scheduled_tasks / config_store
+                     #   注：klines 表已移除，K 线数据统一由 DataStore / IBKRDataStore 管理
+  historical_data.py # IBKR K 线拉取封装，完全委托 IBKRDataStore（Parquet），db 参数已废弃
   universe.py        # 股票池：get_tickers(universe) 支持 sp500/nasdaq100/russell2000
-  data_store.py      # Parquet 本地数据存储（yfinance），回测/实盘共用
-  ibkr_data_store.py # Parquet 本地数据存储（IBKR），接口与 DataStore 一致，存 data/stocks_ibkr/
-  historical_data.py # IBKR K 线拉取原始模块（写 MySQL，IBKRDataStore 的底层逻辑参考）
+  data_store.py      # Parquet 本地数据存储（yfinance），回测/实盘选股共用同一份数据
+                     #   stale check 行为：end 接近今天时过滤退市股；历史回测时放行（含已退市）
+  ibkr_data_store.py # Parquet 本地数据存储（IBKR），存 data/stocks_ibkr/，仅数据验证用
   earnings.py        # 财报日期查询 + 回避逻辑（prefetch_earnings / has_upcoming_earnings）
   insider.py         # OpenInsider 内幕买入数据抓取（20小时缓存）
   logger.py          # 全局日志模块：logs/trading.log，每天切割，保留30天
@@ -399,13 +411,20 @@ start_web.sh         # 一键启动脚本
   core/earnings.py → 财报日期缓存 → 财报回避过滤
   core/insider.py  → OpenInsider 内幕数据 → 信号参考
 
+  ★ DataStore 同一份数据同时服务回测和日常选股，无需两套：
+    - 历史回测（end 为历史日期）：stale check 关闭，已退市股历史数据正常参与计算
+    - 日常选股（end 接近今天）：stale check 开启，过滤数据已停更的退市/停牌股
+
 数据质量验证（第二数据源 IBKR）：
-  IBKR Gateway → IBKRDataStore（data/stocks_ibkr/ Parquet）
+  IBKR Gateway → IBKRDataStore（data/stocks_ibkr/ Parquet，~30只手动维护）
   tools/compare_data.py → 比对 yfinance vs IBKR OHLCV → 价格/成交量差异报告
 
 实盘执行：
   auto_trader.py → core/trading.py → IBKR 下单 → core/database.py（orders 表）
   confirm_fills.py → ib.trades() → orders 表更新 filled_price → logs/trading.log
+
+持仓报价（Web UI）：
+  portfolio_svc.py → ib.reqHistoricalData() → 持仓实时报价（股票/期权均支持）
 
 回测路径：
   DataStore → RSMomentum → tests/backtest_rs.py 输出报告

@@ -17,5 +17,6 @@ logs/
 # IDE
 .idea/
 .vscode/
+.claude/
 *.swp
 *.log

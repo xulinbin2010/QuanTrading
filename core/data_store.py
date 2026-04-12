@@ -238,21 +238,25 @@ class DataStore:
         else:
             ref_date = pd.Timestamp(self._last_trading_day())
         stale_limit = ref_date - pd.Timedelta(days=max_stale)
+        # 只有"请求的 end 本身接近今天"时才做 stale 过滤（选股/实盘场景）。
+        # 历史回测的 end 早于 stale_limit，退市股的历史数据应当保留参与计算。
+        check_stale = ts_end >= stale_limit
         for sym in symbols:
             # update() 中 yfinance 对此 symbol 无数据（同批其他有）→ 疑似退市，直接过滤
-            if sym in self._no_data_syms:
+            # 但仅在实盘/选股场景下过滤；历史回测同样放行
+            if check_stale and sym in self._no_data_syms:
                 stale_syms.append(sym)
                 continue
             path = self.stocks_dir / f'{sym}.parquet'
             if not path.exists():
                 continue
-            df = pd.read_parquet(path)
-            df = df[(df.index >= ts_start) & (df.index <= ts_end)]
-            if len(df) < min_rows:
-                continue
-            # 最后一条 K 线比 SPY 最新日早超过 max_stale 天 → 数据过期，疑似退市/停牌
-            if df.index[-1] < stale_limit:
+            df_full = pd.read_parquet(path)
+            # stale 检查：文件实际最后日期比 SPY 落后超过 max_stale 天，且为实盘查询
+            if check_stale and not df_full.empty and df_full.index[-1] < stale_limit:
                 stale_syms.append(sym)
+                continue
+            df = df_full[(df_full.index >= ts_start) & (df_full.index <= ts_end)]
+            if len(df) < min_rows:
                 continue
             result[sym] = df
         if stale_syms:

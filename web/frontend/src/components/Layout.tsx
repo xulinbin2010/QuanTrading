@@ -2,6 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { getIBStatus } from '../api/client'
 import { useEffect, useState } from 'react'
+import { useAccount } from '../App'
 
 const NAV = [
   { to: '/',          label: '持仓总览', icon: '📊' },
@@ -155,16 +156,87 @@ function ETClock() {
   return <span className="text-xs text-slate-400 font-mono">{time}</span>
 }
 
-export default function Layout() {
+function IBAccountSelector() {
   const { data: ibStatus } = useQuery({
     queryKey: ['ib-status'],
     queryFn: getIBStatus,
     refetchInterval: 30_000,
     retry: false,
   })
+  const { selectedAccount, setSelectedAccount } = useAccount()
+  const [open, setOpen] = useState(false)
 
-  const connected = ibStatus?.connected ?? false
+  const connected: boolean = ibStatus?.connected ?? false
+  const accounts: string[] = ibStatus?.accounts ?? []
+  const isLive: boolean = ibStatus?.is_live ?? false
 
+  // 连接后若还没选账号，自动选第一个
+  useEffect(() => {
+    if (connected && accounts.length > 0 && !selectedAccount) {
+      setSelectedAccount(accounts[0])
+    }
+  }, [connected, accounts.join(',')])
+
+  const display = selectedAccount ?? accounts[0] ?? null
+
+  if (!connected) {
+    return (
+      <div className="flex items-center gap-1.5 text-xs">
+        <span className="w-2 h-2 rounded-full bg-red-500" />
+        <span className="text-slate-500">IB 离线</span>
+      </div>
+    )
+  }
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => accounts.length > 1 && setOpen(s => !s)}
+        className={`flex items-center gap-1.5 text-xs px-2 py-1 rounded border transition-colors
+          ${isLive
+            ? 'border-green-700 text-green-300 hover:border-green-500'
+            : 'border-yellow-700 text-yellow-300 hover:border-yellow-500'}
+          ${accounts.length <= 1 ? 'cursor-default' : 'cursor-pointer'}`}
+      >
+        <span className="w-1.5 h-1.5 rounded-full bg-green-400 flex-shrink-0" />
+        <span className={`font-semibold ${isLive ? 'text-green-300' : 'text-yellow-300'}`}>
+          {isLive ? '实盘' : '模拟'}
+        </span>
+        <span className="text-slate-500 mx-0.5">·</span>
+        <span className="font-mono">{display}</span>
+        {accounts.length > 1 && (
+          <svg className="w-3 h-3 text-slate-400 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+          </svg>
+        )}
+      </button>
+
+      {open && accounts.length > 1 && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 z-50 bg-slate-800 border border-slate-600 rounded-lg shadow-xl overflow-hidden min-w-[160px]">
+            <div className="px-3 py-1.5 text-[11px] text-slate-500 border-b border-slate-700">选择账号</div>
+            {accounts.map(acc => (
+              <button
+                key={acc}
+                onClick={() => { setSelectedAccount(acc); setOpen(false) }}
+                className={`w-full flex items-center justify-between px-3 py-2 text-xs transition-colors
+                  ${selectedAccount === acc
+                    ? 'bg-blue-600 text-white font-medium'
+                    : 'text-slate-300 hover:bg-slate-700 hover:text-white'}`}
+              >
+                <span className="font-mono">{acc}</span>
+                {selectedAccount === acc && <span className="text-blue-200 ml-2">✓</span>}
+              </button>
+            ))}
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+export default function Layout() {
   return (
     <div className="flex h-screen bg-slate-900 text-slate-200 overflow-hidden">
       {/* 侧边栏 */}
@@ -209,12 +281,7 @@ export default function Layout() {
           <div />
           <div className="flex items-center gap-4">
             <ETClock />
-            <div className="flex items-center gap-1.5 text-xs">
-              <span className={`w-2 h-2 rounded-full ${connected ? 'bg-green-400' : 'bg-red-500'}`} />
-              <span className={connected ? 'text-green-400' : 'text-slate-500'}>
-                {connected ? `IB ${ibStatus?.account ?? ''}` : 'IB 离线'}
-              </span>
-            </div>
+            <IBAccountSelector />
             <ThemeToggle />
           </div>
         </header>

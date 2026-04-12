@@ -2,6 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { getOrders, getBalance, getPositions, refreshPositions, getEarningsDates, getPerformance } from '../api/client'
 import ReactECharts from 'echarts-for-react'
 import { useState } from 'react'
+import { useAccount } from '../App'
 
 function StatCard({ label, value, sub, color }: {
   label: string; value: string; sub?: string; color?: string
@@ -195,28 +196,90 @@ const SEGMENT_PALETTE: [string, boolean][] = [
 function AllocationBar({ positions, balance }: { positions: any[]; balance: any }) {
   if (!positions?.length && !balance) return null
 
+  // 用 net_liquidation 作分母：IB 实时净值，总和恒等于 100%
+  // market_value 各持仓占 netLiq 的比例；Cash = netLiq 减去所有持仓市值的余量
   const netLiq = balance?.net_liquidation
-  const cash = balance?.total_cash ?? 0
-  const totalMv = positions?.reduce((s: number, p: any) => s + (p.market_value ?? 0), 0) ?? 0
-  const total = netLiq ?? (totalMv + cash)
-  if (total <= 0) return null
+  if (!netLiq || netLiq <= 0) return null
 
-  const segments: { label: string; value: number; pct: number; bg: string; darkText: boolean }[] = [
-    ...(positions ?? []).map((p: any, i: number) => {
-      const [bg, darkText] = SEGMENT_PALETTE[i % SEGMENT_PALETTE.length]
-      return {
-        label: p.symbol,
-        value: p.market_value ?? 0,
-        pct: ((p.market_value ?? 0) / total) * 100,
-        bg,
-        darkText,
+  // ── 期权价差智能合并 ──────────────────────────────────────────────────────
+  // 策略：同底层+方向+到期日的期权中，将每个空头与最近行权价的多头配对成价差；
+  //       未配对的多头单独显示。这样 C260(多)+C325(多)+C340(空) → C325/340价差 + C260单腿
+  type BarItem = { label: string; value: number }
+  interface OptLeg { strike: number; mv: number; qty: number; symbol: string }
+  const optGroups: Record<string, OptLeg[]> = {}
+  const barItems: BarItem[] = []
+
+  for (const p of (positions ?? [])) {
+    const mv: number = p.market_value ?? 0
+    const parts: string[] = (p.symbol as string).trim().split(/\s+/)
+    if (parts.length === 3) {
+      const underlying = parts[0]
+      const right = parts[1][0]
+      const strike = parseFloat(parts[1].slice(1))
+      const expiry = parts[2]
+      const key = `${underlying}_${right}_${expiry}`
+      if (!optGroups[key]) optGroups[key] = []
+      optGroups[key].push({ strike, mv, qty: p.qty ?? 0, symbol: p.symbol })
+    } else {
+      barItems.push({ label: p.symbol, value: mv })
+    }
+  }
+
+  for (const legs of Object.values(optGroups)) {
+    const longs  = legs.filter(l => l.qty > 0).sort((a, b) => a.strike - b.strike)
+    const shorts = legs.filter(l => l.qty < 0).sort((a, b) => a.strike - b.strike)
+    const paired = new Set<number>()   // longs 中已配对的索引
+
+    // 配对规则：① 数量绝对值相同（+2/-2 才是价差），② 数量相同时取行权价最近的
+    for (const s of shorts) {
+      const absQty = Math.abs(s.qty)
+      let bestIdx = -1, bestDist = Infinity
+      longs.forEach((lng, i) => {
+        if (paired.has(i)) return
+        if (lng.qty !== absQty) return          // 数量必须匹配
+        const d = Math.abs(lng.strike - s.strike)
+        if (d < bestDist) { bestDist = d; bestIdx = i }
+      })
+      // 若无精确数量匹配（非标准价差），fallback 到任意未配对多头（按最近行权价）
+      if (bestIdx < 0) {
+        longs.forEach((lng, i) => {
+          if (paired.has(i)) return
+          const d = Math.abs(lng.strike - s.strike)
+          if (d < bestDist) { bestDist = d; bestIdx = i }
+        })
       }
+      if (bestIdx >= 0) {
+        paired.add(bestIdx)
+        const lng = longs[bestIdx]
+        const netMv = lng.mv + s.mv
+        if (netMv > 0) {
+          const [lo, hi] = [lng.strike, s.strike].sort((a, b) => a - b)
+          const sym0Parts = lng.symbol.split(' ')
+          barItems.push({ label: `${sym0Parts[0]} ${sym0Parts[1][0]}${lo}/${hi}`, value: netMv })
+        }
+      }
+    }
+
+    // 未配对的多头单独显示
+    longs.forEach((lng, i) => {
+      if (!paired.has(i) && lng.mv > 0) barItems.push({ label: lng.symbol, value: lng.mv })
+    })
+  }
+
+  const positiveMv = barItems.reduce((s, x) => s + Math.max(x.value, 0), 0)
+  const cashPct = Math.max((netLiq - positiveMv) / netLiq * 100, 0)
+
+  let colorIdx = 0
+  const segments: { label: string; value: number; pct: number; bg: string; darkText: boolean }[] = [
+    ...barItems.filter(x => x.value > 0).map(x => {
+      const [bg, darkText] = SEGMENT_PALETTE[colorIdx++ % SEGMENT_PALETTE.length]
+      return { label: x.label, value: x.value, pct: (x.value / netLiq) * 100, bg, darkText }
     }),
     {
       label: 'Cash',
-      value: cash,
-      pct: (cash / total) * 100,
-      bg: '#94a3b8', // slate-400 — 在深色/浅色背景下均可辨
+      value: netLiq - positiveMv,
+      pct: cashPct,
+      bg: '#94a3b8',
       darkText: true,
     },
   ].filter(s => s.pct > 0.1)
@@ -233,13 +296,20 @@ function AllocationBar({ positions, balance }: { positions: any[]; balance: any 
             style={{ width: `${s.pct}%`, backgroundColor: s.bg, minWidth: s.pct > 0.5 ? undefined : '3px' }}
             className="relative group flex items-center justify-center overflow-visible shrink-0 transition-all duration-200 hover:brightness-110 hover:z-10 cursor-default"
           >
-            {/* 段内标签：宽度足够时才显示 */}
-            {s.pct >= 7 && (
+            {/* 段内标签：宽度 >= 4% 显示，太窄时截断显示前3字符 */}
+            {s.pct >= 4 && (
               <span
-                className="text-[11px] font-bold truncate px-1 leading-none pointer-events-none select-none"
-                style={{ color: s.darkText ? '#1e293b' : '#ffffff' }}
+                className="text-[11px] font-bold leading-none pointer-events-none select-none overflow-hidden"
+                style={{
+                  color: s.darkText ? '#1e293b' : '#ffffff',
+                  maxWidth: '90%',
+                  display: 'block',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                  padding: '0 2px',
+                }}
               >
-                {s.label}
+                {s.pct < 7 ? s.label.slice(0, 4) : s.label}
               </span>
             )}
 
@@ -282,16 +352,18 @@ export default function Portfolio() {
   const [refreshMsg, setRefreshMsg] = useState<'ok' | 'error' | null>(null)
   const [spinning, setSpinning] = useState(false)
 
-  const { data: balance, isError: balanceErr } = useQuery({
+  const { data: balance, isError: balanceErr, refetch: refetchBalance } = useQuery({
     queryKey: ['balance'],
     queryFn: getBalance,
     refetchInterval: 60_000,
     retry: false,
   })
 
+  const { selectedAccount } = useAccount()
+
   const { data: positions, isError: posErr, refetch: refetchPositions } = useQuery({
-    queryKey: ['positions'],
-    queryFn: getPositions,
+    queryKey: ['positions', selectedAccount],
+    queryFn: () => getPositions(selectedAccount),
     refetchInterval: 60_000,
     retry: false,
   })
@@ -314,7 +386,9 @@ export default function Portfolio() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-lg font-semibold text-white">持仓总览</h1>
+      <div>
+        <h1 className="text-lg font-semibold text-white">持仓总览</h1>
+      </div>
 
       {ibOffline && (
         <div className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-sm text-slate-300">
@@ -352,14 +426,42 @@ export default function Portfolio() {
                 {refreshMsg === 'ok' ? '已刷新' : 'IB 未连接'}
               </span>
             )}
+            {positions && positions.length > 0 && (
+              <button
+                onClick={() => {
+                  const headers = ['股票', '买入日', '数量', '均价', '现价', '市值', '浮盈', '浮盈%']
+                  const rows = positions.map((p: any) => [
+                    p.symbol,
+                    p.entry_date ?? '',
+                    p.qty,
+                    p.avg_cost.toFixed(2),
+                    p.market_price.toFixed(2),
+                    p.market_value.toFixed(2),
+                    p.unrealized_pnl.toFixed(2),
+                    (p.unrealized_pnl_pct * 100).toFixed(2) + '%',
+                  ])
+                  const csv = [headers, ...rows].map(r => r.join(',')).join('\n')
+                  const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' })
+                  const url = URL.createObjectURL(blob)
+                  const a = document.createElement('a')
+                  a.href = url
+                  a.download = `positions_${new Date().toISOString().slice(0, 10)}.csv`
+                  a.click()
+                  URL.revokeObjectURL(url)
+                }}
+                className="flex items-center gap-1 text-xs text-slate-400 hover:text-white transition-colors"
+              >
+                ↓ 导出
+              </button>
+            )}
             <button
               onClick={async () => {
                 setSpinning(true)
                 setRefreshMsg(null)
                 try {
                   // 强制断线重连以获取 IB 最新持仓（绕过缓存）
-                  await refreshPositions()
-                  await refetchPositions()
+                  await refreshPositions(selectedAccount)
+                  await Promise.all([refetchPositions(), refetchBalance()])
                   setRefreshMsg('ok')
                 } catch {
                   setRefreshMsg('error')

@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { createContext, useContext, useState } from 'react'
 import Layout from './components/Layout'
 import Portfolio from './pages/Portfolio'
 import FactorDashboard from './pages/FactorDashboard'
@@ -15,22 +16,29 @@ const queryClient = new QueryClient({
   },
 })
 
+type AccountCtx = { selectedAccount: string | null; setSelectedAccount: (a: string | null) => void }
+export const AccountContext = createContext<AccountCtx>({ selectedAccount: null, setSelectedAccount: () => {} })
+export const useAccount = () => useContext(AccountContext)
+
 export default function App() {
+  const [selectedAccount, setSelectedAccount] = useState<string | null>(null)
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Routes>
-          <Route element={<Layout />}>
-            <Route index element={<Portfolio />} />
-            <Route path="factors" element={<FactorDashboard />} />
-            <Route path="scanner"   element={<MarketScan />} />
-            <Route path="optimizer" element={<Optimizer />} />
-            <Route path="backtest"  element={<Backtest />} />
-            <Route path="scheduler" element={<Scheduler />} />
-            <Route path="config"    element={<Config />} />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </QueryClientProvider>
+    <AccountContext.Provider value={{ selectedAccount, setSelectedAccount }}>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <Routes>
+            <Route element={<Layout />}>
+              <Route index element={<Portfolio />} />
+              <Route path="factors" element={<FactorDashboard />} />
+              <Route path="scanner"   element={<MarketScan />} />
+              <Route path="optimizer" element={<Optimizer />} />
+              <Route path="backtest"  element={<Backtest />} />
+              <Route path="scheduler" element={<Scheduler />} />
+              <Route path="config"    element={<Config />} />
+            </Route>
+          </Routes>
+        </BrowserRouter>
+      </QueryClientProvider>
+    </AccountContext.Provider>
   )
 }

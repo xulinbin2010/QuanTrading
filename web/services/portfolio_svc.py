@@ -25,16 +25,34 @@ def get_db() -> Database:
 # ── IB 连接单例（可选，需 IB Gateway 运行）─────────────────────
 # 全局只建一个 IBConnection；失败后加冷却，防止无限轰炸 IB Gateway。
 
+import concurrent.futures as _cf
+
 _conn = None        # IBConnection 对象
 _ib   = None        # _conn.ib 的引用
 _ib_lock = threading.Lock()
 _last_attempt: float = 0.0
+_client_id_offset: int = 0   # 每次重置递增，避免旧连接 client_id 占用（Error 326）
 _COOLDOWN = 30.0    # 两次连接尝试之间最少间隔（秒）
+
+# ib_insync 同步方法（qualifyContracts / reqTickers / reqHistoricalData 等）内部
+# 调用 asyncio.get_event_loop()；AnyIO worker thread 没有 event loop 会报错。
+# 解决方案：连接时保存 event loop，并建一个单线程 executor，其 worker 线程绑定
+# 同一 loop，所有 ib_insync 同步调用都通过 _run_ib_sync() 转发到这个线程执行。
+_ib_event_loop = None
+_ib_executor: _cf.ThreadPoolExecutor | None = None
+
+
+def _run_ib_sync(fn, *args, timeout: float = 30, **kwargs):
+    """从任意线程安全地调用 ib_insync 同步方法（解决 AnyIO worker thread 无 event loop 问题）。"""
+    global _ib_executor
+    if _ib_executor is None:
+        raise RuntimeError("IB not connected")
+    return _ib_executor.submit(fn, *args, **kwargs).result(timeout=timeout)
 
 
 def _ensure_connected():
     """首次（或冷却后）建立 IB 连接；之后依赖 IBConnection 自动重连。"""
-    global _conn, _ib, _last_attempt
+    global _conn, _ib, _last_attempt, _client_id_offset, _ib_event_loop, _ib_executor
     import asyncio
     with _ib_lock:
         # 已有连接管理器 → 由 IBConnection._on_disconnected 负责重连，不干预
@@ -55,10 +73,12 @@ def _ensure_connected():
 
             import config
             from core.connection import IBConnection
+            # client_id = 基础值 + 10（Web专用）+ offset（每次重置+1，避免Error 326）
+            cid = config.IB_CLIENT_ID + 10 + (_client_id_offset % 10)
             _conn = IBConnection(
                 host=config.IB_HOST,
                 port=config.IB_PORT,
-                client_id=config.IB_CLIENT_ID + 10,  # Web 用不同 client_id
+                client_id=cid,
                 timeout=config.IB_TIMEOUT,
             )
             _ib = _conn.connect()
@@ -66,21 +86,42 @@ def _ensure_connected():
             # 绝不能在非 ib_insync event loop 线程调 _ib.sleep() / reqAccountUpdates，
             # 否则会破坏后台 loop 导致立刻断线并触发 Error 326 死循环。
             time.sleep(3.0)  # 等 ib_insync 后台 loop 把账户数据（accountValues）推送完
-        except Exception:
+
+            # 保存 ib_insync 使用的 event loop，建专用 executor 供后续跨线程调用
+            _ib_event_loop = loop
+            def _worker_init():
+                asyncio.set_event_loop(_ib_event_loop)
+            _ib_executor = _cf.ThreadPoolExecutor(
+                max_workers=1,
+                thread_name_prefix='ib_api',
+                initializer=_worker_init,
+            )
+        except Exception as e:
             _conn = None
             _ib = None
+            # 把连接失败原因存起来，供诊断接口展示
+            _last_connect_error = str(e)
+            import sys
+            setattr(sys.modules[__name__], '_last_connect_error', _last_connect_error)
 
 
 def get_ib_status() -> dict:
     _ensure_connected()
     connected = bool(_ib and _ib.isConnected())
-    account = None
+    accounts: list[str] = []
     if connected:
         try:
-            account = _ib.managedAccounts()[0] if _ib.managedAccounts() else None
+            accounts = list(_ib.managedAccounts())
         except Exception:
             pass
-    return {"connected": connected, "account": account}
+    import config
+    return {
+        "connected": connected,
+        "accounts": accounts,
+        "account": accounts[0] if accounts else None,   # 向后兼容
+        "port": config.IB_PORT,
+        "is_live": config.IB_PORT == 4001,
+    }
 
 
 _last_snapshot_date: date | None = None
@@ -158,21 +199,56 @@ def _get_entry_date(symbol: str, db) -> str | None:
     return None
 
 
+
 def _reset_connection():
-    """断开并清除 IB 连接单例，供强制刷新时使用。"""
-    global _conn, _ib, _last_attempt
+    """清除 IB 连接单例，允许下次请求用最新参数重新建立连接。
+
+    注意：ib_insync 事件循环运行在后台线程，直接从 FastAPI 线程调用
+    ib.disconnect() 可能跨线程失效，导致旧 client_id 占用（Error 326）。
+    此处只阻止旧对象自动重连、然后直接丢弃引用，让 GC + socket 超时自然回收。
+    新连接使用递增 client_id 避免冲突。
+    """
+    global _conn, _ib, _last_attempt, _client_id_offset, _ib_event_loop, _ib_executor
     with _ib_lock:
         if _conn is not None:
             try:
-                _conn.disconnect()
+                _conn._should_reconnect = False   # 阻止旧连接触发自动重连
+                _conn.ib.disconnectedEvent.clear() # 摘除所有断线回调
+            except Exception:
+                pass
+            try:
+                _conn.ib.disconnect()             # 尽力断开（可能失败，无妨）
+            except Exception:
+                pass
+        if _ib_executor is not None:
+            try:
+                _ib_executor.shutdown(wait=False)
             except Exception:
                 pass
         _conn = None
         _ib = None
-        _last_attempt = 0.0  # 清除冷却计时，允许立即重连
+        _ib_event_loop = None
+        _ib_executor = None
+        _client_id_offset += 1   # 换一个 client_id，绕开 Error 326
+        _last_attempt = 0.0
 
 
-def get_positions(force_refresh: bool = False) -> list[dict]:
+def _format_symbol(contract) -> str:
+    """将 IB contract 转成可读标识：股票直接用 symbol，期权拼成 GOOGL C260 261218 格式"""
+    sec_type = getattr(contract, 'secType', 'STK')
+    if sec_type != 'OPT':
+        return contract.symbol
+    right  = getattr(contract, 'right', '')
+    strike = getattr(contract, 'strike', '')
+    expiry = getattr(contract, 'lastTradeDateOrContractMonth', '')
+    # 20261218 → 261218
+    expiry_short = expiry[2:] if len(expiry) == 8 else expiry
+    # 去掉多余的 .0（strike=260.0 → 260）
+    strike_str = str(int(strike)) if isinstance(strike, float) and strike == int(strike) else str(strike)
+    return f"{contract.symbol} {right}{strike_str} {expiry_short}"
+
+
+def get_positions(force_refresh: bool = False, account: str | None = None) -> list[dict]:
     """返回当前持仓（需 IB Gateway）。force_refresh=True 时先断线重连以获取最新数据。"""
     if force_refresh:
         _reset_connection()
@@ -181,22 +257,125 @@ def get_positions(force_refresh: bool = False) -> list[dict]:
         raise RuntimeError("IB Gateway 未连接")
     db = get_db()
     positions = []
-    for item in _ib.portfolio():
-        avg_cost = float(item.averageCost)
-        market_price = float(item.marketPrice)
-        unrealized_pnl_pct = (market_price - avg_cost) / avg_cost if avg_cost else 0
-        symbol = item.contract.symbol
-        positions.append({
-            "symbol":             symbol,
-            "qty":                float(item.position),
-            "avg_cost":           avg_cost,
-            "market_price":       market_price,
-            "market_value":       float(item.marketValue),
-            "unrealized_pnl":     float(item.unrealizedPNL),
-            "unrealized_pnl_pct": unrealized_pnl_pct,
-            "realized_pnl":       float(item.realizedPNL),
-            "entry_date":         _get_entry_date(symbol, db),
-        })
+
+    # 优先用 portfolio()（含实时市值/盈亏）；
+    # 多账户 FA 结构下 portfolio() 可能为空，改用 positions()
+    portfolio_items = list(_ib.portfolio())
+    if portfolio_items:
+        for item in portfolio_items:
+            if float(item.position) == 0:
+                continue
+            contract   = item.contract
+            sec_type   = getattr(contract, 'secType', 'STK')
+            multiplier = float(getattr(contract, 'multiplier', 1) or 1)
+            qty        = float(item.position)
+
+            # IB averageCost：股票=每股，期权=每合约（含乘数），统一转成"每份单价"显示
+            avg_cost_raw   = float(item.averageCost)
+            avg_cost       = avg_cost_raw / multiplier if sec_type == 'OPT' else avg_cost_raw
+            market_price   = float(item.marketPrice)   # 期权/股票都是每份单价
+            market_value   = float(item.marketValue)   # IB 已算好总市值
+            unrealized_pnl = float(item.unrealizedPNL) # IB 已算好盈亏
+            # P&L% = 盈亏 / 成本绝对值（正确处理空头）
+            cost_basis_abs = abs(qty) * avg_cost_raw   # abs 处理空头
+            unrealized_pnl_pct = unrealized_pnl / cost_basis_abs if cost_basis_abs else 0
+
+            symbol = _format_symbol(contract)
+            positions.append({
+                "symbol":             symbol,
+                "qty":                qty,
+                "avg_cost":           avg_cost,
+                "market_price":       market_price,
+                "market_value":       market_value,
+                "unrealized_pnl":     unrealized_pnl,
+                "unrealized_pnl_pct": unrealized_pnl_pct,
+                "realized_pnl":       float(item.realizedPNL),
+                "entry_date":         _get_entry_date(contract.symbol, db),
+            })
+    else:
+        # 多账户 FA 回退：positions() 跨所有子账户，无实时市值需自行计算
+        raw_list = [p for p in _ib.positions() if float(p.position) != 0
+                    and (account is None or p.account == account)]
+        if raw_list:
+            # ── 通过 IB API 获取实时/昨收价 ─────────────────────────
+            # 股票：reqTickers snapshot 在 FA 账户下可能无行情权限 → 改用 reqHistoricalData 取昨收
+            # 期权：reqTickers 的 close 字段可靠，直接使用
+            import math
+            ib_price: dict[int, float] = {}   # conId → 价格
+
+            all_contracts = [p.contract for p in raw_list]
+            try:
+                qualified_all = _run_ib_sync(_ib.qualifyContracts, *all_contracts)
+            except Exception:
+                qualified_all = all_contracts
+
+            # 股票和期权统一用 reqHistoricalData 取昨收（不依赖行情订阅权限，最可靠）
+            # 期权依次尝试：TRADES → MIDPOINT → BID_ASK 中间价
+            for contract in qualified_all:
+                sec_type = getattr(contract, 'secType', 'STK')
+                show_modes = ['TRADES', 'MIDPOINT', 'BID_ASK'] if sec_type == 'OPT' else ['TRADES']
+                for what in show_modes:
+                    try:
+                        bars = _run_ib_sync(
+                            _ib.reqHistoricalData,
+                            contract,
+                            endDateTime='',
+                            durationStr='5 D',
+                            barSizeSetting='1 day',
+                            whatToShow=what,
+                            useRTH=True,
+                            formatDate=1,
+                        )
+                        if bars:
+                            raw = bars[-1].close
+                            import math as _m
+                            if raw is not None and not _m.isnan(float(raw)) and float(raw) > 0:
+                                px = float(raw)
+                                ib_price[contract.conId] = px
+                                if sec_type == 'STK':
+                                    ib_price[contract.symbol] = px
+                                break  # 拿到有效价格才跳出
+                    except Exception:
+                        continue
+
+            # ── 逐仓构建 ─────────────────────────────────────────────
+            for pos in raw_list:
+                contract   = pos.contract
+                sec_type   = getattr(contract, 'secType', 'STK')
+                underlying = contract.symbol
+                qty        = float(pos.position)
+                multiplier = float(getattr(contract, 'multiplier', 1) or 1)
+
+                # avgCost：股票=每股，期权=每合约（含乘数）→ 统一转每份单价
+                avg_cost_raw = float(pos.avgCost)
+                avg_cost     = avg_cost_raw / multiplier if sec_type == 'OPT' else avg_cost_raw
+
+                # 现价：优先用 conId 精确匹配（期权不同行权价同 symbol），兜底 avg_cost
+                market_price = ib_price.get(contract.conId, 0.0)
+                if market_price <= 0:
+                    market_price = ib_price.get(underlying, 0.0)
+                if market_price <= 0:
+                    market_price = avg_cost  # 无行情时占位
+
+                # 市值 & 盈亏（统一公式，空头 qty 为负自动处理符号）
+                market_value   = qty * market_price * multiplier
+                cost_basis     = qty * avg_cost_raw          # qty×每合约成本
+                unrealized_pnl = market_value - cost_basis
+                cost_basis_abs = abs(qty) * avg_cost_raw
+                unrealized_pnl_pct = unrealized_pnl / cost_basis_abs if cost_basis_abs else 0
+
+                display_symbol = _format_symbol(contract)
+                positions.append({
+                    "symbol":             display_symbol,
+                    "qty":                qty,
+                    "avg_cost":           avg_cost,
+                    "market_price":       market_price,
+                    "market_value":       market_value,
+                    "unrealized_pnl":     unrealized_pnl,
+                    "unrealized_pnl_pct": unrealized_pnl_pct,
+                    "realized_pnl":       0.0,
+                    "entry_date":         _get_entry_date(underlying, db),
+                })
 
     # IB 已连接时，顺手尝试保存今日快照（防止 balance API 因时序问题未能触发保存）
     if _last_snapshot_date != date.today():

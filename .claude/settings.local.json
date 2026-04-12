@@ -60,7 +60,8 @@
       "Bash(brew services:*)",
       "Bash(sudo brew:*)",
       "Bash(mysql.server start:*)",
-      "Bash(brew reinstall:*)"
+      "Bash(brew reinstall:*)",
+      "Bash(.venv/bin/python:*)"
     ]
   }
 }

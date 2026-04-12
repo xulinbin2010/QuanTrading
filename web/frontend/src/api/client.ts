@@ -11,8 +11,8 @@ export default api
 
 export const getIBStatus   = () => api.get('/portfolio/ib-status').then(r => r.data)
 export const getBalance    = () => api.get('/portfolio/balance').then(r => r.data)
-export const getPositions        = () => api.get('/portfolio/positions').then(r => r.data)
-export const refreshPositions    = () => api.get('/portfolio/positions', { params: { refresh: true } }).then(r => r.data)
+export const getPositions        = (account?: string | null) => api.get('/portfolio/positions', { params: account ? { account } : {} }).then(r => r.data)
+export const refreshPositions    = (account?: string | null) => api.get('/portfolio/positions', { params: { refresh: true, ...(account ? { account } : {}) } }).then(r => r.data)
 export const getOrders     = (symbol?: string, limit = 50) =>
   api.get('/portfolio/orders', { params: { symbol, limit } }).then(r => r.data)
 export const getAccountHistory = (limit = 90) =>
@@ -91,6 +91,9 @@ export const getConfig    = () => api.get('/config').then(r => r.data)
 export const updateConfig = (params: { key: string; value: string }[]) =>
   api.put('/config', { params }).then(r => r.data)
 export const reloadConfig = () => api.post('/config/reload').then(r => r.data)
+export const updateIBConnection = (params: {
+  IB_HOST: string; IB_PORT: number; IB_CLIENT_ID: number; IB_TIMEOUT: number
+}) => api.put('/config/connection/ib', params).then(r => r.data)
 
 // ── 任务调度 ──────────────────────────────────────────────
 

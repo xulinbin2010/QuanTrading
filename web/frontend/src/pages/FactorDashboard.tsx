@@ -148,7 +148,7 @@ export default function FactorDashboard() {
   // 持仓数据（IB 不可用时返回空数组，不报错）
   const { data: positions = [], isLoading: positionsLoading, refetch: refetchPositions } = useQuery({
     queryKey: ['positions'],
-    queryFn: getPositions,
+    queryFn: () => getPositions(),
     staleTime: 60_000,
     retry: false,
   })

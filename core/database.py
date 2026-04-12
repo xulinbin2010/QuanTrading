@@ -104,21 +104,6 @@ class Database:
         """)
 
         self.cursor.execute("""
-            CREATE TABLE IF NOT EXISTS klines (
-                id          INT AUTO_INCREMENT PRIMARY KEY,
-                symbol      VARCHAR(20)  NOT NULL,
-                bar_size    VARCHAR(20)  NOT NULL,
-                dt          DATETIME     NOT NULL,
-                open        DECIMAL(14,4) NOT NULL,
-                high        DECIMAL(14,4) NOT NULL,
-                low         DECIMAL(14,4) NOT NULL,
-                close       DECIMAL(14,4) NOT NULL,
-                volume      BIGINT        NOT NULL,
-                UNIQUE KEY uq_kline (symbol, bar_size, dt)
-            )
-        """)
-
-        self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS scheduled_tasks (
                 task_id     VARCHAR(50)   PRIMARY KEY,
                 name        VARCHAR(100)  NOT NULL,
@@ -281,55 +266,6 @@ class Database:
         """, rows)
         print(f"  [DB] 信号已存库：买入 {len(signals_dict.get('buy',[]))} 只，"
               f"卖出报警 {len(signals_dict.get('sell',[]))} 只")
-
-    # ---------- klines ----------
-
-    def save_klines(self, symbol: str, bar_size: str, bars: list):
-        """批量保存K线，重复的自动忽略"""
-        if not self._ensure_conn() or not bars:
-            return 0
-        sql = """
-            INSERT IGNORE INTO klines (symbol, bar_size, dt, open, high, low, close, volume)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
-        """
-        rows = [
-            (symbol, bar_size, b.date, b.open, b.high, b.low, b.close, b.volume)
-            for b in bars
-        ]
-        self.cursor.executemany(sql, rows)
-        return self.cursor.rowcount
-
-    def get_latest_dt(self, symbol: str, bar_size: str):
-        """返回该 symbol+bar_size 最新一条K线的时间，没有则返回 None"""
-        if not self._ensure_conn():
-            return None
-        self.cursor.execute("""
-            SELECT MAX(dt) FROM klines WHERE symbol = %s AND bar_size = %s
-        """, (symbol, bar_size))
-        row = self.cursor.fetchone()
-        return row[0] if row else None
-
-    def get_klines(self, symbol: str, bar_size: str, limit: int = 200):
-        """查询K线，按时间升序"""
-        if not self._ensure_conn():
-            return []
-        self.cursor.execute("""
-            SELECT dt, open, high, low, close, volume
-            FROM klines
-            WHERE symbol = %s AND bar_size = %s
-            ORDER BY dt DESC LIMIT %s
-        """, (symbol, bar_size, limit))
-        rows = self.cursor.fetchall()
-        return list(reversed(rows))  # 改为升序返回
-
-    def get_klines_count(self, symbol: str, bar_size: str):
-        if not self._ensure_conn():
-            return 0
-        self.cursor.execute(
-            "SELECT COUNT(*) FROM klines WHERE symbol = %s AND bar_size = %s",
-            (symbol, bar_size)
-        )
-        return self.cursor.fetchone()[0]
 
     # ---------- scheduled_tasks ----------
 

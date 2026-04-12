@@ -65,7 +65,7 @@ def _ensure_connected():
             # ib_insync 单账户时连接后自动订阅账户数据，无需手动 reqAccountUpdates。
             # 绝不能在非 ib_insync event loop 线程调 _ib.sleep() / reqAccountUpdates，
             # 否则会破坏后台 loop 导致立刻断线并触发 Error 326 死循环。
-            time.sleep(1.5)  # 等 ib_insync 后台 loop 把初始数据跑完
+            time.sleep(3.0)  # 等 ib_insync 后台 loop 把账户数据（accountValues）推送完
         except Exception:
             _conn = None
             _ib = None
@@ -114,11 +114,8 @@ def _auto_save_snapshot(balance: dict) -> None:
             pass
 
 
-def get_balance() -> dict:
-    """返回账户余额（需 IB Gateway），失败抛 RuntimeError"""
-    _ensure_connected()
-    if not _ib or not _ib.isConnected():
-        raise RuntimeError("IB Gateway 未连接")
+def _fetch_balance_from_ib() -> dict:
+    """从已连接的 _ib 对象读取账户余额，不做连接检查。"""
     from core.account import Account
     acc = Account(_ib)
     balance = {
@@ -128,6 +125,18 @@ def get_balance() -> dict:
         "realized_pnl":    acc._get_value("RealizedPnL"),
         "buying_power":    acc._get_value("BuyingPower"),
     }
+    # accountValues() 首次连接可能还未推送完，遇到全 0 视为数据未就绪
+    if balance["net_liquidation"] == 0.0 and balance["total_cash"] == 0.0:
+        raise RuntimeError("IB 账户数据尚未就绪，请稍后重试")
+    return balance
+
+
+def get_balance() -> dict:
+    """返回账户余额（需 IB Gateway），失败抛 RuntimeError"""
+    _ensure_connected()
+    if not _ib or not _ib.isConnected():
+        raise RuntimeError("IB Gateway 未连接")
+    balance = _fetch_balance_from_ib()
     _auto_save_snapshot(balance)
     return balance
 
@@ -188,6 +197,15 @@ def get_positions(force_refresh: bool = False) -> list[dict]:
             "realized_pnl":       float(item.realizedPNL),
             "entry_date":         _get_entry_date(symbol, db),
         })
+
+    # IB 已连接时，顺手尝试保存今日快照（防止 balance API 因时序问题未能触发保存）
+    if _last_snapshot_date != date.today():
+        try:
+            balance = _fetch_balance_from_ib()
+            _auto_save_snapshot(balance)
+        except Exception:
+            pass  # 数据未就绪时静默忽略，下次重试
+
     return positions
 
 

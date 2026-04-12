@@ -79,14 +79,6 @@ class DataStore:
         end = self._cap_end(end)
         self._no_data_syms = set()   # 每次 update 重置
 
-        # 跳过已记录退市的 symbol，避免每次重复尝试下载
-        denylist = self._load_denylist()
-        if denylist:
-            skipped = [s for s in symbols if s in denylist]
-            if skipped:
-                print(f'  [DataStore] 跳过已退市 symbol（denylist）：{sorted(skipped)}')
-            symbols = [s for s in symbols if s not in denylist]
-
         groups: dict[str, list[str]] = {}
         for sym in symbols:
             dl_from = self._dl_from(sym, start, end)
@@ -107,10 +99,10 @@ class DataStore:
             written     += saved
             all_got     |= got
             all_no_data |= no_data
-        # 只有当其他 symbol 确实有数据时，才把无数据的标记为疑似退市，并删除其 parquet
+        # 仅在本次运行内存中标记疑似退市（不写文件、不删 parquet）
+        # 条件：其他 symbol 有数据，说明不是网络问题，该 symbol 才被视为疑似退市
         if all_got and all_no_data:
             self._no_data_syms = all_no_data
-            self._purge_delisted(all_no_data)
         return written > 0
 
     def load_multi(
@@ -196,7 +188,7 @@ class DataStore:
             )
         except Exception as e:
             print(f'  [DataStore] 下载失败：{e}')
-            return 0, set(), set(symbols)   # 整批失败，全部归入 no_data
+            return 0, set(), set()   # 整批失败，不标记任何 symbol（网络问题，非退市）
 
         saved    = 0
         got_syms : set[str] = set()
@@ -261,7 +253,6 @@ class DataStore:
             # 最后一条 K 线比 SPY 最新日早超过 max_stale 天 → 数据过期，疑似退市/停牌
             if df.index[-1] < stale_limit:
                 stale_syms.append(sym)
-                self._purge_delisted({sym})   # 删除过期 parquet
                 continue
             result[sym] = df
         if stale_syms:
@@ -269,37 +260,6 @@ class DataStore:
         return result
 
     # ── 内部：工具函数 ────────────────────────────────────────
-
-    # 系统级 symbol（指数/ETF），即使无数据也不删除、不加入 denylist
-    _PROTECTED_SYMS: frozenset[str] = frozenset({'SPY'})
-
-    def _purge_delisted(self, symbols: set[str]):
-        """删除疑似退市/停牌股票的本地 parquet 文件，并写入持久化 denylist。
-        ^开头的指数（如 ^VIX）及 _PROTECTED_SYMS 跳过。
-        """
-        to_ban: set[str] = set()
-        deleted = []
-        for sym in symbols:
-            if sym.startswith('^') or sym in self._PROTECTED_SYMS:
-                continue
-            to_ban.add(sym)
-            path = self.stocks_dir / f'{sym}.parquet'
-            if path.exists():
-                path.unlink()
-                deleted.append(sym)
-        if to_ban:
-            self._save_denylist(self._load_denylist() | to_ban)
-        if deleted:
-            print(f'  [DataStore] 已删除退市/停牌数据文件：{sorted(deleted)}')
-
-    def _load_denylist(self) -> set[str]:
-        path = self.root / 'delisted.txt'
-        if not path.exists():
-            return set()
-        return {s.strip() for s in path.read_text().splitlines() if s.strip()}
-
-    def _save_denylist(self, syms: set[str]):
-        (self.root / 'delisted.txt').write_text('\n'.join(sorted(syms)) + '\n')
 
     def _date_range(self, symbol: str) -> tuple[date | None, date | None]:
         """返回 (最新日期, 最早日期)，文件不存在时返回 (None, None)。"""

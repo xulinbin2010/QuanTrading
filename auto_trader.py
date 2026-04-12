@@ -313,6 +313,11 @@ def _handle_opg_partial_fills(ib, trader, opg_buy_trades: list):
     wait_sec = (target - et).total_seconds()
 
     if wait_sec > 0:
+        import sys
+        if not sys.stdin.isatty():
+            # 调度器/子进程模式：无法交互，直接退出，由 confirm_fills.py 在 9:35 处理
+            print(f"\n[补单监控] 非交互模式，跳过等待（OPG 单已提交，由 confirm_fills.py 在 9:35 处理成交确认）")
+            return
         mins = wait_sec / 60
         print(f"\n[补单监控] OPG 单已提交，等待开盘集合竞价完成（约 {mins:.0f} 分钟后检查）...")
         print(f"  可按 Ctrl+C 跳过等待（已提交的 OPG 单将继续在交易所执行）")
@@ -360,6 +365,17 @@ def execute(signals: dict, dry_run: bool = True):
     db.connect()
     conn = IBConnection()
     ib   = conn.connect()
+    try:
+        _execute_inner(signals, dry_run, db, conn, ib)
+    finally:
+        try:
+            conn.disconnect()
+        except Exception:
+            pass
+        db.close()
+
+
+def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
 
     account   = Account(ib, db=db)
     trader    = Trading(ib, db=db)
@@ -749,9 +765,6 @@ def execute(signals: dict, dry_run: bool = True):
         # 在线路径：等待开盘集合竞价完成，检测并补充部分成交订单
         if opg_buy_trades:
             _handle_opg_partial_fills(ib, trader, opg_buy_trades)
-
-    conn.disconnect()
-    db.close()
 
 
 def main():

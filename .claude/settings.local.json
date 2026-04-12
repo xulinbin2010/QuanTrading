@@ -55,7 +55,12 @@
       "Bash(npx tsc:*)",
       "Bash(python3 -c ':*)",
       "Bash(.venv/bin/python -c ':*)",
-      "Bash(mysql:*)"
+      "Bash(mysql:*)",
+      "Bash(wait 49211)",
+      "Bash(brew services:*)",
+      "Bash(sudo brew:*)",
+      "Bash(mysql.server start:*)",
+      "Bash(brew reinstall:*)"
     ]
   }
 }

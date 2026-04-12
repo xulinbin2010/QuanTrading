@@ -180,6 +180,103 @@ function PerformanceSection() {
   )
 }
 
+// 每种颜色: [背景色, 是否用深色文字]
+const SEGMENT_PALETTE: [string, boolean][] = [
+  ['#60a5fa', false], // blue-400
+  ['#34d399', true],  // emerald-400
+  ['#fbbf24', true],  // amber-400
+  ['#c084fc', false], // purple-400
+  ['#f472b6', false], // pink-400
+  ['#22d3ee', true],  // cyan-400
+  ['#fb923c', false], // orange-400
+  ['#4ade80', true],  // green-400
+]
+
+function AllocationBar({ positions, balance }: { positions: any[]; balance: any }) {
+  if (!positions?.length && !balance) return null
+
+  const netLiq = balance?.net_liquidation
+  const cash = balance?.total_cash ?? 0
+  const totalMv = positions?.reduce((s: number, p: any) => s + (p.market_value ?? 0), 0) ?? 0
+  const total = netLiq ?? (totalMv + cash)
+  if (total <= 0) return null
+
+  const segments: { label: string; value: number; pct: number; bg: string; darkText: boolean }[] = [
+    ...(positions ?? []).map((p: any, i: number) => {
+      const [bg, darkText] = SEGMENT_PALETTE[i % SEGMENT_PALETTE.length]
+      return {
+        label: p.symbol,
+        value: p.market_value ?? 0,
+        pct: ((p.market_value ?? 0) / total) * 100,
+        bg,
+        darkText,
+      }
+    }),
+    {
+      label: 'Cash',
+      value: cash,
+      pct: (cash / total) * 100,
+      bg: '#94a3b8', // slate-400 — 在深色/浅色背景下均可辨
+      darkText: true,
+    },
+  ].filter(s => s.pct > 0.1)
+
+  return (
+    <div className="px-4 pt-3 pb-4 border-t border-slate-700/60">
+      <div className="text-xs font-medium text-slate-400 mb-2 dark:text-slate-400">资产配比</div>
+
+      {/* 堆积 bar — 圆角、段间留 2px 透明间隔 */}
+      <div className="flex w-full h-7 rounded-full overflow-hidden" style={{ gap: '2px' }}>
+        {segments.map(s => (
+          <div
+            key={s.label}
+            style={{ width: `${s.pct}%`, backgroundColor: s.bg, minWidth: s.pct > 0.5 ? undefined : '3px' }}
+            className="relative group flex items-center justify-center overflow-visible shrink-0 transition-all duration-200 hover:brightness-110 hover:z-10 cursor-default"
+          >
+            {/* 段内标签：宽度足够时才显示 */}
+            {s.pct >= 7 && (
+              <span
+                className="text-[11px] font-bold truncate px-1 leading-none pointer-events-none select-none"
+                style={{ color: s.darkText ? '#1e293b' : '#ffffff' }}
+              >
+                {s.label}
+              </span>
+            )}
+
+            {/* hover tooltip */}
+            <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-20
+                            bg-slate-900 dark:bg-slate-800 border border-slate-600
+                            rounded-lg shadow-xl px-3 py-1.5 text-xs whitespace-nowrap
+                            opacity-0 group-hover:opacity-100 pointer-events-none
+                            transition-opacity duration-150">
+              <span className="font-semibold text-white">{s.label}</span>
+              <span className="text-slate-300 mx-1.5">·</span>
+              <span className="text-slate-200">{s.pct.toFixed(1)}%</span>
+              <span className="text-slate-400 ml-1.5">
+                {s.value.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })}
+              </span>
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* 图例 */}
+      <div className="flex flex-wrap gap-x-5 gap-y-1.5 mt-2.5">
+        {segments.map(s => (
+          <div key={s.label} className="flex items-center gap-1.5">
+            <span
+              className="inline-block w-2.5 h-2.5 rounded-sm flex-shrink-0"
+              style={{ backgroundColor: s.bg }}
+            />
+            <span className="text-xs text-slate-200 font-bold">{s.label}</span>
+            <span className="text-xs text-slate-300 font-semibold">{s.pct.toFixed(1)}%</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export default function Portfolio() {
   const [orderSymbol, setOrderSymbol] = useState('')
   const [refreshMsg, setRefreshMsg] = useState<'ok' | 'error' | null>(null)
@@ -322,6 +419,9 @@ export default function Portfolio() {
               </tbody>
             </table>
           </div>
+        )}
+        {positions && positions.length > 0 && (
+          <AllocationBar positions={positions} balance={balance} />
         )}
       </div>
 

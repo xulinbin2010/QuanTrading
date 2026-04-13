@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { runBacktest, getBacktestStatus, getBacktestResult, getBacktestHistory, getFactorRegistry, getVixAnalysis } from '../api/client'
+import { runBacktest, runWalkForward, getBacktestStatus, getBacktestResult, getBacktestHistory, getFactorRegistry, getVixAnalysis } from '../api/client'
 import ReactECharts from 'echarts-for-react'
 
 const PERIODS = ['1mo', '3mo', '6mo', '1y']
@@ -230,7 +230,7 @@ function BacktestResult({ taskId }: { taskId: string }) {
       <div className="bg-slate-800 rounded-lg border border-slate-700 p-8 text-center">
         <div className="text-slate-400 text-sm mb-2">回测执行中...</div>
         <div className="w-48 h-1.5 bg-slate-700 rounded-full mx-auto overflow-hidden">
-          <div className="h-full bg-blue-500 rounded-full animate-pulse w-3/4" />
+          <div className="h-full bg-amber-500 rounded-full animate-pulse w-3/4" />
         </div>
       </div>
     )
@@ -612,10 +612,221 @@ function VixBacktest() {
   )
 }
 
+// ── Walk-Forward 验证 ─────────────────────────────────────────
+function WalkForwardTab() {
+  const [trainMonths, setTrainMonths] = useState(24)
+  const [testMonths, setTestMonths] = useState(12)
+  const [totalStart, setTotalStart] = useState('2020-01-01')
+  const [totalEnd, setTotalEnd] = useState('')
+  const [topN, setTopN] = useState(10)
+  const [taskId, setTaskId] = useState<string | null>(null)
+
+  const { mutate, isPending } = useMutation({
+    mutationFn: () => runWalkForward({
+      train_months: trainMonths, test_months: testMonths,
+      total_start: totalStart, total_end: totalEnd || undefined,
+      universe: 'sp500', top_n: topN,
+    }),
+    onSuccess: (data) => setTaskId(data.task_id),
+  })
+
+  const { data: status } = useQuery({
+    queryKey: ['wf-status', taskId],
+    queryFn: () => getBacktestStatus(taskId!),
+    enabled: !!taskId,
+    refetchInterval: (q) => q.state.data?.status === 'running' ? 2000 : false,
+  })
+
+  const { data: result } = useQuery({
+    queryKey: ['wf-result', taskId],
+    queryFn: () => getBacktestResult(taskId!),
+    enabled: status?.status === 'completed',
+  })
+
+  const windows: any[] = result?.windows ?? []
+  const summary = result?.summary
+
+  return (
+    <div className="space-y-4">
+      {/* 配置 */}
+      <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
+        <div className="text-sm font-medium text-slate-300 mb-1">Walk-Forward 参数</div>
+        <div className="text-xs text-slate-500 mb-4">
+          固定策略参数，滚动验证样本外（OOS）表现。IS-OOS Sharpe 差距 &lt; 0.5 说明策略泛化性良好。
+        </div>
+        {/* 所有参数一行 */}
+        <div className="flex flex-wrap items-end gap-4">
+          <DatePicker label="起始日期" value={totalStart} onChange={setTotalStart} />
+          <DatePicker label="结束日期（空=今天）" value={totalEnd} onChange={setTotalEnd} />
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">训练窗口（月）</label>
+            <input type="number" min={6} max={60} value={trainMonths}
+              onChange={e => setTrainMonths(+e.target.value)}
+              className="w-16 bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500" />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">测试窗口（月）</label>
+            <input type="number" min={3} max={24} value={testMonths}
+              onChange={e => setTestMonths(+e.target.value)}
+              className="w-16 bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500" />
+          </div>
+          <div>
+            <label className="block text-xs text-slate-400 mb-1">Top N</label>
+            <input type="number" min={3} max={20} value={topN}
+              onChange={e => setTopN(+e.target.value)}
+              className="w-16 bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500" />
+          </div>
+        </div>
+        <div className="mt-4">
+          <button
+            onClick={() => mutate()}
+            disabled={isPending || status?.status === 'running'}
+            className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded font-medium transition-colors"
+          >
+            {isPending || status?.status === 'running' ? '提交中...' : '▶ 开始验证'}
+          </button>
+          {taskId && status?.status === 'running' && (
+            <span className="ml-3 text-xs text-slate-400 animate-pulse">正在逐窗口回测，请等待...</span>
+          )}
+        </div>
+      </div>
+
+      {/* 运行中 */}
+      {taskId && status?.status === 'running' && (
+        <div className="bg-slate-800 rounded-lg border border-slate-700 p-8 text-center">
+          <div className="text-slate-400 text-sm mb-2">Walk-Forward 验证运行中...</div>
+          <div className="w-48 h-1.5 bg-slate-700 rounded-full mx-auto overflow-hidden">
+            <div className="h-full bg-amber-500 rounded-full animate-pulse w-2/3" />
+          </div>
+          <div className="mt-2 text-xs text-slate-500">正在逐窗口加载数据并回测，耗时约 1~5 分钟</div>
+        </div>
+      )}
+
+      {/* 错误 */}
+      {status?.status === 'failed' && (
+        <div className="bg-red-900/30 border border-red-800 rounded-lg p-4 text-red-300 text-sm">
+          {status.error ?? '验证失败'}
+        </div>
+      )}
+
+      {/* 结果 */}
+      {result && summary && (
+        <div className="space-y-4">
+          {/* 汇总指标 */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <SummaryCard label="窗口数" value={String(summary.n_windows)} />
+            <SummaryCard
+              label="平均 IS Sharpe"
+              value={summary.avg_is_sharpe?.toFixed(3) ?? '-'}
+            />
+            <SummaryCard
+              label="平均 OOS Sharpe"
+              value={summary.avg_oos_sharpe?.toFixed(3) ?? '-'}
+              color={summary.avg_oos_sharpe >= 0.5 ? 'text-green-400' : summary.avg_oos_sharpe >= 0 ? 'text-yellow-400' : 'text-red-400'}
+            />
+            <SummaryCard
+              label="IS-OOS 差距"
+              value={summary.is_oos_gap != null ? (summary.is_oos_gap >= 0 ? '+' : '') + summary.is_oos_gap.toFixed(3) : '-'}
+              color={summary.is_oos_gap <= 0.5 ? 'text-green-400' : summary.is_oos_gap <= 1.0 ? 'text-yellow-400' : 'text-red-400'}
+            />
+            <SummaryCard
+              label="平均 OOS 收益"
+              value={summary.avg_oos_return != null ? pct(summary.avg_oos_return) : '-'}
+              color={summary.avg_oos_return >= 0 ? 'text-green-400' : 'text-red-400'}
+            />
+            <SummaryCard
+              label="OOS 正 Sharpe 比例"
+              value={summary.positive_oos_pct != null ? (summary.positive_oos_pct * 100).toFixed(0) + '%' : '-'}
+              color={summary.positive_oos_pct >= 0.7 ? 'text-green-400' : summary.positive_oos_pct >= 0.5 ? 'text-yellow-400' : 'text-red-400'}
+            />
+          </div>
+
+          {/* 过拟合判断 */}
+          {summary.is_oos_gap != null && (
+            <div className={`rounded-lg border px-4 py-3 text-sm font-medium
+              ${summary.is_oos_gap <= 0.5 ? 'bg-green-900/20 border-green-700 text-green-300'
+                : summary.is_oos_gap <= 1.0 ? 'bg-yellow-900/20 border-yellow-700 text-yellow-300'
+                : 'bg-red-900/20 border-red-700 text-red-300'}`}>
+              {summary.is_oos_gap <= 0.5
+                ? '✓  IS-OOS 差距较小，策略泛化性良好，过拟合风险低'
+                : summary.is_oos_gap <= 1.0
+                ? '△  IS-OOS 差距中等，参数可能有一定过拟合，建议关注各窗口差异'
+                : '⚠  IS-OOS 差距较大，存在明显过拟合风险，慎用当前参数实盘'}
+            </div>
+          )}
+
+          {/* 逐窗口结果表 */}
+          <div className="bg-slate-800 rounded-lg border border-slate-700">
+            <div className="px-4 py-3 border-b border-slate-700 text-sm font-medium text-slate-300">
+              逐窗口结果（{windows.length} 个测试期）
+            </div>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-slate-400 border-b border-slate-700">
+                    {['测试期', 'IS 收益', 'IS Sharpe', 'OOS 收益', 'OOS Sharpe', '最大回撤', '交易数', '胜率'].map(h => (
+                      <th key={h} className="px-3 py-2 text-left font-medium whitespace-nowrap">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {windows.map((w: any, i: number) => {
+                    const oosNeg = w.oos_sharpe != null && w.oos_sharpe < 0
+                    return (
+                      <tr key={i} className={`border-b border-slate-700/50 hover:bg-slate-700/30 ${oosNeg ? 'bg-red-900/10' : ''}`}>
+                        <td className="px-3 py-2 text-slate-300 whitespace-nowrap">
+                          {w.test_start?.slice(0, 7)} ~ {w.test_end?.slice(0, 7)}
+                        </td>
+                        <td className={`px-3 py-2 font-mono ${w.is_return >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {w.is_return != null ? pct(w.is_return) : '-'}
+                        </td>
+                        <td className={`px-3 py-2 font-mono ${w.is_sharpe >= 0 ? 'text-slate-300' : 'text-red-400'}`}>
+                          {w.is_sharpe?.toFixed(2) ?? '-'}
+                        </td>
+                        <td className={`px-3 py-2 font-mono font-medium ${w.oos_return >= 0 ? 'text-green-400' : 'text-red-400'}`}>
+                          {w.oos_return != null ? pct(w.oos_return) : '-'}
+                        </td>
+                        <td className={`px-3 py-2 font-mono font-medium ${oosNeg ? 'text-red-400' : w.oos_sharpe >= 0.5 ? 'text-green-400' : 'text-yellow-400'}`}>
+                          {w.oos_sharpe?.toFixed(2) ?? '-'}
+                          {oosNeg && ' !'}
+                        </td>
+                        <td className="px-3 py-2 font-mono text-red-400">
+                          {w.oos_max_dd != null ? pct(w.oos_max_dd) : '-'}
+                        </td>
+                        <td className="px-3 py-2 text-slate-400">{w.oos_trades ?? '-'}</td>
+                        <td className={`px-3 py-2 font-mono ${w.oos_win_rate >= 0.5 ? 'text-green-400' : 'text-slate-400'}`}>
+                          {w.oos_win_rate != null ? (w.oos_win_rate * 100).toFixed(0) + '%' : '-'}
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* 提示 */}
+          <div className="text-xs text-slate-500 space-y-1 px-1">
+            <div>• <span className="text-slate-400">IS</span>（In-Sample）= 训练期回测，仅用于对比参考</div>
+            <div>• <span className="text-slate-400">OOS</span>（Out-of-Sample）= 测试期，真正验证策略泛化能力</div>
+            <div>• IS-OOS Sharpe 差距 &lt; 0.5 为健康；&gt; 1.0 建议重新审视参数</div>
+          </div>
+        </div>
+      )}
+
+      {!taskId && (
+        <div className="bg-slate-800 rounded-lg border border-slate-700 p-10 text-center text-slate-500 text-sm">
+          设置参数后点击「开始验证」，验证策略是否在样本外保持一致
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Backtest() {
   const [params, setParams] = useState(() => loadStored('bt_params', DEFAULT_PARAMS))
   const [activeTask, setActiveTask] = useState<string | null>(null)
-  const [tab, setTab] = useState<'config' | 'history' | 'vix'>('config')
+  const [tab, setTab] = useState<'config' | 'history' | 'vix' | 'walkforward'>('config')
   const [selectedFactors, setSelectedFactors] = useState<string[]>(() => loadStored('bt_factors', []))
 
   useEffect(() => { localStorage.setItem('bt_params', JSON.stringify(params)) }, [params])
@@ -672,9 +883,10 @@ export default function Backtest() {
       {/* Tab 导航 */}
       <div className="flex gap-1 border-b border-slate-700">
         {[
-          { key: 'config',  label: '回测配置' },
-          { key: 'history', label: '历史记录' },
-          { key: 'vix',     label: 'VIX恐慌策略' },
+          { key: 'config',       label: '回测配置' },
+          { key: 'walkforward',  label: 'Walk-Forward 验证' },
+          { key: 'history',      label: '历史记录' },
+          { key: 'vix',          label: 'VIX恐慌策略' },
         ].map(t => (
           <button key={t.key}
             onClick={() => { setTab(t.key as any); if (t.key === 'history') refetchHistory() }}
@@ -824,7 +1036,7 @@ export default function Backtest() {
           <button
             onClick={() => mutate()}
             disabled={isPending}
-            className="px-5 py-2 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded font-medium transition-colors"
+            className="px-5 py-2 bg-blue-600 hover:bg-amber-500 disabled:opacity-50 text-white text-sm rounded font-medium transition-colors"
           >
             {isPending ? '提交中...' : '▶ 回测'}
           </button>
@@ -888,6 +1100,9 @@ export default function Backtest() {
           </div>
         </div>
       )}
+
+      {/* ── Walk-Forward 验证 Tab ────────────────────────── */}
+      {tab === 'walkforward' && <WalkForwardTab />}
 
       {/* ── VIX 恐慌回测 Tab ──────────────────────────────── */}
       {tab === 'vix' && <VixBacktest />}

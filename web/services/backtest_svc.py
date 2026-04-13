@@ -219,6 +219,39 @@ def run_vix_analysis(threshold: float = 30, start: str = '2010-01-01',
     }
 
 
+def submit_walk_forward(params: dict) -> str:
+    task_id = str(uuid.uuid4())
+    with _lock:
+        _tasks[task_id] = {
+            'status':     'pending',
+            'progress':   0.0,
+            'result':     None,
+            'error':      None,
+            'created_at': time.strftime('%Y-%m-%d %H:%M:%S'),
+            'params':     params,
+            'task_type':  'walk_forward',
+        }
+    t = threading.Thread(target=_run_walk_forward, args=(task_id, params), daemon=True)
+    t.start()
+    return task_id
+
+
+def _run_walk_forward(task_id: str, params: dict):
+    with _lock:
+        _tasks[task_id]['status'] = 'running'
+    try:
+        from tests.walk_forward import walk_forward
+        result = walk_forward(**params)
+        with _lock:
+            _tasks[task_id]['result']   = result
+            _tasks[task_id]['status']   = 'completed'
+            _tasks[task_id]['progress'] = 1.0
+    except Exception as e:
+        with _lock:
+            _tasks[task_id]['status'] = 'failed'
+            _tasks[task_id]['error']  = str(e)
+
+
 def get_history() -> list[dict]:
     _load_history_from_disk()
     with _lock:

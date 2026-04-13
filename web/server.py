@@ -28,6 +28,7 @@ from web.api.backtest   import router as backtest_router
 from web.api.scheduler  import router as scheduler_router
 from web.api.config     import router as config_router
 from web.api.optimizer  import router as optimizer_router
+from web.api.watchlist  import router as watchlist_router
 
 
 @asynccontextmanager
@@ -75,6 +76,7 @@ app.include_router(backtest_router)
 app.include_router(scheduler_router)
 app.include_router(config_router)
 app.include_router(optimizer_router)
+app.include_router(watchlist_router)
 
 
 @app.get('/api/health')

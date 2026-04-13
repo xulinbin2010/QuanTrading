@@ -5,6 +5,7 @@ import Layout from './components/Layout'
 import Portfolio from './pages/Portfolio'
 import FactorDashboard from './pages/FactorDashboard'
 import MarketScan from './pages/MarketScan'
+import StockAnalysis from './pages/StockAnalysis'
 import Optimizer from './pages/Optimizer'
 import Backtest from './pages/Backtest'
 import Scheduler from './pages/Scheduler'
@@ -31,6 +32,7 @@ export default function App() {
               <Route index element={<Portfolio />} />
               <Route path="factors" element={<FactorDashboard />} />
               <Route path="scanner"   element={<MarketScan />} />
+              <Route path="analysis"  element={<StockAnalysis />} />
               <Route path="optimizer" element={<Optimizer />} />
               <Route path="backtest"  element={<Backtest />} />
               <Route path="scheduler" element={<Scheduler />} />

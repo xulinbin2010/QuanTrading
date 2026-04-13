@@ -200,3 +200,14 @@ class TaskRunItem(BaseModel):
     status: str          # running / success / failed
     exit_code: Optional[int]
     duration_s: Optional[float]
+
+
+# ── Walk-Forward 验证 ──────────────────────────────────────
+
+class WalkForwardRequest(BaseModel):
+    train_months: int = 24
+    test_months: int = 12
+    total_start: str = '2020-01-01'
+    total_end: Optional[str] = None
+    universe: str = 'sp500'
+    top_n: int = 10

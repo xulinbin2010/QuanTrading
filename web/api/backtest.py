@@ -1,6 +1,6 @@
 """策略回测 API 路由"""
 from fastapi import APIRouter, HTTPException, Query
-from web.models import BacktestRequest
+from web.models import BacktestRequest, WalkForwardRequest
 from web.services import backtest_svc
 
 router = APIRouter(prefix='/api/backtest', tags=['backtest'])
@@ -50,6 +50,21 @@ def result(task_id: str):
 @router.get('/history')
 def history():
     return backtest_svc.get_history()
+
+
+@router.post('/walk-forward')
+def walk_forward(req: WalkForwardRequest):
+    """提交 Walk-Forward 验证任务，立即返回 task_id，后台异步执行"""
+    params = {
+        'train_months': req.train_months,
+        'test_months':  req.test_months,
+        'total_start':  req.total_start,
+        'total_end':    req.total_end,
+        'universe':     req.universe,
+        'top':          req.top_n,
+    }
+    task_id = backtest_svc.submit_walk_forward(params)
+    return {'task_id': task_id}
 
 
 @router.get('/vix')

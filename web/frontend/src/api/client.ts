@@ -74,6 +74,20 @@ export const getVixAnalysis = (params: {
   threshold?: number; start?: string; end?: string; symbol?: string; mode?: string
 }) => api.get('/backtest/vix', { params }).then(r => r.data)
 
+export const runWalkForward = (params: {
+  train_months: number; test_months: number
+  total_start: string; total_end?: string
+  universe: string; top_n: number
+}) => api.post('/backtest/walk-forward', params).then(r => r.data)
+
+// ── 自选股 Watchlist ──────────────────────────────────────
+
+export const getWatchlist   = () => api.get('/watchlist/').then(r => r.data)
+export const addToWatchlist = (symbol: string) =>
+  api.post('/watchlist/', { symbol }).then(r => r.data)
+export const removeFromWatchlist = (symbol: string) =>
+  api.delete(`/watchlist/${symbol}`).then(r => r.data)
+
 // ── 因子优化器 ────────────────────────────────────────────
 
 export const runOptimizer        = (params: object) =>

@@ -1,6 +1,6 @@
 """
 FastAPI 服务器入口
-- 开发模式：前端 Vite 跑在 :5173，API 在 :3001
+- 开发模式：前端 Vite 跑在 :5178，API 在 :3001
 - 生产模式：FastAPI 同时服务 API + 前端静态文件（dist/）
 
 启动：
@@ -63,7 +63,7 @@ app = FastAPI(
 # CORS（开发时允许 Vite 前端跨域调用）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['http://localhost:5173', 'http://localhost:3001'],
+    allow_origins=['http://localhost:5178', 'http://localhost:3001'],
     allow_methods=['*'],
     allow_headers=['*'],
 )

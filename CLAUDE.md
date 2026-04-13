@@ -47,7 +47,7 @@ IB_TIMEOUT=60
 
 # 开发模式：API 热重载 + Vite 快速刷新
 ./start_web.sh --dev
-# 开发时访问 http://localhost:5173（Vite，自动代理 /api → 3001）
+# 开发时访问 http://localhost:5178（Vite，自动代理 /api → 3001）
 ```
 
 **首次运行需构建前端：**

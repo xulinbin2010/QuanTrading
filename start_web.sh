@@ -19,7 +19,7 @@ source .venv/bin/activate
 if [ "$1" = "--dev" ]; then
   # 开发模式：FastAPI 热重载 + Vite dev server（两个进程）
   echo "开发模式启动..."
-  echo "  前端 UI:  http://localhost:5173  (代理 /api → 3001)"
+  echo "  前端 UI:  http://localhost:5178  (代理 /api → 3001)"
   echo ""
   # 后台启动后端 FastAPI 并记录 PID
   python -m web.server --reload > server.log 2>&1 &

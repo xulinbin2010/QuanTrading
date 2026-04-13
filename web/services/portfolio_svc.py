@@ -385,6 +385,21 @@ def get_positions(force_refresh: bool = False, account: str | None = None) -> li
         except Exception:
             pass  # 数据未就绪时静默忽略，下次重试
 
+    # 批量补充行业信息（7 天缓存，速度快）
+    # 期权以底层股票 symbol 查询，股票直接用自身 symbol
+    if positions:
+        from core.universe import get_stock_info
+        underlying_syms = []
+        for p in positions:
+            parts = p['symbol'].split()
+            underlying_syms.append(parts[0])   # 股票 → 自身，期权 → 底层股票
+        stock_info = get_stock_info(list(set(underlying_syms)))
+        for p in positions:
+            underlying = p['symbol'].split()[0]
+            info = stock_info.get(underlying, {})
+            p['industry'] = info.get('industry')
+            p['sector']   = info.get('sector')
+
     return positions
 
 

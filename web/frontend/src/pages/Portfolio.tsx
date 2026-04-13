@@ -429,9 +429,10 @@ export default function Portfolio() {
             {positions && positions.length > 0 && (
               <button
                 onClick={() => {
-                  const headers = ['股票', '买入日', '数量', '均价', '现价', '市值', '浮盈', '浮盈%']
+                  const headers = ['股票', '行业', '买入日', '数量', '均价', '现价', '市值', '浮盈', '浮盈%']
                   const rows = positions.map((p: any) => [
                     p.symbol,
+                    p.industry ?? '',
                     p.entry_date ?? '',
                     p.qty,
                     p.avg_cost.toFixed(2),
@@ -487,7 +488,7 @@ export default function Portfolio() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-slate-400 text-xs border-b border-slate-700">
-                  {['股票', '买入日', '数量', '均价', '现价', '市值', '浮盈', '浮盈%', '财报'].map(h => (
+                  {['股票', '行业', '买入日', '数量', '均价', '现价', '市值', '浮盈', '浮盈%', '财报'].map(h => (
                     <th key={h} className="px-4 py-2 text-left font-medium">{h}</th>
                   ))}
                 </tr>
@@ -496,6 +497,9 @@ export default function Portfolio() {
                 {positions.map((p: any) => (
                   <tr key={p.symbol} className="border-b border-slate-700/50 hover:bg-slate-700/30">
                     <td className="px-4 py-2 font-mono text-white">{p.symbol}</td>
+                    <td className="px-4 py-2 text-slate-400 text-xs max-w-[120px] truncate" title={p.industry ?? ''}>
+                      {p.industry ?? '-'}
+                    </td>
                     <td className="px-4 py-2 text-slate-400">{p.entry_date ?? '-'}</td>
                     <td className="px-4 py-2">{p.qty}</td>
                     <td className="px-4 py-2 font-mono">${p.avg_cost.toFixed(2)}</td>

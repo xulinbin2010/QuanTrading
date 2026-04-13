@@ -51,6 +51,8 @@ class DataStore:
         self.stocks_dir.mkdir(parents=True, exist_ok=True)
         # update() 期间发现 yfinance 无数据（同批其他有数据）的 symbol，_load() 直接过滤
         self._no_data_syms: set[str] = set()
+        # update()→_date_range() 期间缓存各 symbol 的最新日期，_load() 复用避免重复读文件
+        self._last_date_cache: dict[str, 'date | None'] = {}
 
     # ── 主入口 ────────────────────────────────────────────────
 
@@ -250,11 +252,17 @@ class DataStore:
             path = self.stocks_dir / f'{sym}.parquet'
             if not path.exists():
                 continue
+            # stale 检查：优先用 update()→_date_range() 期间缓存的最新日期；
+            # cache miss（如 auto_update=False）时做轻量读，避免为确认 stale 而全量加载
+            if check_stale:
+                last_dt = self._last_date_cache.get(sym)
+                if last_dt is None and sym not in self._last_date_cache:
+                    idx = pd.read_parquet(path, columns=['close']).index
+                    last_dt = idx[-1].date() if not idx.empty else None
+                if last_dt is not None and pd.Timestamp(last_dt) < stale_limit:
+                    stale_syms.append(sym)
+                    continue
             df_full = pd.read_parquet(path)
-            # stale 检查：文件实际最后日期比 SPY 落后超过 max_stale 天，且为实盘查询
-            if check_stale and not df_full.empty and df_full.index[-1] < stale_limit:
-                stale_syms.append(sym)
-                continue
             df = df_full[(df_full.index >= ts_start) & (df_full.index <= ts_end)]
             if len(df) < min_rows:
                 continue
@@ -269,12 +277,16 @@ class DataStore:
         """返回 (最新日期, 最早日期)，文件不存在时返回 (None, None)。"""
         path = self.stocks_dir / f'{symbol}.parquet'
         if not path.exists():
+            self._last_date_cache[symbol] = None
             return None, None
         # 只读 close 列（parquet 列式存储，比读全部快很多）
         idx = pd.read_parquet(path, columns=['close']).index
         if idx.empty:
+            self._last_date_cache[symbol] = None
             return None, None
-        return idx.max().date(), idx.min().date()
+        latest = idx.max().date()
+        self._last_date_cache[symbol] = latest   # 供 _load() stale 检查复用，避免重复读文件
+        return latest, idx.min().date()
 
     @staticmethod
     def _last_trading_day() -> date:

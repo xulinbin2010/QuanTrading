@@ -735,7 +735,8 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
             # OPG 时改用限价单，防止开盘跳空过高追入
             if tif == 'OPG':
                 limit_price = round(sig['close'] * (1 + MAX_ENTRY_SLIPPAGE), 2)
-                print(f"  [{symbol}]  RS={sig['rs_score']:+.3f}  量比={sig['vol_ratio']:.1f}x  行业={sec}")
+                ind_display = sig.get('industry') or sec
+                print(f"  [{symbol}]  RS={sig['rs_score']:+.3f}  量比={sig['vol_ratio']:.1f}x  行业={ind_display}")
                 print(f"    {sizing_note}  限价 ${limit_price:.2f}  预计成本 ${qty*limit_price:,.0f}")
                 if not dry_run:
                     _cancel_existing(symbol, 'BUY')
@@ -748,7 +749,8 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
                 else:
                     print(f"  → [dry-run] 将下限价 OPG 单 ${limit_price:.2f}")
             else:
-                print(f"  [{symbol}]  RS={sig['rs_score']:+.3f}  量比={sig['vol_ratio']:.1f}x  行业={sec}")
+                ind_display = sig.get('industry') or sec
+                print(f"  [{symbol}]  RS={sig['rs_score']:+.3f}  量比={sig['vol_ratio']:.1f}x  行业={ind_display}")
                 print(f"    {sizing_note}  拟成本 ${cost:,.0f}")
                 if not dry_run:
                     _cancel_existing(symbol, 'BUY')

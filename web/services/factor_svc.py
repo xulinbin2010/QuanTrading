@@ -214,7 +214,9 @@ def scan_factors(universe: str = 'sp500', top: int = 50, force: bool = False) ->
     sector_rs_enabled = bool(config.get('FACTOR_sector_rs_ENABLED') or False)
     from strategies.factors.sector_rs import SECTOR_ETFS, compute_sector_rs
 
-    strategy = RSMomentum()
+    strategy = RSMomentum(
+        vol_shrink_ratio=float(config.get('VOL_SHRINK_RATIO') or 0.7),
+    )
     if spy_close is not None:
         strategy.set_spy(spy_close)
 
@@ -457,7 +459,9 @@ def get_stock_factors(symbol: str, days: int = 120) -> dict:
     if df is None or len(df) < 20:
         raise ValueError(f"股票 {symbol} 数据不足")
 
-    strategy = RSMomentum()
+    strategy = RSMomentum(
+        vol_shrink_ratio=float(config.get('VOL_SHRINK_RATIO') or 0.7),
+    )
     if spy_df is not None:
         strategy.set_spy(spy_df['close'])
 

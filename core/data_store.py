@@ -212,6 +212,35 @@ class DataStore:
             df.index.name = 'date'
             df.to_parquet(path)
             saved += 1
+
+        # 批量下载中空数据的 symbol 逐只重试（yfinance 批量偶发空列问题）
+        if bad_syms:
+            retry_bad: set[str] = set()
+            for sym in sorted(bad_syms):
+                try:
+                    r = yf.download(sym, start=start, end=end_exclusive,
+                                    auto_adjust=True, progress=False)
+                    df2 = self._extract(r, sym, 1)
+                    if df2 is not None and not df2.empty:
+                        got_syms.add(sym)
+                        path = self.stocks_dir / f'{sym}.parquet'
+                        if path.exists():
+                            old      = pd.read_parquet(path)
+                            new_rows = df2[~df2.index.isin(old.index)]
+                            if not new_rows.empty:
+                                df2 = pd.concat([old, df2])
+                                df2 = df2[~df2.index.duplicated(keep='last')].sort_index()
+                            else:
+                                continue
+                        df2.index.name = 'date'
+                        df2.to_parquet(path)
+                        saved += 1
+                    else:
+                        retry_bad.add(sym)
+                except Exception:
+                    retry_bad.add(sym)
+            bad_syms = retry_bad
+
         if bad_syms:
             print(f'  [DataStore] yfinance 无数据（疑似退市）：{sorted(bad_syms)}')
         print(f'  [DataStore] 写入 {saved}/{len(symbols)} 只')

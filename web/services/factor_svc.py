@@ -341,7 +341,7 @@ def preview_signals(universe: str, factors: list[str], top: int = 100) -> dict:
 
             # 动态提取所有因子列（只取数值/布尔，跳过 OHLCV）
             skip = {'open', 'high', 'low', 'close', 'volume', 'signal',
-                    'vol_ma20', 'ma50', 'ma200', 'atr14', 'prev_high'}
+                    'vol_ma20', 'ma_fast', 'ma_slow', 'atr14', 'prev_high'}
             factor_vals: dict = {}
             for col in sig_df.columns:
                 if col in skip:
@@ -508,8 +508,8 @@ def get_stock_factors(symbol: str, days: int = 120) -> dict:
             "not_crashed": bool(row.get('not_crashed', True)),
             "vol_ratio": round(float(row['volume'] / row['vol_ma20']), 2)
                          if row.get('vol_ma20') else None,
-            "ma50": _fmt(row.get('ma50')),
-            "ma200": _fmt(row.get('ma200')),
+            "ma_fast": _fmt(row.get('ma_fast')),
+            "ma_slow": _fmt(row.get('ma_slow')),
             "atr14": _fmt(row.get('atr14')),
             "signal": int(row.get('signal', 0)),
         })

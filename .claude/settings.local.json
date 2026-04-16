@@ -63,7 +63,8 @@
       "Bash(brew reinstall:*)",
       "Bash(.venv/bin/python:*)",
       "Bash(ls:*)",
-      "Bash(kill -9 43966 45069 62340)"
+      "Bash(kill -9 43966 45069 62340)",
+      "Bash(python3:*)"
     ]
   }
 }

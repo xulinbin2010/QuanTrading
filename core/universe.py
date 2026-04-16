@@ -193,6 +193,7 @@ def _try_ivv_holdings() -> list[str]:
             stocks['Ticker']
             .dropna()
             .str.strip()
+            .loc[lambda s: s.str.match(r'^[A-Z]')]   # 过滤 '-' 等非ticker占位符
             .map(lambda t: _TICKER_FIX.get(t, t))
             .tolist()
         )

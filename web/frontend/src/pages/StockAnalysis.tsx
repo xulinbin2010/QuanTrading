@@ -80,7 +80,7 @@ function StockCard({ symbol, onRemove }: { symbol: string; onRemove: () => void 
   const klineOption = data ? {
     backgroundColor: 'transparent',
     tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-    legend: { data: ['K线', 'MA50', 'MA200'], textStyle: { color: '#94a3b8' }, top: 0 },
+    legend: { data: ['K线', 'MA10', 'MA20'], textStyle: { color: '#94a3b8' }, top: 0 },
     grid: [
       { left: 55, right: 15, top: 28, bottom: 100 },
       { left: 55, right: 15, top: '72%', bottom: 30 },
@@ -100,13 +100,13 @@ function StockCard({ symbol, onRemove }: { symbol: string; onRemove: () => void 
         itemStyle: { color: '#22c55e', color0: '#ef4444', borderColor: '#22c55e', borderColor0: '#ef4444' },
       },
       {
-        name: 'MA50', type: 'line', xAxisIndex: 0, yAxisIndex: 0, smooth: true, symbol: 'none',
-        data: data.factors.map((f: any) => f.ma50),
+        name: 'MA10', type: 'line', xAxisIndex: 0, yAxisIndex: 0, smooth: true, symbol: 'none',
+        data: data.factors.map((f: any) => f.ma_fast),
         lineStyle: { color: '#f59e0b', width: 1 },
       },
       {
-        name: 'MA200', type: 'line', xAxisIndex: 0, yAxisIndex: 0, smooth: true, symbol: 'none',
-        data: data.factors.map((f: any) => f.ma200),
+        name: 'MA20', type: 'line', xAxisIndex: 0, yAxisIndex: 0, smooth: true, symbol: 'none',
+        data: data.factors.map((f: any) => f.ma_slow),
         lineStyle: { color: '#8b5cf6', width: 1 },
       },
       {
@@ -281,7 +281,7 @@ function StockCard({ symbol, onRemove }: { symbol: string; onRemove: () => void 
 
               {/* K 线图 */}
               <div>
-                <div className="text-xs text-slate-400 mb-1">K 线（MA50 / MA200）</div>
+                <div className="text-xs text-slate-400 mb-1">K 线（MA10 / MA20）</div>
                 <ReactECharts option={klineOption} style={{ height: 300 }} />
               </div>
 

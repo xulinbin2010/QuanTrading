@@ -94,11 +94,11 @@ def _build_registry() -> dict[str, FactorMeta]:
         "trend_filter": FactorMeta(
             key="trend_filter", name="趋势过滤", category="trend",
             data_type="technical", compute_fn=compute_trend_filter,
-            output_columns=["ma50", "ma200", "uptrend"], signal_column="uptrend",
+            output_columns=["ma_fast", "ma_slow", "uptrend"], signal_column="uptrend",
             signal_type="filter",
             params={
-                "fast": (50, int, "快均线周期"),
-                "slow": (200, int, "慢均线周期"),
+                "fast": (10, int, "快均线周期"),
+                "slow": (20, int, "慢均线周期"),
             },
         ),
         # ── 风险控制因子 ───────────────────────────────────────

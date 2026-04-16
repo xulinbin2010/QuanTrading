@@ -21,7 +21,7 @@ class RSMomentum(Strategy):
       2. 价格突破近 breakout_period 天高点
       3. 突破当天成交量 > vol_ma 日均量 × vol_multiplier（量价配合）
       4. 距52周高点回撤不超过 max_drawdown_from_high
-      5. MA50 > MA200（黄金交叉趋势过滤）
+      5. MA10 > MA20（短期趋势过滤）
 
     卖出报警（持仓监控）：
       - 价格创近 breakout_period 天新高，但成交量低于均量（量价背离 → 顶部信号）

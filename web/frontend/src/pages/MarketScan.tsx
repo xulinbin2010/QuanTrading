@@ -69,7 +69,7 @@ function StockDetailPanel({ symbol, onClose }: { symbol: string; onClose: () => 
   const klineOption = data ? {
     backgroundColor: 'transparent',
     tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-    legend: { data: ['K线', 'MA50', 'MA200'], textStyle: { color: '#94a3b8' }, top: 0 },
+    legend: { data: ['K线', 'MA10', 'MA20'], textStyle: { color: '#94a3b8' }, top: 0 },
     grid: [
       { left: 60, right: 20, top: 30, bottom: 120 },
       { left: 60, right: 20, top: '70%', bottom: 40 },
@@ -89,13 +89,13 @@ function StockDetailPanel({ symbol, onClose }: { symbol: string; onClose: () => 
         itemStyle: { color: '#22c55e', color0: '#ef4444', borderColor: '#22c55e', borderColor0: '#ef4444' },
       },
       {
-        name: 'MA50', type: 'line', xAxisIndex: 0, yAxisIndex: 0, smooth: true, symbol: 'none',
-        data: data.factors.map((f: any) => f.ma50),
+        name: 'MA10', type: 'line', xAxisIndex: 0, yAxisIndex: 0, smooth: true, symbol: 'none',
+        data: data.factors.map((f: any) => f.ma_fast),
         lineStyle: { color: '#f59e0b', width: 1 },
       },
       {
-        name: 'MA200', type: 'line', xAxisIndex: 0, yAxisIndex: 0, smooth: true, symbol: 'none',
-        data: data.factors.map((f: any) => f.ma200),
+        name: 'MA20', type: 'line', xAxisIndex: 0, yAxisIndex: 0, smooth: true, symbol: 'none',
+        data: data.factors.map((f: any) => f.ma_slow),
         lineStyle: { color: '#8b5cf6', width: 1 },
       },
       {
@@ -128,7 +128,7 @@ function StockDetailPanel({ symbol, onClose }: { symbol: string; onClose: () => 
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-slate-800 rounded-xl border border-slate-700 w-[900px] max-h-[90vh] overflow-auto" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700">
-          <div className="text-white font-semibold">{symbol} — 因子详情</div>
+          <div className="text-white font-semibold">{symbol} — 个股详情</div>
           <button onClick={onClose} className="text-slate-400 hover:text-white">✕</button>
         </div>
         <div className="p-5 space-y-4">
@@ -180,7 +180,7 @@ function StockDetailPanel({ symbol, onClose }: { symbol: string; onClose: () => 
               )}
 
               <div>
-                <div className="mb-2 text-xs text-slate-400">K 线（含 MA50 / MA200）</div>
+                <div className="mb-2 text-xs text-slate-400">K 线（含 MA10 / MA20）</div>
                 <ReactECharts option={klineOption} style={{ height: 320 }} />
               </div>
               <div>

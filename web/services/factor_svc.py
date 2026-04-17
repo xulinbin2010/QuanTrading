@@ -609,29 +609,143 @@ def get_insider_data(days: int = None, min_value_k: int = None) -> list[dict]:
     return rows
 
 
-# ── 10x 候选筛选器 ─────────────────────────────────────────
+# ── 5x 候选筛选器（8 维打分，满分 19）────────────────────────
 
-_TENBAGGER_CACHE = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'tenbagger_cache.json')
-_TENBAGGER_TTL_DAYS = 7
+_FIVEBAGGER_CACHE    = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'fivebagger_cache.json')
+_QUARTERLY_CACHE     = os.path.join(os.path.dirname(__file__), '..', '..', 'data', '.quarterly_cache.pkl')
+_FIVEBAGGER_TTL_DAYS = 7
 
 
-def screen_tenbagger(force: bool = False) -> dict:
+def _load_quarterly_cache() -> dict:
+    import pickle
+    from datetime import datetime, timedelta
+    path = os.path.normpath(_QUARTERLY_CACHE)
+    if os.path.exists(path):
+        try:
+            with open(path, 'rb') as f:
+                stored = pickle.load(f)
+            if datetime.now() - stored.get('_time', datetime.min) < timedelta(days=7):
+                return stored.get('data', {})
+        except Exception:
+            pass
+    return {}
+
+
+def _save_quarterly_cache(data: dict):
+    import pickle
+    from datetime import datetime
+    path = os.path.normpath(_QUARTERLY_CACHE)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    try:
+        with open(path, 'wb') as f:
+            pickle.dump({'_time': datetime.now(), 'data': data}, f)
+    except Exception:
+        pass
+
+
+def _fetch_rev_accel(sym: str):
+    """季报营收加速度：最新季 YoY 增长率 - 上季 YoY 增长率。正值=加速。"""
+    import yfinance as yf
+    try:
+        qf = yf.Ticker(sym).quarterly_financials
+        if qf is None or qf.empty:
+            return None
+        rev_row = None
+        for label in ['Total Revenue', 'Revenue', 'Operating Revenue']:
+            if label in qf.index:
+                rev_row = qf.loc[label].sort_index(ascending=False).dropna()
+                break
+        if rev_row is None or len(rev_row) < 5:
+            return None
+        q0, q1 = rev_row.iloc[0], rev_row.iloc[1]
+        q4 = rev_row.iloc[4] if len(rev_row) > 4 else None
+        q5 = rev_row.iloc[5] if len(rev_row) > 5 else None
+        if q4 and abs(q4) > 0 and q5 and abs(q5) > 0:
+            return float((q0 - q4) / abs(q4) - (q1 - q5) / abs(q5))
+    except Exception:
+        pass
+    return None
+
+
+def _batch_rs_scores(symbols: list) -> dict:
+    """批量计算 63 日 RS vs SPY，返回 {sym: float}。"""
+    import yfinance as yf
+    if not symbols:
+        return {}
+    try:
+        df = yf.download(list(set(symbols + ['SPY'])), period='100d',
+                         progress=False, auto_adjust=True)['Close']
+        if df.empty:
+            return {}
+        ret = df.pct_change(63).iloc[-1]
+        spy = float(ret.get('SPY', 0))
+        return {s: float(ret.get(s, 0)) - spy for s in symbols if s in ret.index}
+    except Exception:
+        return {}
+
+
+def _score_candidate(info: dict, ins: dict, rev_accel, rs) -> tuple:
+    """8 维打分，返回 (total_score, breakdown_dict)。"""
+    score = 0
+    bd = {}
+
+    # 1. 规模（$0.2B–$5B）
+    cap = info.get('market_cap_b')
+    s = 2 if cap and 0.2 <= cap <= 2 else (1 if cap and cap <= 5 else 0)
+    score += s; bd['size'] = s
+
+    # 2. 营收增长 YoY
+    rv = info.get('revenue_growth')
+    s = 3 if rv and rv > 0.50 else (2 if rv and rv > 0.30 else (1 if rv and rv > 0.15 else 0))
+    score += s; bd['rev_growth'] = s
+
+    # 3. 营收加速（季报）
+    s = 2 if rev_accel and rev_accel > 0.05 else (1 if rev_accel and rev_accel > 0 else 0)
+    score += s; bd['rev_accel'] = s
+
+    # 4. PS 估值
+    ps = info.get('ps_ratio')
+    s = 3 if ps and ps < 2 else (2 if ps and ps < 5 else (1 if ps and ps < 10 else 0))
+    score += s; bd['ps_ratio'] = s
+
+    # 5. 毛利率
+    gm = info.get('gross_margins')
+    s = 2 if gm and gm > 0.60 else (1 if gm and gm > 0.40 else 0)
+    score += s; bd['gross_margin'] = s
+
+    # 6. 内幕买入（90 天）
+    s = min(ins.get('score', 0), 3) if ins else 0
+    score += s; bd['insider'] = s
+
+    # 7. 价格动量 RS vs SPY
+    s = 2 if rs and rs > 0.05 else (1 if rs and rs > 0 else 0)
+    score += s; bd['rs_momentum'] = s
+
+    # 8. 财务健康（FCF + D/E）
+    fcf_ok = (info.get('free_cashflow') or 0) > 0
+    de_ok  = info.get('debt_to_equity') is not None and info['debt_to_equity'] < 1.0
+    s = 2 if (fcf_ok and de_ok) else (1 if (fcf_ok or de_ok) else 0)
+    score += s; bd['fin_health'] = s
+
+    return score, bd
+
+
+def screen_fivebagger(force: bool = False) -> dict:
     """
-    Russell 2000 10x 候选筛选器，默认 7 天本地缓存。
-    force=True 跳过缓存强制重算。
-    过滤：市值 1–15B、营收 YoY > 30%、内幕净买入（90 天内有记录）。
-    排序：insider_value * (1 + revenue_growth) 复合打分。
+    Russell 2000 5x 候选筛选器，8 维打分（满分 19）。
+    Phase 1（快速）：市值 $0.2–5B + 营收 YoY > 10%（yf.info 7 天缓存）
+    Phase 2（深度）：季报营收加速 + 批量 RS（仅对 Phase 1 候选，通常 100–300 只）
+    结果缓存 7 天，force=True 强制重算。
     """
     import json
     from datetime import datetime, timedelta
 
-    cache_path = os.path.normpath(_TENBAGGER_CACHE)
+    cache_path = os.path.normpath(_FIVEBAGGER_CACHE)
     if not force and os.path.exists(cache_path):
         try:
             with open(cache_path, encoding='utf-8') as f:
                 cached = json.load(f)
-            last_updated = datetime.fromisoformat(cached['last_updated'])
-            if datetime.now() - last_updated < timedelta(days=_TENBAGGER_TTL_DAYS):
+            if datetime.now() - datetime.fromisoformat(cached['last_updated']) < timedelta(days=_FIVEBAGGER_TTL_DAYS):
                 return cached
         except Exception:
             pass
@@ -639,39 +753,66 @@ def screen_tenbagger(force: bool = False) -> dict:
     from core.universe import get_russell2000_tickers, get_stock_info
     from core.insider import get_insider_buys
 
-    tickers = get_russell2000_tickers()
+    print("  [5x] 获取 Russell 2000 股票池...")
+    tickers     = get_russell2000_tickers()
     total_scanned = len(tickers)
 
-    info_map = get_stock_info(tickers)
+    print(f"  [5x] 批量查询 {total_scanned} 只基本信息（7 天缓存）...")
+    info_map    = get_stock_info(tickers)
     insider_map = get_insider_buys(days=90, min_value_k=100)
 
+    # Phase 1：快速预筛
+    candidates = [
+        s for s in tickers
+        if (info_map.get(s, {}).get('market_cap_b') or 0) >= 0.2
+        and (info_map.get(s, {}).get('market_cap_b') or 999) <= 5.0
+        and (info_map.get(s, {}).get('revenue_growth') or -1) > 0.10
+    ]
+    print(f"  [5x] Phase 1 候选 {len(candidates)} 只，进入 Phase 2...")
+
+    # Phase 2a：批量 RS（快，几秒）
+    rs_map = _batch_rs_scores(candidates)
+
+    # Phase 2b：季报营收加速（带 7 天缓存，只查新出现的 symbol）
+    q_cache = _load_quarterly_cache()
+    need_q  = [s for s in candidates if s not in q_cache]
+    if need_q:
+        print(f"  [5x] 查询季报加速：{len(need_q)} 只...")
+        for i, sym in enumerate(need_q, 1):
+            q_cache[sym] = _fetch_rev_accel(sym)
+            if i % 25 == 0:
+                print(f"    {i}/{len(need_q)}")
+        _save_quarterly_cache(q_cache)
+
+    # Phase 3：打分并排序
     rows = []
-    for sym in tickers:
-        info = info_map.get(sym, {})
-        cap = info.get('market_cap_b')
-        rev = info.get('revenue_growth')
-
-        if cap is None or not (1.0 <= cap <= 15.0):
-            continue
-        if rev is None or rev <= 0.30:
-            continue
-        ins = insider_map.get(sym, {})
-        if not ins or ins.get('score', 0) < 1:
-            continue
-
+    for sym in candidates:
+        info  = info_map.get(sym, {})
+        ins   = insider_map.get(sym, {})
+        accel = q_cache.get(sym)
+        rs    = rs_map.get(sym)
+        total, bd = _score_candidate(info, ins, accel, rs)
         rows.append({
             'symbol':            sym,
-            'market_cap_b':      cap,
-            'revenue_growth':    rev,
-            'insider_score':     ins.get('score', 0),
-            'insider_count':     ins.get('count', 0),
-            'insider_value':     ins.get('total_value', 0),
-            'last_insider_date': ins.get('last_date', ''),
+            'score':             total,
+            'breakdown':         bd,
+            'market_cap_b':      info.get('market_cap_b'),
+            'revenue_growth':    info.get('revenue_growth'),
+            'rev_accel':         round(accel, 3) if accel is not None else None,
+            'ps_ratio':          info.get('ps_ratio'),
+            'gross_margins':     info.get('gross_margins'),
+            'insider_score':     ins.get('score', 0) if ins else 0,
+            'insider_count':     ins.get('count', 0) if ins else 0,
+            'insider_value':     ins.get('total_value', 0) if ins else 0,
+            'last_insider_date': ins.get('last_date', '') if ins else '',
+            'rs_score':          round(rs, 3) if rs is not None else None,
+            'free_cashflow':     info.get('free_cashflow'),
+            'debt_to_equity':    info.get('debt_to_equity'),
             'sector':            info.get('sector') or '',
             'industry':          info.get('industry') or '',
         })
 
-    rows.sort(key=lambda x: x['insider_value'] * (1 + x['revenue_growth']), reverse=True)
+    rows.sort(key=lambda x: x['score'], reverse=True)
 
     result = {
         'rows':          rows[:30],

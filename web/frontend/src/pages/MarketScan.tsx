@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
-import { scanFactors, getStockDetail, getInsiderData, getTenBaggerScreener, listNarrativeWatchlist, upsertNarrativeEntry, deleteNarrativeEntry } from '../api/client'
+import { scanFactors, getStockDetail, getInsiderData, getFiveBaggerScreener, listNarrativeWatchlist, upsertNarrativeEntry, deleteNarrativeEntry } from '../api/client'
 import type { NarrativeEntryBody } from '../api/client'
 import ReactECharts from 'echarts-for-react'
 
@@ -57,6 +57,52 @@ function FmtPct({ v, decimals = 1 }: { v: number | null | undefined; decimals?: 
 function FmtNum({ v, decimals = 1, suffix = '' }: { v: number | null | undefined; decimals?: number; suffix?: string }) {
   if (v == null) return <span className="text-slate-600">-</span>
   return <span className="font-mono text-xs text-slate-300">{v.toFixed(decimals)}{suffix}</span>
+}
+
+function ScoreBar({ score, max = 19 }: { score: number; max?: number }) {
+  const pct = (score / max) * 100
+  const color = score >= 13 ? '#22c55e' : score >= 8 ? '#f59e0b' : '#64748b'
+  return (
+    <div className="flex items-center gap-1.5">
+      <div className="w-14 h-1.5 bg-slate-700 rounded-full overflow-hidden">
+        <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+      </div>
+      <span className="text-xs font-mono font-semibold" style={{ color }}>{score}</span>
+      <span className="text-xs text-slate-600">/{max}</span>
+    </div>
+  )
+}
+
+// 8 维分解 tooltip 内容
+const BREAKDOWN_LABELS: Record<string, string> = {
+  size: '规模', rev_growth: '营收增长', rev_accel: '营收加速',
+  ps_ratio: 'PS估值', gross_margin: '毛利率', insider: '内幕买入',
+  rs_momentum: '价格动量', fin_health: '财务健康',
+}
+const BREAKDOWN_MAX: Record<string, number> = {
+  size: 2, rev_growth: 3, rev_accel: 2, ps_ratio: 3,
+  gross_margin: 2, insider: 3, rs_momentum: 2, fin_health: 2,
+}
+
+function BreakdownBadges({ bd }: { bd: Record<string, number> }) {
+  return (
+    <div className="flex flex-wrap gap-0.5">
+      {Object.entries(BREAKDOWN_LABELS).map(([k, label]) => {
+        const v = bd[k] ?? 0
+        const max = BREAKDOWN_MAX[k] ?? 2
+        const filled = v > 0
+        return (
+          <span
+            key={k}
+            title={`${label}: ${v}/${max}`}
+            className={`px-1 py-0.5 rounded text-[10px] font-mono ${filled ? 'bg-blue-900/60 text-blue-300' : 'bg-slate-700/60 text-slate-600'}`}
+          >
+            {label[0]}{v}
+          </span>
+        )
+      })}
+    </div>
+  )
 }
 
 // ── 单股详情面板 ──────────────────────────────────────────
@@ -226,8 +272,8 @@ export default function MarketScan() {
   // 10x 猎手 — 筛选器
   const [tbForcing, setTbForcing] = useState(false)
   const { data: tbData, isLoading: tbLoading } = useQuery({
-    queryKey: ['screener-tenbagger'],
-    queryFn: () => getTenBaggerScreener(false),
+    queryKey: ['screener-fivebagger'],
+    queryFn: () => getFiveBaggerScreener(false),
     staleTime: 7 * 24 * 3_600_000,
     retry: false,
   })
@@ -251,11 +297,11 @@ export default function MarketScan() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['narrative-watchlist'] }),
   })
 
-  const refreshTenBagger = () => {
+  const refreshFiveBagger = () => {
     setTbForcing(true)
-    getTenBaggerScreener(true)
+    getFiveBaggerScreener(true)
       .then(d => {
-        queryClient.setQueryData(['screener-tenbagger'], d)
+        queryClient.setQueryData(['screener-fivebagger'], d)
         setTbForcing(false)
       })
       .catch(() => setTbForcing(false))
@@ -361,7 +407,7 @@ export default function MarketScan() {
         {([
           { key: 'scan',       label: '因子扫描' },
           { key: 'insider',    label: '内部人买入' },
-          { key: 'tenbagger',  label: '10x 猎手' },
+          { key: 'tenbagger',  label: '5x 猎手' },
         ] as const).map(t => (
           <button
             key={t.key}
@@ -498,9 +544,9 @@ export default function MarketScan() {
           <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
             <div className="flex items-center justify-between mb-3">
               <div>
-                <h3 className="text-sm font-medium text-white">10x 候选筛选器</h3>
+                <h3 className="text-sm font-medium text-white">5x 候选筛选器</h3>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  Russell 2000 · 市值 $1–15B · 营收 YoY &gt; 30% · 内幕净买入（90天）
+                  Russell 2000 · 市值 $0.2–5B · 8 维打分（满分 19）· 按总分排序
                 </p>
               </div>
               <div className="flex items-center gap-3">
@@ -510,7 +556,7 @@ export default function MarketScan() {
                   </span>
                 )}
                 <button
-                  onClick={refreshTenBagger}
+                  onClick={refreshFiveBagger}
                   disabled={tbLoading || tbForcing}
                   className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded transition-colors"
                 >
@@ -539,12 +585,15 @@ export default function MarketScan() {
                         <tr className="text-slate-400 text-xs border-b border-slate-700">
                           <th className="px-3 py-2 text-left font-medium">#</th>
                           <th className="px-3 py-2 text-left font-medium">股票</th>
+                          <th className="px-3 py-2 text-left font-medium">总分</th>
+                          <th className="px-3 py-2 text-left font-medium whitespace-nowrap">维度分解</th>
                           <th className="px-3 py-2 text-right font-medium">市值(B)</th>
                           <th className="px-3 py-2 text-right font-medium">营收 YoY</th>
-                          <th className="px-3 py-2 text-right font-medium">内幕评分</th>
-                          <th className="px-3 py-2 text-right font-medium">买入人数</th>
-                          <th className="px-3 py-2 text-right font-medium">买入金额</th>
-                          <th className="px-3 py-2 text-right font-medium">最近内幕</th>
+                          <th className="px-3 py-2 text-right font-medium">加速</th>
+                          <th className="px-3 py-2 text-right font-medium">PS</th>
+                          <th className="px-3 py-2 text-right font-medium">毛利率</th>
+                          <th className="px-3 py-2 text-right font-medium">内幕</th>
+                          <th className="px-3 py-2 text-right font-medium">RS</th>
                           <th className="px-3 py-2 text-left font-medium">行业</th>
                         </tr>
                       </thead>
@@ -553,19 +602,28 @@ export default function MarketScan() {
                           <tr key={r.symbol} className="hover:bg-slate-700/30 transition-colors">
                             <td className="px-3 py-2 text-slate-500 text-xs">{i + 1}</td>
                             <td className="px-3 py-2 font-mono font-medium text-white">{r.symbol}</td>
+                            <td className="px-3 py-2"><ScoreBar score={r.score} /></td>
+                            <td className="px-3 py-2"><BreakdownBadges bd={r.breakdown ?? {}} /></td>
                             <td className="px-3 py-2 text-right text-slate-300 text-xs font-mono">${r.market_cap_b?.toFixed(1)}</td>
                             <td className="px-3 py-2 text-right"><FmtPct v={r.revenue_growth} /></td>
                             <td className="px-3 py-2 text-right">
+                              {r.rev_accel != null
+                                ? <span className={`font-mono text-xs ${r.rev_accel > 0 ? 'text-green-400' : 'text-red-400'}`}>
+                                    {r.rev_accel > 0 ? '+' : ''}{(r.rev_accel * 100).toFixed(1)}%
+                                  </span>
+                                : <span className="text-slate-600">-</span>}
+                            </td>
+                            <td className="px-3 py-2 text-right">
+                              {r.ps_ratio != null
+                                ? <span className="font-mono text-xs text-slate-300">{r.ps_ratio.toFixed(1)}x</span>
+                                : <span className="text-slate-600">-</span>}
+                            </td>
+                            <td className="px-3 py-2 text-right"><FmtPct v={r.gross_margins} decimals={0} /></td>
+                            <td className="px-3 py-2 text-right">
                               <span className="text-yellow-400">{'★'.repeat(r.insider_score)}</span>
-                              <span className="text-slate-600">{'★'.repeat(3 - r.insider_score)}</span>
+                              <span className="text-slate-600">{'★'.repeat(Math.max(0, 3 - r.insider_score))}</span>
                             </td>
-                            <td className="px-3 py-2 text-right text-slate-300 text-xs">{r.insider_count} 人</td>
-                            <td className="px-3 py-2 text-right text-green-400 font-mono text-xs">
-                              ${r.insider_value >= 1_000_000
-                                ? `${(r.insider_value / 1_000_000).toFixed(1)}M`
-                                : `${(r.insider_value / 1_000).toFixed(0)}K`}
-                            </td>
-                            <td className="px-3 py-2 text-right text-slate-500 text-xs">{r.last_insider_date}</td>
+                            <td className="px-3 py-2 text-right"><FmtPct v={r.rs_score} /></td>
                             <td className="px-3 py-2 text-xs text-slate-400 max-w-32 truncate">{r.industry || r.sector || '-'}</td>
                           </tr>
                         ))}

@@ -111,8 +111,8 @@ export const updateIBConnection = (params: {
 
 // ── 10x 猎手 / Screener ──────────────────────────────────
 
-export const getTenBaggerScreener = (force = false) =>
-  api.get('/screener/tenbagger', { params: { force } }).then(r => r.data)
+export const getFiveBaggerScreener = (force = false) =>
+  api.get('/screener/fivebagger', { params: { force } }).then(r => r.data)
 
 export const listNarrativeWatchlist = () =>
   api.get('/screener/narrative').then(r => r.data as any[])

@@ -8,11 +8,11 @@ from web.services import factor_svc
 router = APIRouter(prefix='/api/screener', tags=['screener'])
 
 
-@router.get('/tenbagger')
-def tenbagger(force: bool = Query(False)):
-    """Russell 2000 10x 候选筛选器（默认 7 天缓存，force=true 强制重算）"""
+@router.get('/fivebagger')
+def fivebagger(force: bool = Query(False)):
+    """Russell 2000 5x 候选筛选器，8 维打分（默认 7 天缓存，force=true 强制重算）"""
     try:
-        return factor_svc.screen_tenbagger(force=force)
+        return factor_svc.screen_fivebagger(force=force)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

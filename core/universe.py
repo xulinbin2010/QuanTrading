@@ -119,16 +119,19 @@ def get_stock_info(symbols: list[str]) -> dict[str, dict]:
                     'roe':             info.get('returnOnEquity'),
                     'debt_to_equity':  round(de / 100, 4) if de is not None else None,
                     'free_cashflow':   info.get('freeCashflow'),
+                    'gross_margins':   info.get('grossMargins'),
                     # 估值因子
                     'pe_ratio':        info.get('trailingPE'),
                     'pb_ratio':        info.get('priceToBook'),
+                    'ps_ratio':        info.get('priceToSalesTrailing12Months'),
                 }
             except Exception:
                 cache[sym] = {
                     'market_cap_b': None, 'industry': None, 'sector': None,
                     'revenue_growth': None, 'earnings_growth': None,
                     'roe': None, 'debt_to_equity': None, 'free_cashflow': None,
-                    'pe_ratio': None, 'pb_ratio': None,
+                    'gross_margins': None,
+                    'pe_ratio': None, 'pb_ratio': None, 'ps_ratio': None,
                 }
         try:
             with open(cache_path, 'wb') as f:

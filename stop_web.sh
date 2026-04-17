@@ -29,3 +29,12 @@ fi
 
 # 清理可能残留的 Vite 进程 (仅开发模式)
 pkill -f "node.*/bin/vite" 2>/dev/null
+
+# 兜底：按端口强杀（防止 PID 文件丢失或进程名匹配失败后端口仍被占用）
+for PORT in 3001 5178; do
+    PIDS=$(lsof -ti:$PORT 2>/dev/null)
+    if [ -n "$PIDS" ]; then
+        echo "端口 $PORT 仍被占用 (PID: $PIDS)，强制释放..."
+        kill -9 $PIDS 2>/dev/null
+    fi
+done

@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { scanFactors, getStockDetail, getInsiderData } from '../api/client'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
+import { scanFactors, getStockDetail, getInsiderData, getTenBaggerScreener, listNarrativeWatchlist, upsertNarrativeEntry, deleteNarrativeEntry } from '../api/client'
+import type { NarrativeEntryBody } from '../api/client'
 import ReactECharts from 'echarts-for-react'
 
 // ── 基础组件 ──────────────────────────────────────────────
@@ -198,7 +199,7 @@ function StockDetailPanel({ symbol, onClose }: { symbol: string; onClose: () => 
 // ── 主页面 ────────────────────────────────────────────────
 
 export default function MarketScan() {
-  const [tab, setTab] = useState<'scan' | 'insider'>('scan')
+  const [tab, setTab] = useState<'scan' | 'insider' | 'tenbagger'>('scan')
   const [universe] = useState('sp500+ndx')
   const [selected, setSelected] = useState<string | null>(null)
   const [showCoverage, setShowCoverage] = useState(false)
@@ -221,6 +222,44 @@ export default function MarketScan() {
     staleTime: 20 * 3_600_000,
     retry: false,
   })
+
+  // 10x 猎手 — 筛选器
+  const [tbForcing, setTbForcing] = useState(false)
+  const { data: tbData, isLoading: tbLoading } = useQuery({
+    queryKey: ['screener-tenbagger'],
+    queryFn: () => getTenBaggerScreener(false),
+    staleTime: 7 * 24 * 3_600_000,
+    retry: false,
+  })
+
+  // 10x 猎手 — 叙事错位观察名单
+  const { data: narrativeRows = [], isLoading: narrativeLoading } = useQuery({
+    queryKey: ['narrative-watchlist'],
+    queryFn: listNarrativeWatchlist,
+    staleTime: 60_000,
+  })
+  const [narrativeForm, setNarrativeForm] = useState<NarrativeEntryBody | null>(null)
+  const upsertMutation = useMutation({
+    mutationFn: upsertNarrativeEntry,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['narrative-watchlist'] })
+      setNarrativeForm(null)
+    },
+  })
+  const deleteMutation = useMutation({
+    mutationFn: deleteNarrativeEntry,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['narrative-watchlist'] }),
+  })
+
+  const refreshTenBagger = () => {
+    setTbForcing(true)
+    getTenBaggerScreener(true)
+      .then(d => {
+        queryClient.setQueryData(['screener-tenbagger'], d)
+        setTbForcing(false)
+      })
+      .catch(() => setTbForcing(false))
+  }
 
   // 兼容新格式 {rows, coverage, total} 和旧格式 []
   const rows: any[] = Array.isArray(scanResult) ? scanResult : (scanResult?.rows ?? [])
@@ -320,8 +359,9 @@ export default function MarketScan() {
       {/* Tab 导航 */}
       <div className="flex border-b border-slate-700 -mt-2">
         {([
-          { key: 'scan',    label: '因子扫描' },
-          { key: 'insider', label: '内部人买入' },
+          { key: 'scan',       label: '因子扫描' },
+          { key: 'insider',    label: '内部人买入' },
+          { key: 'tenbagger',  label: '10x 猎手' },
         ] as const).map(t => (
           <button
             key={t.key}
@@ -447,6 +487,241 @@ export default function MarketScan() {
               </div>
             </>
           )}
+        </div>
+      )}
+
+      {/* ── Tab: 10x 猎手 ───────────────────────────────────── */}
+      {tab === 'tenbagger' && (
+        <div className="flex flex-col gap-4">
+
+          {/* 筛选器面板 */}
+          <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-sm font-medium text-white">10x 候选筛选器</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Russell 2000 · 市值 $1–15B · 营收 YoY &gt; 30% · 内幕净买入（90天）
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                {tbData?.last_updated && (
+                  <span className="text-xs text-slate-500">
+                    更新：{new Date(tbData.last_updated).toLocaleString('zh-CN', { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                )}
+                <button
+                  onClick={refreshTenBagger}
+                  disabled={tbLoading || tbForcing}
+                  className="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded transition-colors"
+                >
+                  {tbForcing ? '运行中...' : '手动刷新'}
+                </button>
+              </div>
+            </div>
+
+            {(tbLoading || tbForcing) && !tbData && (
+              <div className="text-xs text-slate-500 py-8 text-center">
+                正在扫描 Russell 2000（首次运行约需 2–5 分钟）...
+              </div>
+            )}
+
+            {tbData && (
+              <>
+                <div className="text-xs text-slate-500 mb-3">
+                  共扫描 {tbData.total_scanned} 只，通过过滤 {tbData.total_passed} 只，展示前 {tbData.rows?.length ?? 0} 名
+                </div>
+                {tbData.rows?.length === 0 ? (
+                  <div className="text-xs text-slate-500 py-6 text-center">无符合条件的股票</div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-slate-400 text-xs border-b border-slate-700">
+                          <th className="px-3 py-2 text-left font-medium">#</th>
+                          <th className="px-3 py-2 text-left font-medium">股票</th>
+                          <th className="px-3 py-2 text-right font-medium">市值(B)</th>
+                          <th className="px-3 py-2 text-right font-medium">营收 YoY</th>
+                          <th className="px-3 py-2 text-right font-medium">内幕评分</th>
+                          <th className="px-3 py-2 text-right font-medium">买入人数</th>
+                          <th className="px-3 py-2 text-right font-medium">买入金额</th>
+                          <th className="px-3 py-2 text-right font-medium">最近内幕</th>
+                          <th className="px-3 py-2 text-left font-medium">行业</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-700/50">
+                        {(tbData.rows as any[]).map((r: any, i: number) => (
+                          <tr key={r.symbol} className="hover:bg-slate-700/30 transition-colors">
+                            <td className="px-3 py-2 text-slate-500 text-xs">{i + 1}</td>
+                            <td className="px-3 py-2 font-mono font-medium text-white">{r.symbol}</td>
+                            <td className="px-3 py-2 text-right text-slate-300 text-xs font-mono">${r.market_cap_b?.toFixed(1)}</td>
+                            <td className="px-3 py-2 text-right"><FmtPct v={r.revenue_growth} /></td>
+                            <td className="px-3 py-2 text-right">
+                              <span className="text-yellow-400">{'★'.repeat(r.insider_score)}</span>
+                              <span className="text-slate-600">{'★'.repeat(3 - r.insider_score)}</span>
+                            </td>
+                            <td className="px-3 py-2 text-right text-slate-300 text-xs">{r.insider_count} 人</td>
+                            <td className="px-3 py-2 text-right text-green-400 font-mono text-xs">
+                              ${r.insider_value >= 1_000_000
+                                ? `${(r.insider_value / 1_000_000).toFixed(1)}M`
+                                : `${(r.insider_value / 1_000).toFixed(0)}K`}
+                            </td>
+                            <td className="px-3 py-2 text-right text-slate-500 text-xs">{r.last_insider_date}</td>
+                            <td className="px-3 py-2 text-xs text-slate-400 max-w-32 truncate">{r.industry || r.sector || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </>
+            )}
+
+            {!tbData && !tbLoading && !tbForcing && (
+              <div className="text-xs text-slate-500 py-6 text-center">点击「手动刷新」开始扫描</div>
+            )}
+          </div>
+
+          {/* 叙事错位观察名单 */}
+          <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h3 className="text-sm font-medium text-white">叙事错位观察名单</h3>
+                <p className="text-xs text-slate-500 mt-0.5">记录被错误分类的股票——旧类别 → 新叙事</p>
+              </div>
+              <button
+                onClick={() => setNarrativeForm({ symbol: '', old_category: '', new_narrative: '', thesis_notes: '', target_price: null })}
+                className="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 text-white rounded transition-colors"
+              >
+                + 新增
+              </button>
+            </div>
+
+            {/* 新增/编辑表单 */}
+            {narrativeForm !== null && (
+              <div className="mb-4 p-3 bg-slate-700/50 rounded-lg border border-slate-600 flex flex-col gap-2">
+                <div className="grid grid-cols-2 gap-2">
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">股票代码 *</label>
+                    <input
+                      className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white font-mono uppercase focus:outline-none focus:border-blue-500"
+                      placeholder="e.g. PLTR"
+                      value={narrativeForm.symbol}
+                      onChange={e => setNarrativeForm({ ...narrativeForm, symbol: e.target.value.toUpperCase() })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">目标价（可选）</label>
+                    <input
+                      type="number"
+                      className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white font-mono focus:outline-none focus:border-blue-500"
+                      placeholder="e.g. 50.00"
+                      value={narrativeForm.target_price ?? ''}
+                      onChange={e => setNarrativeForm({ ...narrativeForm, target_price: e.target.value ? parseFloat(e.target.value) : null })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">旧类别</label>
+                    <input
+                      className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
+                      placeholder="e.g. 传统 SaaS"
+                      value={narrativeForm.old_category ?? ''}
+                      onChange={e => setNarrativeForm({ ...narrativeForm, old_category: e.target.value })}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-400 mb-1 block">新叙事</label>
+                    <input
+                      className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500"
+                      placeholder="e.g. AI 基建核心"
+                      value={narrativeForm.new_narrative ?? ''}
+                      onChange={e => setNarrativeForm({ ...narrativeForm, new_narrative: e.target.value })}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="text-xs text-slate-400 mb-1 block">投资逻辑</label>
+                  <textarea
+                    className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none focus:border-blue-500 resize-none"
+                    rows={2}
+                    placeholder="简述为什么这个叙事会被重新定价..."
+                    value={narrativeForm.thesis_notes ?? ''}
+                    onChange={e => setNarrativeForm({ ...narrativeForm, thesis_notes: e.target.value })}
+                  />
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => setNarrativeForm(null)}
+                    className="px-3 py-1 text-xs text-slate-400 hover:text-white transition-colors"
+                  >
+                    取消
+                  </button>
+                  <button
+                    disabled={!narrativeForm.symbol || upsertMutation.isPending}
+                    onClick={() => upsertMutation.mutate(narrativeForm)}
+                    className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-500 disabled:bg-slate-600 disabled:cursor-not-allowed text-white rounded transition-colors"
+                  >
+                    {upsertMutation.isPending ? '保存中...' : '保存'}
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {narrativeLoading && <div className="text-xs text-slate-500 py-4 text-center">加载中...</div>}
+
+            {!narrativeLoading && (narrativeRows as any[]).length === 0 && narrativeForm === null && (
+              <div className="text-xs text-slate-500 py-6 text-center">暂无记录，点击「新增」添加第一条叙事</div>
+            )}
+
+            {!narrativeLoading && (narrativeRows as any[]).length > 0 && (
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-slate-400 text-xs border-b border-slate-700">
+                      <th className="px-3 py-2 text-left font-medium">股票</th>
+                      <th className="px-3 py-2 text-left font-medium">旧类别</th>
+                      <th className="px-3 py-2 text-left font-medium">新叙事</th>
+                      <th className="px-3 py-2 text-left font-medium">投资逻辑</th>
+                      <th className="px-3 py-2 text-right font-medium">目标价</th>
+                      <th className="px-3 py-2 text-right font-medium">添加日期</th>
+                      <th className="px-3 py-2 text-right font-medium">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-700/50">
+                    {(narrativeRows as any[]).map((r: any) => (
+                      <tr key={r.id} className="hover:bg-slate-700/30 transition-colors">
+                        <td className="px-3 py-2 font-mono font-medium text-white">{r.symbol}</td>
+                        <td className="px-3 py-2 text-xs text-slate-400">{r.old_category || '-'}</td>
+                        <td className="px-3 py-2 text-xs text-blue-400">{r.new_narrative || '-'}</td>
+                        <td className="px-3 py-2 text-xs text-slate-400 max-w-48 truncate" title={r.thesis_notes}>{r.thesis_notes || '-'}</td>
+                        <td className="px-3 py-2 text-right text-xs font-mono text-slate-300">
+                          {r.target_price ? `$${r.target_price.toFixed(2)}` : '-'}
+                        </td>
+                        <td className="px-3 py-2 text-right text-xs text-slate-500">
+                          {r.added_at ? r.added_at.slice(0, 10) : '-'}
+                        </td>
+                        <td className="px-3 py-2 text-right">
+                          <div className="flex gap-2 justify-end">
+                            <button
+                              onClick={() => setNarrativeForm({ symbol: r.symbol, old_category: r.old_category, new_narrative: r.new_narrative, thesis_notes: r.thesis_notes, target_price: r.target_price })}
+                              className="text-xs text-slate-400 hover:text-white transition-colors"
+                            >
+                              编辑
+                            </button>
+                            <button
+                              onClick={() => deleteMutation.mutate(r.id)}
+                              className="text-xs text-red-500 hover:text-red-400 transition-colors"
+                            >
+                              删除
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

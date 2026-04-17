@@ -607,3 +607,149 @@ def get_insider_data(days: int = None, min_value_k: int = None) -> list[dict]:
     ]
     rows.sort(key=lambda x: x['total_value'], reverse=True)
     return rows
+
+
+# ── 10x 候选筛选器 ─────────────────────────────────────────
+
+_TENBAGGER_CACHE = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'tenbagger_cache.json')
+_TENBAGGER_TTL_DAYS = 7
+
+
+def screen_tenbagger(force: bool = False) -> dict:
+    """
+    Russell 2000 10x 候选筛选器，默认 7 天本地缓存。
+    force=True 跳过缓存强制重算。
+    过滤：市值 1–15B、营收 YoY > 30%、内幕净买入（90 天内有记录）。
+    排序：insider_value * (1 + revenue_growth) 复合打分。
+    """
+    import json
+    from datetime import datetime, timedelta
+
+    cache_path = os.path.normpath(_TENBAGGER_CACHE)
+    if not force and os.path.exists(cache_path):
+        try:
+            with open(cache_path, encoding='utf-8') as f:
+                cached = json.load(f)
+            last_updated = datetime.fromisoformat(cached['last_updated'])
+            if datetime.now() - last_updated < timedelta(days=_TENBAGGER_TTL_DAYS):
+                return cached
+        except Exception:
+            pass
+
+    from core.universe import get_russell2000_tickers, get_stock_info
+    from core.insider import get_insider_buys
+
+    tickers = get_russell2000_tickers()
+    total_scanned = len(tickers)
+
+    info_map = get_stock_info(tickers)
+    insider_map = get_insider_buys(days=90, min_value_k=100)
+
+    rows = []
+    for sym in tickers:
+        info = info_map.get(sym, {})
+        cap = info.get('market_cap_b')
+        rev = info.get('revenue_growth')
+
+        if cap is None or not (1.0 <= cap <= 15.0):
+            continue
+        if rev is None or rev <= 0.30:
+            continue
+        ins = insider_map.get(sym, {})
+        if not ins or ins.get('score', 0) < 1:
+            continue
+
+        rows.append({
+            'symbol':            sym,
+            'market_cap_b':      cap,
+            'revenue_growth':    rev,
+            'insider_score':     ins.get('score', 0),
+            'insider_count':     ins.get('count', 0),
+            'insider_value':     ins.get('total_value', 0),
+            'last_insider_date': ins.get('last_date', ''),
+            'sector':            info.get('sector') or '',
+            'industry':          info.get('industry') or '',
+        })
+
+    rows.sort(key=lambda x: x['insider_value'] * (1 + x['revenue_growth']), reverse=True)
+
+    result = {
+        'rows':          rows[:30],
+        'last_updated':  datetime.now().isoformat(timespec='seconds'),
+        'total_scanned': total_scanned,
+        'total_passed':  len(rows),
+    }
+
+    os.makedirs(os.path.dirname(cache_path), exist_ok=True)
+    try:
+        with open(cache_path, 'w', encoding='utf-8') as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+    return result
+
+
+# ── 叙事错位观察名单 ─────────────────────────────────────────
+
+_NARRATIVE_PATH = os.path.join(os.path.dirname(__file__), '..', '..', 'data', 'narrative_watchlist.json')
+
+
+def list_narrative_watchlist() -> list[dict]:
+    import json
+    path = os.path.normpath(_NARRATIVE_PATH)
+    if not os.path.exists(path):
+        return []
+    with open(path, encoding='utf-8') as f:
+        return json.load(f)
+
+
+def _save_narrative_watchlist(entries: list[dict]):
+    import json
+    path = os.path.normpath(_NARRATIVE_PATH)
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, 'w', encoding='utf-8') as f:
+        json.dump(entries, f, ensure_ascii=False, indent=2)
+
+
+def upsert_narrative_entry(symbol: str, old_category: str, new_narrative: str,
+                            thesis_notes: str, target_price=None) -> dict:
+    from datetime import datetime
+    entries = list_narrative_watchlist()
+    sym = symbol.upper().strip()
+    now = datetime.now().isoformat(timespec='seconds')
+
+    for entry in entries:
+        if entry['symbol'] == sym:
+            entry.update({
+                'old_category':  old_category,
+                'new_narrative': new_narrative,
+                'thesis_notes':  thesis_notes,
+                'target_price':  target_price,
+                'updated_at':    now,
+            })
+            _save_narrative_watchlist(entries)
+            return entry
+
+    entry = {
+        'id':            max((e['id'] for e in entries), default=0) + 1,
+        'symbol':        sym,
+        'old_category':  old_category,
+        'new_narrative': new_narrative,
+        'thesis_notes':  thesis_notes,
+        'target_price':  target_price,
+        'added_at':      now,
+        'updated_at':    now,
+    }
+    entries.append(entry)
+    _save_narrative_watchlist(entries)
+    return entry
+
+
+def delete_narrative_entry(entry_id: int) -> bool:
+    entries = list_narrative_watchlist()
+    new_entries = [e for e in entries if e['id'] != entry_id]
+    if len(new_entries) == len(entries):
+        return False
+    _save_narrative_watchlist(new_entries)
+    return True

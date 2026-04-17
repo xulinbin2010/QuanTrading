@@ -29,6 +29,7 @@ from web.api.scheduler  import router as scheduler_router
 from web.api.config     import router as config_router
 from web.api.optimizer  import router as optimizer_router
 from web.api.watchlist  import router as watchlist_router
+from web.api.screener   import router as screener_router
 
 
 @asynccontextmanager
@@ -77,6 +78,7 @@ app.include_router(scheduler_router)
 app.include_router(config_router)
 app.include_router(optimizer_router)
 app.include_router(watchlist_router)
+app.include_router(screener_router)
 
 
 @app.get('/api/health')

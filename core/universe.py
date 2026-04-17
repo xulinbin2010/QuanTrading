@@ -153,17 +153,27 @@ def get_sp500_ndx_tickers(extra: list[str] = None) -> list[str]:
     return combined
 
 
+def get_russell2000_tickers(extra: list[str] = None) -> list[str]:
+    """Russell 2000 成分股（iShares IWM 持仓 CSV）。无内置列表；网络失败时抛出异常。"""
+    tickers = _try_iwm_holdings()
+    if not tickers:
+        raise ValueError("Russell 2000 股票池获取失败（iShares IWM 请求失败，请检查网络）")
+    return _append_extra(tickers, extra)
+
+
 def get_tickers(universe: str = 'sp500', extra: list[str] = None) -> list[str]:
     """统一入口，按名称选择股票池"""
     mapping = {
-        'sp500+ndx':  get_sp500_ndx_tickers,
-        'sp500':      get_sp500_tickers,
-        'nasdaq100':  get_nasdaq100_tickers,
-        'ndx':        get_nasdaq100_tickers,
+        'sp500+ndx':   get_sp500_ndx_tickers,
+        'sp500':       get_sp500_tickers,
+        'nasdaq100':   get_nasdaq100_tickers,
+        'ndx':         get_nasdaq100_tickers,
+        'russell2000': get_russell2000_tickers,
+        'iwm':         get_russell2000_tickers,
     }
     fn = mapping.get(universe.lower())
     if fn is None:
-        raise ValueError(f"未知股票池：{universe}，可选：sp500+ndx / sp500 / nasdaq100")
+        raise ValueError(f"未知股票池：{universe}，可选：sp500+ndx / sp500 / nasdaq100 / russell2000")
     return fn(extra=extra)
 
 
@@ -201,6 +211,38 @@ def _try_ivv_holdings() -> list[str]:
         return tickers
     except Exception as e:
         print(f"  iShares IVV 请求失败，回退 Wikipedia：{e}")
+        return []
+
+
+def _try_iwm_holdings() -> list[str]:
+    """从 iShares IWM ETF 官方持仓 CSV 获取 Russell 2000 成分股。"""
+    url = (
+        'https://www.ishares.com/us/products/239710/ishares-russell-2000-etf'
+        '/1467271812596.ajax?fileType=csv&fileName=IWM_holdings&dataType=fund'
+    )
+    headers = {
+        'User-Agent': (
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) '
+            'Chrome/120.0.0.0 Safari/537.36'
+        )
+    }
+    try:
+        resp = requests.get(url, headers=headers, timeout=20)
+        resp.raise_for_status()
+        df = pd.read_csv(io.StringIO(resp.text), skiprows=9)
+        stocks = df[df['Asset Class'] == 'Equity']
+        tickers = (
+            stocks['Ticker']
+            .dropna()
+            .str.strip()
+            .loc[lambda s: s.str.match(r'^[A-Z]')]
+            .tolist()
+        )
+        print(f"  iShares IWM 获取成功：{len(tickers)} 只 Russell 2000 成分股")
+        return tickers
+    except Exception as e:
+        print(f"  iShares IWM 请求失败：{e}")
         return []
 
 

@@ -109,6 +109,27 @@ export const updateIBConnection = (params: {
   IB_HOST: string; IB_PORT: number; IB_CLIENT_ID: number; IB_TIMEOUT: number
 }) => api.put('/config/connection/ib', params).then(r => r.data)
 
+// ── 10x 猎手 / Screener ──────────────────────────────────
+
+export const getTenBaggerScreener = (force = false) =>
+  api.get('/screener/tenbagger', { params: { force } }).then(r => r.data)
+
+export const listNarrativeWatchlist = () =>
+  api.get('/screener/narrative').then(r => r.data as any[])
+
+export interface NarrativeEntryBody {
+  symbol: string
+  old_category?: string
+  new_narrative?: string
+  thesis_notes?: string
+  target_price?: number | null
+}
+export const upsertNarrativeEntry = (body: NarrativeEntryBody) =>
+  api.post('/screener/narrative', body).then(r => r.data)
+
+export const deleteNarrativeEntry = (id: number) =>
+  api.delete(`/screener/narrative/${id}`).then(r => r.data)
+
 // ── 任务调度 ──────────────────────────────────────────────
 
 export const getSchedulerTasks  = () => api.get('/scheduler/tasks').then(r => r.data)

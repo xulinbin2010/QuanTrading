@@ -65,7 +65,8 @@
       "Bash(ls:*)",
       "Bash(kill -9 43966 45069 62340)",
       "Bash(python3:*)",
-      "Skill(update-config)"
+      "Skill(update-config)",
+      "Bash(git push *)"
     ]
   }
 }

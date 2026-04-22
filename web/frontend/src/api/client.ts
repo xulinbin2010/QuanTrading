@@ -74,6 +74,23 @@ export const getVixAnalysis = (params: {
   threshold?: number; start?: string; end?: string; symbol?: string; mode?: string
 }) => api.get('/backtest/vix', { params }).then(r => r.data)
 
+export const listFactorCombos = () =>
+  api.get('/backtest/combos').then(r => r.data as FactorCombo[])
+export const saveFactorCombo = (name: string, factors: string[], factor_params?: Record<string, any>) =>
+  api.post('/backtest/combos', { name, factors, factor_params: factor_params ?? {} }).then(r => r.data as FactorCombo)
+export const deleteFactorCombo = (id: string) =>
+  api.delete(`/backtest/combos/${id}`).then(r => r.data)
+
+export interface FactorCombo {
+  id: string
+  name: string
+  builtin: boolean
+  factors: string[]
+  factor_params: Record<string, any>
+  description?: string
+  created_at?: string
+}
+
 export const runWalkForward = (params: {
   train_months: number; test_months: number
   total_start: string; total_end?: string

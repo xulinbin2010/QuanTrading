@@ -114,6 +114,12 @@ class BacktestRequest(BaseModel):
     factor_params: Optional[dict] = None          # 因子参数覆盖，如 {"rs_score": {"period": 126}}
 
 
+class FactorComboSaveRequest(BaseModel):
+    name: str
+    factors: list[str]
+    factor_params: Optional[dict] = None
+
+
 class BacktestTaskResponse(BaseModel):
     task_id: str
 

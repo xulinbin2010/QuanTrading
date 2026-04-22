@@ -164,8 +164,47 @@ def get_russell2000_tickers(extra: list[str] = None) -> list[str]:
     return _append_extra(tickers, extra)
 
 
+_EXTRA_TICKERS_FILE = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), '..', 'data', 'extra_tickers.txt')
+)
+
+
+def load_extra_tickers() -> list[str]:
+    """从 data/extra_tickers.txt 读取用户自定义扩展股票，# 注释和空行忽略。"""
+    if not os.path.exists(_EXTRA_TICKERS_FILE):
+        return []
+    tickers = []
+    with open(_EXTRA_TICKERS_FILE, encoding='utf-8') as f:
+        for line in f:
+            line = line.split('#', 1)[0].strip()
+            if line:
+                tickers.append(line.upper())
+    return tickers
+
+
+def _rewrite_extra_file(clean_tickers: list[str]) -> None:
+    """回写 extra_tickers.txt，保留注释行和空行，只保留 clean_tickers 中的 ticker（每个只留首次出现）。"""
+    if not os.path.exists(_EXTRA_TICKERS_FILE):
+        return
+    remaining = {t.upper() for t in clean_tickers}
+    with open(_EXTRA_TICKERS_FILE, encoding='utf-8') as f:
+        lines = f.readlines()
+    new_lines = []
+    for line in lines:
+        stripped = line.split('#', 1)[0].strip()
+        if stripped:
+            sym = stripped.upper()
+            if sym in remaining:
+                new_lines.append(line)
+                remaining.discard(sym)  # 只保留首次出现，后续重复跳过
+        else:
+            new_lines.append(line)
+    with open(_EXTRA_TICKERS_FILE, 'w', encoding='utf-8') as f:
+        f.writelines(new_lines)
+
+
 def get_tickers(universe: str = 'sp500', extra: list[str] = None) -> list[str]:
-    """统一入口，按名称选择股票池"""
+    """统一入口，按名称选择股票池。自动合并 data/extra_tickers.txt 中的自定义股票。"""
     mapping = {
         'sp500+ndx':   get_sp500_ndx_tickers,
         'sp500':       get_sp500_tickers,
@@ -177,7 +216,47 @@ def get_tickers(universe: str = 'sp500', extra: list[str] = None) -> list[str]:
     fn = mapping.get(universe.lower())
     if fn is None:
         raise ValueError(f"未知股票池：{universe}，可选：sp500+ndx / sp500 / nasdaq100 / russell2000")
-    return fn(extra=extra)
+
+    # 先获取基础股票池（不含 file extra）
+    base = fn(extra=extra)
+    base_set = set(base)
+
+    # 加载并去重 extra_tickers.txt
+    file_extra = load_extra_tickers()
+    seen: set[str] = set()
+    clean: list[str] = []
+    dups_internal: list[str] = []
+    dups_base: list[str] = []
+    for t in file_extra:
+        if t in seen:
+            dups_internal.append(t)
+        elif t in base_set:
+            dups_base.append(t)
+            seen.add(t)
+        else:
+            seen.add(t)
+            clean.append(t)
+
+    if dups_internal or dups_base:
+        parts = []
+        if dups_internal:
+            parts.append(f"文件内重复 {dups_internal}")
+        if dups_base:
+            parts.append(f"与 {universe} 重复 {dups_base}")
+        print(f"  extra_tickers.txt 自动移除 {len(dups_internal)+len(dups_base)} 只：{' | '.join(parts)}")
+        _rewrite_extra_file(clean)
+
+    # 将剩余 clean extras 追加到结果
+    added = []
+    for t in clean:
+        if t not in base_set:
+            base.append(t)
+            base_set.add(t)
+            added.append(t)
+    if added:
+        print(f"  extra_tickers.txt 追加 {len(added)} 只：{added}，股票池合计 {len(base)} 只")
+
+    return base
 
 
 # ── 内部工具函数 ──────────────────────────────────────────────────

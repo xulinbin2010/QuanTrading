@@ -198,3 +198,78 @@ html.night input, html.night select, html.night textarea {
 
 html.night ::-webkit-scrollbar-track { background: #eeede9; }
 html.night ::-webkit-scrollbar-thumb { background: #b8b6b0; border-radius: 3px; }
+
+
+/* ════════════════════════════════════════════════════════════
+   因子标签（回测页 / 因子看板）三主题自适应
+   ════════════════════════════════════════════════════════════ */
+
+/* 未选中 —— 深色模式默认 */
+.factor-tag {
+  border: 1px solid var(--color-slate-600, #475569);
+  color: var(--color-slate-300, #cbd5e1);
+  background: transparent;
+  transition: border-color .15s, color .15s, background .15s;
+}
+.factor-tag:hover {
+  border-color: var(--color-slate-400, #94a3b8);
+  color: var(--color-slate-100, #f1f5f9);
+}
+.factor-tag-key {
+  color: var(--color-slate-500, #64748b);
+  opacity: 1;           /* 去掉 opacity-50，改用明确颜色 */
+}
+.factor-tag-signal {
+  color: var(--color-slate-500, #64748b);
+}
+
+/* 选中 —— 深色模式默认 */
+.factor-tag-selected {
+  border: 1px solid #3b82f6;                  /* blue-500 */
+  background: rgba(59, 130, 246, 0.20);
+  color: #93c5fd;                             /* blue-300 —— 深色背景上清晰 */
+}
+.factor-tag-selected .factor-tag-key {
+  color: #60a5fa;                             /* blue-400 */
+}
+.factor-tag-selected .factor-tag-signal {
+  color: #60a5fa;
+}
+
+/* 未选中 —— 浅色主题（day / night 共用） */
+html.day .factor-tag,
+html.night .factor-tag {
+  border-color: var(--color-slate-600);       /* #c8d3e0 / #d0cdc4 */
+  color: var(--color-slate-400);              /* #4f5e72 / #56534e — 深色可读 */
+  background: transparent;
+}
+html.day .factor-tag:hover,
+html.night .factor-tag:hover {
+  border-color: var(--color-slate-400);
+  color: var(--color-slate-200);              /* 主文字色，最深 */
+  background: var(--color-slate-700, #dde5f0);
+}
+html.day .factor-tag-key,
+html.night .factor-tag-key {
+  color: var(--color-slate-500);             /* 稍浅但仍可读 */
+}
+html.day .factor-tag-signal,
+html.night .factor-tag-signal {
+  color: var(--color-slate-500);
+}
+
+/* 选中 —— 浅色主题 */
+html.day .factor-tag-selected,
+html.night .factor-tag-selected {
+  border-color: #2563eb;                      /* blue-600 */
+  background: #dbeafe;                        /* blue-100 —— 浅蓝背景 */
+  color: #1e40af;                             /* blue-800 —— 深蓝文字，高对比 */
+}
+html.day .factor-tag-selected .factor-tag-key,
+html.night .factor-tag-selected .factor-tag-key {
+  color: #1d4ed8;                             /* blue-700 */
+}
+html.day .factor-tag-selected .factor-tag-signal,
+html.night .factor-tag-selected .factor-tag-signal {
+  color: #1d4ed8;
+}

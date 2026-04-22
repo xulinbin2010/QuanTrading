@@ -14,6 +14,7 @@ from strategies.rs_momentum import RSMomentum
 from strategies.factors.atr import compute_atr
 from core.universe import get_tickers, get_stock_info
 from core.data_store import DataStore
+from core.market_regime import compute_mss_series
 from core.fmt import lj, rj
 import config
 
@@ -257,6 +258,19 @@ def run_backtest(
             _ma200_matrix = _close_matrix.rolling(200).mean()
             breadth_series = (_close_matrix > _ma200_matrix).mean(axis=1)
 
+    # ── MSS 逐日序列 ─────────────────────────────────────────
+    mss_series = compute_mss_series(spy_close, vix_close_series, breadth_series)
+
+    # MSS 自适应参数（用 getattr 兼容旧 config.py 无该属性的情况）
+    MSS_BULL_THRESHOLD      = getattr(config, 'MSS_BULL_THRESHOLD',      0.5)
+    MSS_BEAR_THRESHOLD      = getattr(config, 'MSS_BEAR_THRESHOLD',      0.0)
+    MSS_BULL_MAX_POS        = getattr(config, 'MSS_BULL_MAX_POS',        8)
+    MSS_BULL_TRAIL_ACTIVATE = getattr(config, 'MSS_BULL_TRAIL_ACTIVATE', 0.15)
+    MSS_BULL_TRAIL_PCT      = getattr(config, 'MSS_BULL_TRAIL_PCT',      -0.10)
+    MSS_BEAR_MAX_POS        = getattr(config, 'MSS_BEAR_MAX_POS',        4)
+    MSS_BEAR_TRAIL_ACTIVATE = getattr(config, 'MSS_BEAR_TRAIL_ACTIVATE', 0.06)
+    MSS_BEAR_TRAIL_PCT      = getattr(config, 'MSS_BEAR_TRAIL_PCT',      -0.06)
+
     # ── 逐日模拟 ────────────────────────────────────────────
     cash           = INITIAL_CASH
     positions      = {}
@@ -371,7 +385,7 @@ def run_backtest(
             else:
                 peak_ret  = (pos['peak_price'] - pos['entry_price']) / pos['entry_price']
                 trail_ret = (price - pos['peak_price']) / pos['peak_price']
-                if peak_ret >= TRAIL_STOP_ACTIVATE_PCT and trail_ret <= TRAIL_STOP_PCT:
+                if peak_ret >= eff_trail_activate and trail_ret <= eff_trail_pct:
                     pending_sells[sym] = '移动止损'
                 elif (TIME_STOP_DAYS > 0
                       and days_held >= TIME_STOP_DAYS
@@ -398,7 +412,23 @@ def run_backtest(
         breadth_weak  = breadth_today is not None and float(breadth_today) < BREADTH_MIN_PCT
         if breadth_weak:
             breadth_cap_days += 1
-        effective_max_pos = min(MAX_POSITIONS, BREADTH_MAX_POS) if breadth_weak else MAX_POSITIONS
+
+        # MSS 自适应：覆盖仓位上限和移动止损参数
+        mss_today = float(mss_series.get(date, 0.0))
+        if mss_today >= MSS_BULL_THRESHOLD:
+            eff_max_pos       = MSS_BULL_MAX_POS
+            eff_trail_activate = MSS_BULL_TRAIL_ACTIVATE
+            eff_trail_pct     = MSS_BULL_TRAIL_PCT
+        elif mss_today < MSS_BEAR_THRESHOLD:
+            eff_max_pos       = MSS_BEAR_MAX_POS
+            eff_trail_activate = MSS_BEAR_TRAIL_ACTIVATE
+            eff_trail_pct     = MSS_BEAR_TRAIL_PCT
+        else:
+            eff_max_pos       = MAX_POSITIONS
+            eff_trail_activate = TRAIL_STOP_ACTIVATE_PCT
+            eff_trail_pct     = TRAIL_STOP_PCT
+        # 市场宽度进一步限制仓位上限
+        effective_max_pos = min(eff_max_pos, BREADTH_MAX_POS) if breadth_weak else eff_max_pos
 
         # 买入信号
         free_slots = effective_max_pos - len(positions) + len(pending_sells)

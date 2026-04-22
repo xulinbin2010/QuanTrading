@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { runBacktest, runWalkForward, getBacktestStatus, getBacktestResult, getBacktestHistory, getFactorRegistry, getVixAnalysis } from '../api/client'
+import { runBacktest, runWalkForward, getBacktestStatus, getBacktestResult, getBacktestHistory, getFactorRegistry, getVixAnalysis, listFactorCombos, saveFactorCombo, deleteFactorCombo } from '../api/client'
+import type { FactorCombo } from '../api/client'
 import ReactECharts from 'echarts-for-react'
 
 const PERIODS = ['1mo', '3mo', '6mo', '1y']
@@ -828,6 +829,8 @@ export default function Backtest() {
   const [activeTask, setActiveTask] = useState<string | null>(null)
   const [tab, setTab] = useState<'config' | 'history' | 'vix' | 'walkforward'>('config')
   const [selectedFactors, setSelectedFactors] = useState<string[]>(() => loadStored('bt_factors', []))
+  const [comboSaveName, setComboSaveName] = useState('')
+  const [showComboSave, setShowComboSave] = useState(false)
 
   useEffect(() => { localStorage.setItem('bt_params', JSON.stringify(params)) }, [params])
   useEffect(() => { localStorage.setItem('bt_factors', JSON.stringify(selectedFactors)) }, [selectedFactors])  // 空 = 使用默认 RSMomentum
@@ -842,6 +845,25 @@ export default function Backtest() {
   // 只显示技术因子（基本面因子无法参与时序回测）
   const techFactors = (registry as any[]).filter((f: any) => f.data_type === 'technical' && !f.is_dependency)
   const registryMap: Record<string, any> = Object.fromEntries((registry as any[]).map((f: any) => [f.key, f]))
+
+  // 因子组合
+  const { data: combos = [], refetch: refetchCombos } = useQuery<FactorCombo[]>({
+    queryKey: ['factor-combos'],
+    queryFn:  listFactorCombos,
+    staleTime: 60_000,
+  })
+  const { mutate: saveMutate, isPending: isSaving } = useMutation({
+    mutationFn: () => saveFactorCombo(comboSaveName, selectedFactors),
+    onSuccess: () => {
+      setShowComboSave(false)
+      setComboSaveName('')
+      refetchCombos()
+    },
+  })
+  const { mutate: deleteMutate } = useMutation({
+    mutationFn: (id: string) => deleteFactorCombo(id),
+    onSuccess: () => refetchCombos(),
+  })
 
   const toggleFactor = (key: string) => {
     setSelectedFactors(prev =>
@@ -977,9 +999,78 @@ export default function Backtest() {
 
         {/* 因子组合 */}
         <div className="mt-4">
+          {/* 工具栏：组合选择 + 保存 */}
+          <div className="flex items-center gap-2 mb-2">
+            {/* 组合下拉 */}
+            <select
+              className="w-44 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-slate-200 cursor-pointer"
+              value=""
+              onChange={e => {
+                const combo = combos.find(c => c.id === e.target.value)
+                if (combo) setSelectedFactors(combo.factors)
+                e.target.value = ''
+              }}
+            >
+              <option value="">— 加载已保存组合 —</option>
+              {combos.map(c => (
+                <option key={c.id} value={c.id}>
+                  {c.builtin ? '★ ' : ''}{c.name}
+                </option>
+              ))}
+            </select>
+
+            {/* 保存按钮 / 输入框 */}
+            {showComboSave ? (
+              <div className="flex items-center gap-1">
+                <input
+                  autoFocus
+                  value={comboSaveName}
+                  onChange={e => setComboSaveName(e.target.value)}
+                  onKeyDown={e => { if (e.key === 'Enter') saveMutate(); if (e.key === 'Escape') setShowComboSave(false) }}
+                  placeholder="组合名称"
+                  className="bg-slate-700 border border-blue-500 rounded px-2 py-1 text-xs text-slate-200 w-28"
+                />
+                <button
+                  type="button"
+                  onClick={() => saveMutate()}
+                  disabled={isSaving || !comboSaveName.trim() || selectedFactors.length === 0}
+                  className="px-5 py-2 bg-blue-600 hover:bg-amber-500 disabled:opacity-50 text-white text-sm rounded font-medium transition-colors"
+                >
+                  {isSaving ? '…' : '保存'}
+                </button>
+                <button type="button" onClick={() => setShowComboSave(false)} className="text-xs text-slate-500 hover:text-slate-300 px-1">✕</button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setShowComboSave(true)}
+                disabled={selectedFactors.length === 0}
+                className="px-2 py-1 rounded text-xs border border-slate-600 text-slate-400 hover:border-blue-500 hover:text-blue-300 disabled:opacity-40 transition-colors"
+              >
+                💾 保存组合
+              </button>
+            )}
+
+            {/* 删除按钮（仅对用户组合）*/}
+            <button
+              type="button"
+              onClick={() => {
+                const name = window.prompt('输入要删除的组合名（内置组合无法删除）：')
+                if (!name) return
+                const c = combos.find(x => x.name === name && !x.builtin)
+                if (c) deleteMutate(c.id)
+                else alert('未找到可删除的组合（内置组合不可删除）')
+              }}
+              className="text-xs text-slate-600 hover:text-red-400 transition-colors px-1"
+              title="删除用户组合"
+            >
+              🗑
+            </button>
+          </div>
+
           <div className="flex items-center justify-between mb-2">
             <span className="text-xs text-slate-400">
-              因子组合
+              因子选择
               {selectedFactors.length === 0
                 ? <span className="ml-1.5 text-slate-500">（未选择 = 默认 RSMomentum）</span>
                 : <span className="ml-1.5 text-blue-400">{selectedFactors.length} 个已选</span>
@@ -990,7 +1081,7 @@ export default function Backtest() {
               onClick={() => setSelectedFactors(['rs_score', 'breakout', 'volume_surge', 'volume_divergence', 'trend_filter', 'drawdown_filter'])}
               className="text-xs text-slate-500 hover:text-slate-200 transition-colors"
             >
-              ↺ Reset RSMomentum
+              ↺ Reset
             </button>
           </div>
 
@@ -1011,16 +1102,12 @@ export default function Backtest() {
                     return (
                       <label
                         key={f.key}
-                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded border text-xs cursor-pointer transition-colors ${
-                          checked
-                            ? 'bg-blue-700/50 border-blue-500 text-blue-200'
-                            : 'border-slate-600 text-slate-400 hover:border-slate-400 hover:text-slate-200'
-                        }`}
+                        className={`flex items-center gap-1.5 px-2.5 py-1 rounded text-xs cursor-pointer factor-tag ${checked ? 'factor-tag-selected' : ''}`}
                       >
                         <input type="checkbox" checked={checked} onChange={() => toggleFactor(f.key)} className="hidden" />
                         {f.name}
-                        <span className="font-mono opacity-50">{f.key}</span>
-                        <span className="text-slate-500">
+                        <span className="font-mono text-xs factor-tag-key">{f.key}</span>
+                        <span className="factor-tag-signal">
                           {f.signal_type === 'sell_alert' ? '卖出' : f.signal_type === 'filter' ? '✓过滤' : '↑分数'}
                         </span>
                       </label>

@@ -36,6 +36,7 @@ from core.insider import get_insider_buys
 from core.earnings import prefetch_earnings, has_upcoming_earnings
 from strategies.rs_momentum import RSMomentum
 from strategies.factors.atr import compute_atr
+from core.market_regime import compute_mss, mss_label
 import config
 
 warnings.filterwarnings('ignore')
@@ -178,10 +179,11 @@ def scan_signals(
 
             if sig == 1:
                 buy_signals.append({
-                    'symbol':    symbol,
-                    'rs_score':  rs,
-                    'close':     latest['close'],
-                    'vol_ratio': vol_ratio,
+                    'symbol':           symbol,
+                    'rs_score':         rs,
+                    'close':            latest['close'],
+                    'vol_ratio':        vol_ratio,
+                    'drawdown_from_high': float(latest.get('drawdown_from_high', -0.15)),
                 })
             if symbol in held_symbols and sig == -1:
                 sell_alerts.append({
@@ -191,8 +193,6 @@ def scan_signals(
                 })
         except Exception:
             pass
-
-    buy_signals.sort(key=lambda x: x['rs_score'], reverse=True)
 
     # ── 市场宽度：S&P500 中站上 MA200 的比例 ─────────────────
     breadth_cap = False
@@ -266,14 +266,36 @@ def scan_signals(
             print(f"  [过滤] 市值/行业过滤移除 {n_removed} 只，剩余 {len(filtered)} 只买入候选")
         buy_signals = filtered
 
+    # ── 复合入场得分排序（过滤后执行，insider_score / sector 已就位）────────────
+    def _entry_score(sig: dict) -> float:
+        rs       = sig.get('rs_score', 0)
+        vol      = sig.get('vol_ratio', 1.0)
+        drawdown = sig.get('drawdown_from_high', -0.15)   # 负数，越接近 0 越强
+        insider  = sig.get('insider_score', 0)
+        # 量比加成：最高 +15%，3x 以上不再加分（避免一次性暴量失真）
+        vol_boost      = min(vol / 3.0, 1.0) * 0.15
+        # 近高点加成：drawdown=0% → +10%；drawdown=-30% → +0%
+        proximity_boost = max(0.0, (drawdown + 0.30) / 0.30) * 0.10
+        # 内幕加成：有内幕买入 → +10%（上限）
+        insider_boost   = min(insider / 10.0, 1.0) * 0.10
+        return rs * (1 + vol_boost + proximity_boost + insider_boost)
+
+    buy_signals.sort(key=_entry_score, reverse=True)
+
     # ── 财报日期预取（批量缓存，execute 阶段直接用缓存）────────────────────────
     if buy_signals and config.EARNINGS_AVOID_DAYS > 0:
         prefetch_earnings([s['symbol'] for s in buy_signals])
 
+    # ── 市场强度评分（MSS）────────────────────────────────────────────────────
+    mss = compute_mss(spy_close, vix_close, breadth_pct)
+    print(f"  MSS={mss:.2f} ({mss_label(mss)})  "
+          f"[SPY趋势/市场宽度{'' if breadth_pct is None else f'={breadth_pct:.0%}'}/VIX{'' if vix_close is None else f'={vix_close:.1f}'}]")
+
     return {'buy': buy_signals, 'sell': sell_alerts, '_prices': prices, '_atr': atr_map,
             '_signal_map': signal_map, 'spy_brake': spy_brake,
             '_vix': vix_close, '_vix_brake': vix_brake,
-            '_breadth': breadth_pct, '_breadth_cap': breadth_cap}
+            '_breadth': breadth_pct, '_breadth_cap': breadth_cap,
+            '_mss': mss}
 
 
 def market_is_open(ib) -> bool:
@@ -383,6 +405,25 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
     tif_label = {'DAY': '盘中市价单', 'OPG': '开盘集合竞价单(OPG)'}[tif]
     print(f"  订单类型：{tif_label}")
 
+    # ── MSS 自适应：根据市场强度动态覆盖止损/仓位参数 ────────────────────────
+    mss = signals.get('_mss', 0.0)
+    bull_thr = getattr(config, 'MSS_BULL_THRESHOLD',      0.5)
+    bear_thr = getattr(config, 'MSS_BEAR_THRESHOLD',      0.0)
+    if mss >= bull_thr:
+        eff_max_pos       = getattr(config, 'MSS_BULL_MAX_POS',        8)
+        eff_trail_activate = getattr(config, 'MSS_BULL_TRAIL_ACTIVATE', 0.15)
+        eff_trail_pct     = getattr(config, 'MSS_BULL_TRAIL_PCT',      -0.10)
+    elif mss < bear_thr:
+        eff_max_pos       = getattr(config, 'MSS_BEAR_MAX_POS',        4)
+        eff_trail_activate = getattr(config, 'MSS_BEAR_TRAIL_ACTIVATE', 0.06)
+        eff_trail_pct     = getattr(config, 'MSS_BEAR_TRAIL_PCT',      -0.06)
+    else:
+        eff_max_pos       = config.MAX_POSITIONS
+        eff_trail_activate = config.TRAIL_STOP_ACTIVATE_PCT
+        eff_trail_pct     = config.TRAIL_STOP_PCT
+    print(f"  MSS={mss:.2f} ({mss_label(mss)}) → 仓位上限={eff_max_pos}  "
+          f"移动止损激活={eff_trail_activate:.0%} 触发={eff_trail_pct:.0%}")
+
     net_liq   = account._get_value('NetLiquidation')
     cash      = account._get_value('TotalCashValue')
     positions = {p.contract.symbol: p for p in ib.positions()}
@@ -424,7 +465,7 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
     # ── 资金计算（与 backtest_rs.py 逻辑对齐）────────────────
     min_cash       = net_liq * CASH_RESERVE_PCT
     deployable     = max(0.0, cash - min_cash)
-    slots          = MAX_POSITIONS - n_held
+    slots          = eff_max_pos - n_held
     budget_per_pos = min(
         deployable / max(1, slots),
         net_liq * POSITION_PCT,
@@ -435,7 +476,7 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
     print(f"  当前现金    ${cash:>12,.0f}")
     print(f"  保留现金    ${min_cash:>12,.0f}  ({CASH_RESERVE_PCT:.0%} × 净值)")
     print(f"  可用资金    ${deployable:>12,.0f}")
-    print(f"  当前持仓    {n_held} 只 / 上限 {MAX_POSITIONS} 只  → 剩余槽位 {slots} 个")
+    print(f"  当前持仓    {n_held} 只 / 上限 {eff_max_pos} 只  → 剩余槽位 {slots} 个")
     print(f"  单仓预算    ${budget_per_pos:>12,.0f}  "
           f"(min( ${deployable:,.0f}/{max(1,slots)} , {POSITION_PCT:.0%}×净值${net_liq*POSITION_PCT:,.0f} ))")
     print(f"{'─'*54}")
@@ -512,7 +553,7 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
         peak      = _peak_price(sym, avg_cost, held_data.get(sym))
         peak_ret  = (peak - avg_cost) / avg_cost
         trail_ret = (cur_price - peak) / peak
-        if peak_ret >= TRAIL_STOP_ACTIVATE_PCT and trail_ret <= TRAIL_STOP_PCT:
+        if peak_ret >= eff_trail_activate and trail_ret <= eff_trail_pct:
             trail_stop_list.append({
                 'symbol': sym, 'qty': qty,
                 'avg_cost': avg_cost, 'cur_price': cur_price,
@@ -521,7 +562,7 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
 
     print(f"\n{'='*54}")
     if trail_stop_list:
-        print(f"  移动止损触发（浮盈>{TRAIL_STOP_ACTIVATE_PCT:.0%}后从峰值回撤>{abs(TRAIL_STOP_PCT):.0%}）：{len(trail_stop_list)} 只")
+        print(f"  移动止损触发（浮盈>{eff_trail_activate:.0%}后从峰值回撤>{abs(eff_trail_pct):.0%}）：{len(trail_stop_list)} 只")
         print(f"{'='*54}")
         for s in trail_stop_list:
             print(f"  [{s['symbol']}]  均价 ${s['avg_cost']:.2f}  峰值 ${s['peak']:.2f}"
@@ -654,7 +695,7 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
         for sym in exiting_syms if sym in stock_positions
     )
     effective_held = n_held - len(exiting_syms)
-    slots          = MAX_POSITIONS - effective_held
+    slots          = eff_max_pos - effective_held
     deployable     = max(0.0, cash + freed_cash - min_cash)
     budget_per_pos = min(
         deployable / max(1, slots),
@@ -673,7 +714,7 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
     if vix_brake_active:
         buy_list = []
     elif breadth_cap_active:
-        effective_max_pos = min(MAX_POSITIONS, config.BREADTH_MAX_POS)
+        effective_max_pos = min(eff_max_pos, config.BREADTH_MAX_POS)
         slots = max(0, effective_max_pos - effective_held)
 
     print(f"\n{'='*54}")

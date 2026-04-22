@@ -155,10 +155,10 @@ class DataStore:
 
         if latest is None:
             dl_from = requested_start                            # 完全没有数据
-        elif earliest is not None and earliest > start_date:
-            dl_from = requested_start                            # 历史不够，向前补
         elif latest >= min(end_date, last_trading):
-            return None                                          # 已经足够新
+            return None                                          # 已经足够新（优先判断）
+        elif earliest is not None and earliest > start_date:
+            dl_from = requested_start                            # 历史不够，向前补（仅在不是最新时）
         else:
             next_day = (latest + timedelta(days=1)).strftime('%Y-%m-%d')
             if next_day > end:
@@ -195,6 +195,7 @@ class DataStore:
         saved    = 0
         got_syms : set[str] = set()
         bad_syms : set[str] = set()
+        suspect_syms: set[str] = set()   # 批量数据中涨跌幅异常，需单只重试
         for sym in symbols:
             df = self._extract(raw, sym, len(symbols))
             if df is None or df.empty:
@@ -207,11 +208,46 @@ class DataStore:
                 new_rows = df[~df.index.isin(old.index)]
                 if new_rows.empty:
                     continue                          # 无新数据，跳过写入
+                # 校验新行的涨跌幅：若末行与已有数据衔接处涨跌超 50%，触发单只重试
+                if not old.empty and 'close' in old.columns and 'close' in new_rows.columns:
+                    last_old_close = old['close'].iloc[-1]
+                    first_new_close = new_rows['close'].iloc[0]
+                    if last_old_close > 0 and abs(first_new_close / last_old_close - 1) > 0.50:
+                        print(f'  [DataStore] {sym} 涨跌幅异常 '
+                              f'({last_old_close:.2f}→{first_new_close:.2f})，单只重试')
+                        suspect_syms.add(sym)
+                        continue
                 df = pd.concat([old, df])
                 df = df[~df.index.duplicated(keep='last')].sort_index()
             df.index.name = 'date'
             df.to_parquet(path)
             saved += 1
+
+        # 涨跌幅异常的 symbol 单只重新下载校验
+        if suspect_syms:
+            for sym in sorted(suspect_syms):
+                try:
+                    r = yf.download(sym, start=start, end=end_exclusive,
+                                    auto_adjust=True, progress=False)
+                    df2 = self._extract(r, sym, 1)
+                    if df2 is not None and not df2.empty:
+                        path = self.stocks_dir / f'{sym}.parquet'
+                        if path.exists():
+                            old      = pd.read_parquet(path)
+                            new_rows = df2[~df2.index.isin(old.index)]
+                            if not new_rows.empty:
+                                df2 = pd.concat([old, df2])
+                                df2 = df2[~df2.index.duplicated(keep='last')].sort_index()
+                            else:
+                                continue
+                        df2.index.name = 'date'
+                        df2.to_parquet(path)
+                        saved += 1
+                        print(f'  [DataStore] {sym} 单只重试成功，close={df2["close"].iloc[-1]:.2f}')
+                    else:
+                        bad_syms.add(sym)
+                except Exception:
+                    bad_syms.add(sym)
 
         # 批量下载中空数据的 symbol 逐只重试（yfinance 批量偶发空列问题）
         if bad_syms:

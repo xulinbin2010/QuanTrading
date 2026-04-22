@@ -19,6 +19,24 @@ _RESULTS_DIR = os.path.join(
     'data', 'backtest_results'
 )
 
+_COMBOS_FILE = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    'data', 'factor_combos.json'
+)
+
+# 内置预设：RSMomentum 5条件完整版
+_BUILTIN_COMBOS: list[dict] = [
+    {
+        'id':           'rs_momentum_default',
+        'name':         'RSMomentum 默认',
+        'description':  'RS动量策略5个核心条件：相对强度+突破+放量+不崩+上升趋势',
+        'builtin':      True,
+        'factors':      ['rs_score', 'breakout', 'volume_surge', 'volume_divergence',
+                         'trend_filter', 'drawdown_filter'],
+        'factor_params': {},
+    },
+]
+
 
 # ── 文件持久化 ─────────────────────────────────────────────
 
@@ -276,3 +294,54 @@ def get_history() -> list[dict]:
             })
         items.sort(key=lambda x: x['created_at'], reverse=True)
         return items
+
+
+# ── 因子组合 CRUD ──────────────────────────────────────────────
+
+def _load_user_combos() -> list[dict]:
+    if not os.path.exists(_COMBOS_FILE):
+        return []
+    try:
+        with open(_COMBOS_FILE, encoding='utf-8') as f:
+            return json.load(f)
+    except Exception:
+        return []
+
+
+def _save_user_combos(combos: list[dict]):
+    os.makedirs(os.path.dirname(_COMBOS_FILE), exist_ok=True)
+    with open(_COMBOS_FILE, 'w', encoding='utf-8') as f:
+        json.dump(combos, f, ensure_ascii=False, indent=2)
+
+
+def list_combos() -> list[dict]:
+    """返回内置预设 + 用户保存的组合。"""
+    return _BUILTIN_COMBOS + _load_user_combos()
+
+
+def save_combo(name: str, factors: list[str], factor_params: dict = None) -> dict:
+    """保存新因子组合，返回含 id 的完整 combo dict。"""
+    combo = {
+        'id':           str(uuid.uuid4()),
+        'name':         name.strip(),
+        'builtin':      False,
+        'factors':      factors,
+        'factor_params': factor_params or {},
+        'created_at':   time.strftime('%Y-%m-%dT%H:%M:%S'),
+    }
+    combos = _load_user_combos()
+    combos.append(combo)
+    _save_user_combos(combos)
+    return combo
+
+
+def delete_combo(combo_id: str) -> bool:
+    """删除用户组合（内置组合不可删除）。返回是否删除成功。"""
+    if any(c['id'] == combo_id for c in _BUILTIN_COMBOS):
+        return False   # 内置不可删
+    combos = _load_user_combos()
+    new_combos = [c for c in combos if c['id'] != combo_id]
+    if len(new_combos) == len(combos):
+        return False   # 未找到
+    _save_user_combos(new_combos)
+    return True

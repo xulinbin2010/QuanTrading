@@ -1,6 +1,6 @@
 """策略回测 API 路由"""
 from fastapi import APIRouter, HTTPException, Query
-from web.models import BacktestRequest, WalkForwardRequest
+from web.models import BacktestRequest, WalkForwardRequest, FactorComboSaveRequest
 from web.services import backtest_svc
 
 router = APIRouter(prefix='/api/backtest', tags=['backtest'])
@@ -65,6 +65,32 @@ def walk_forward(req: WalkForwardRequest):
     }
     task_id = backtest_svc.submit_walk_forward(params)
     return {'task_id': task_id}
+
+
+@router.get('/combos')
+def list_combos():
+    """列出所有因子组合（内置预设 + 用户保存的）"""
+    return backtest_svc.list_combos()
+
+
+@router.post('/combos')
+def save_combo(req: FactorComboSaveRequest):
+    """保存当前因子选择为命名组合"""
+    if not req.name.strip():
+        raise HTTPException(status_code=400, detail='组合名称不能为空')
+    if not req.factors:
+        raise HTTPException(status_code=400, detail='至少选择一个因子')
+    combo = backtest_svc.save_combo(req.name, req.factors, req.factor_params)
+    return combo
+
+
+@router.delete('/combos/{combo_id}')
+def delete_combo(combo_id: str):
+    """删除用户组合（内置组合不可删除）"""
+    ok = backtest_svc.delete_combo(combo_id)
+    if not ok:
+        raise HTTPException(status_code=400, detail='内置组合不可删除，或组合不存在')
+    return {'status': 'deleted', 'id': combo_id}
 
 
 @router.get('/vix')

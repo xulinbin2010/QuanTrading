@@ -1,0 +1,36 @@
+# 自定义扩展股票池
+# 此文件中的股票会自动追加到任意 universe（sp500+ndx / sp500 / nasdaq100 等）
+#
+# 用法：
+#   - 每行一个 ticker（大小写均可）
+#   - # 开头为注释，空行忽略
+#
+# 示例：
+# APP
+
+
+AAOI
+AMKR
+RMBS
+ENTG
+NBIS
+APLD
+OKLO
+CLS
+LEU
+TEM
+AEHR
+LASR
+SMC
+ABX
+ETON
+POWW
+CRDO
+IONQ
+SMH
+HIMS
+ONTO
+rog
+ttmi
+sive
+POET

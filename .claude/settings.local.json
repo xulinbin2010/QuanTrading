@@ -69,7 +69,12 @@
       "Bash(git push *)",
       "Bash(mkdir -p .claude/skills/verify-build)",
       "Bash(cat)",
-      "Bash(/tmp/analyze_ib_calls.sh)"
+      "Bash(/tmp/analyze_ib_calls.sh)",
+      "Bash(unset http_proxy)",
+      "Bash(unset https_proxy)",
+      "Bash(tee /tmp/server2.log)",
+      "Bash(echo \"---EXIT $?---\")",
+      "Bash(jobs -l)"
     ]
   }
 }

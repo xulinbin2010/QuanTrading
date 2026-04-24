@@ -483,7 +483,9 @@ def get_stock_factors(symbol: str, days: int = 120) -> dict:
     def _fmt(v):
         if hasattr(v, 'item'):
             v = v.item()
-        if isinstance(v, float) and (v != v):
+        if v is None:
+            return None
+        if isinstance(v, float) and (v != v or v == float('inf') or v == float('-inf')):
             return None
         return v
 
@@ -493,12 +495,17 @@ def get_stock_factors(symbol: str, days: int = 120) -> dict:
         d = str(idx.date()) if hasattr(idx, 'date') else str(idx)[:10]
         ohlcv.append({
             "date": d,
-            "open": round(float(row['open']), 2),
-            "high": round(float(row['high']), 2),
-            "low": round(float(row['low']), 2),
-            "close": round(float(row['close']), 2),
+            "open": _fmt(round(float(row['open']), 2)),
+            "high": _fmt(round(float(row['high']), 2)),
+            "low":  _fmt(round(float(row['low']),  2)),
+            "close": _fmt(round(float(row['close']), 2)),
             "volume": int(row['volume']),
         })
+        vol_ma20 = row.get('vol_ma20')
+        vol_ratio = None
+        if pd.notna(vol_ma20) and float(vol_ma20) > 0:
+            ratio = float(row['volume']) / float(vol_ma20)
+            vol_ratio = _fmt(round(ratio, 2))
         factors_list.append({
             "date": d,
             "rs_score": _fmt(row.get('rs_score')),
@@ -506,8 +513,7 @@ def get_stock_factors(symbol: str, days: int = 120) -> dict:
             "vol_surge": bool(row.get('vol_surge', False)),
             "uptrend": bool(row.get('uptrend', False)),
             "not_crashed": bool(row.get('not_crashed', True)),
-            "vol_ratio": round(float(row['volume'] / row['vol_ma20']), 2)
-                         if row.get('vol_ma20') else None,
+            "vol_ratio": vol_ratio,
             "ma_fast": _fmt(row.get('ma_fast')),
             "ma_slow": _fmt(row.get('ma_slow')),
             "atr14": _fmt(row.get('atr14')),

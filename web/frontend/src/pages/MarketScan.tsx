@@ -211,11 +211,11 @@ function StockDetailPanel({ symbol, onClose }: { symbol: string; onClose: () => 
                     {[
                       { label: '营收增长', key: 'revenue_growth', render: (v: any) => <FmtPct v={v} /> },
                       { label: '盈利增长', key: 'earnings_growth', render: (v: any) => <FmtPct v={v} /> },
-                      { label: 'ROE', key: 'roe', render: (v: any) => <FmtPct v={v} /> },
+                      { label: 'ROE（净资产收益率）', key: 'roe', render: (v: any) => <FmtPct v={v} /> },
                       { label: 'D/E 比率', key: 'debt_to_equity', render: (v: any) => <FmtNum v={v} decimals={2} suffix="x" /> },
                       { label: 'FCF 收益率', key: 'fcf_yield', render: (v: any) => <FmtPct v={v} decimals={2} /> },
                       { label: 'PE', key: 'pe_ratio', render: (v: any) => <FmtNum v={v} decimals={1} suffix="x" /> },
-                      { label: 'PB', key: 'pb_ratio', render: (v: any) => <FmtNum v={v} decimals={2} suffix="x" /> },
+                      { label: 'PB（市净率）', key: 'pb_ratio', render: (v: any) => <FmtNum v={v} decimals={2} suffix="x" /> },
                     ].map(({ label, key, render }) => (
                       <div key={key} className="bg-slate-700/30 rounded p-2">
                         <div className="text-xs text-slate-500 mb-1">{label}</div>

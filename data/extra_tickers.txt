@@ -32,8 +32,6 @@ HIMS
 ONTO
 rog
 ttmi
-siver
 POET
 VMI
-
 form

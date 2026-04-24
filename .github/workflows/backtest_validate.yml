@@ -1,0 +1,101 @@
+name: Backtest Validate
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "strategies/**"
+      - "tests/**"
+  pull_request:
+    branches:
+      - main
+    paths:
+      - "strategies/**"
+      - "tests/**"
+
+jobs:
+  validate:
+    name: Lookahead Detection & Backtest Validation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          restore-keys: |
+            ${{ runner.os }}-pip-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install yfinance numpy pandas
+
+      # ── Step 1: Lookahead detection（失败即 block）──────────────────────
+      - name: Run lookahead detection
+        id: lookahead
+        run: |
+          python scripts/detect_lookahead.py
+          echo "lookahead_ok=true" >> "$GITHUB_OUTPUT"
+
+      # ── Step 2: 检查 baseline 是否已计算 ──────────────────────────────
+      - name: Check golden baseline status
+        id: baseline_check
+        run: |
+          python - <<'EOF'
+          import json, sys, os
+
+          baseline_path = "scripts/golden_baseline.json"
+          if not os.path.exists(baseline_path):
+              print("::warning::scripts/golden_baseline.json not found — skipping backtest validation.")
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write("baseline_computed=false\n")
+              sys.exit(0)
+
+          with open(baseline_path) as f:
+              data = json.load(f)
+
+          computed = data.get("computed", False)
+          if not computed:
+              print("::warning::golden_baseline.json has computed=false — backtest validation skipped.")
+              print("Run `python scripts/generate_baseline.py` locally to compute the baseline,")
+              print("then commit scripts/golden_baseline.json before merging.")
+
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"baseline_computed={'true' if computed else 'false'}\n")
+          EOF
+
+      # ── Step 3: 回测验证（仅当 baseline computed=true 时运行）─────────
+      - name: Run backtest validation
+        if: steps.baseline_check.outputs.baseline_computed == 'true'
+        run: |
+          python scripts/validate_change.py --threshold 0.05
+
+      - name: Skip backtest validation notice
+        if: steps.baseline_check.outputs.baseline_computed != 'true'
+        run: |
+          echo "Backtest validation skipped: golden baseline not yet computed."
+          echo "To enable: run 'python scripts/generate_baseline.py' and commit the result."
+
+      # ── Step 4: 上传报告 artifact ─────────────────────────────────────
+      - name: Upload validation artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: validation-reports
+          path: |
+            scripts/validation_report.md
+            scripts/lookahead_report.md
+          if-no-files-found: ignore
+          retention-days: 30

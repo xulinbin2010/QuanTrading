@@ -112,6 +112,7 @@ def run_backtest(
     FUND_MIN_REV_GROWTH     = config.FUND_MIN_REV_GROWTH
     TIME_STOP_DAYS          = config.TIME_STOP_DAYS
     TIME_STOP_MIN_RETURN    = config.TIME_STOP_MIN_RETURN
+    MAX_ENTRY_SLIPPAGE      = config.MAX_ENTRY_SLIPPAGE
 
     if min_cap_b is None:
         min_cap_b = config.MIN_CAP_B
@@ -337,6 +338,13 @@ def run_backtest(
                     if sym in positions or sym not in stock_data or date not in stock_data[sym].index:
                         continue
                     price = stock_data[sym].loc[date, 'open']
+                    # OPG 限价保护：开盘跳价超过昨收 × (1 + MAX_ENTRY_SLIPPAGE) 则放弃，与实盘逻辑对齐
+                    sym_df  = stock_data[sym]
+                    sym_idx = sym_df.index.get_loc(date)
+                    if sym_idx > 0:
+                        prev_close = float(sym_df.iloc[sym_idx - 1]['close'])
+                        if price > prev_close * (1 + MAX_ENTRY_SLIPPAGE):
+                            continue
                     # 波动率仓位：每仓风险 = TARGET_RISK_PER_POS × 净值
                     atr14_entry = None
                     if sym in atr_series and date in atr_series[sym].index:

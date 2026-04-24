@@ -39,18 +39,20 @@ def ib_debug():
             except Exception as e:
                 info['managed_accounts_error'] = str(e)
             try:
-                info['portfolio_count'] = len(list(ib.portfolio()))
+                items = portfolio_svc._run_ib_sync(ib.portfolio)
+                info['portfolio_count'] = len(items)
                 info['portfolio_items'] = [
                     {'symbol': i.contract.symbol, 'qty': i.position, 'value': i.marketValue}
-                    for i in ib.portfolio()
+                    for i in items
                 ]
             except Exception as e:
                 info['portfolio_error'] = str(e)
             try:
-                info['positions_count'] = len(list(ib.positions()))
+                pos_items = portfolio_svc._run_ib_sync(ib.positions)
+                info['positions_count'] = len(pos_items)
                 info['positions_items'] = [
                     {'account': p.account, 'symbol': p.contract.symbol, 'qty': p.position, 'avg_cost': p.avgCost}
-                    for p in ib.positions()
+                    for p in pos_items
                 ]
             except Exception as e:
                 info['positions_error'] = str(e)

@@ -1,0 +1,121 @@
+#!/bin/bash
+# pre-push hook — 在 push 前自动检测前瞻偏差和回测指标退步
+#
+# 安装方式（二选一）：
+#   方式1：运行 scripts/install_hooks.sh（推荐）
+#   方式2：手动执行
+#     cp scripts/pre-push.hook .git/hooks/pre-push
+#     chmod +x .git/hooks/pre-push
+
+set -euo pipefail
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+PYTHON="${REPO_ROOT}/.venv/bin/python"
+BASELINE="${REPO_ROOT}/scripts/golden_baseline.json"
+LOOKAHEAD_REPORT="${REPO_ROOT}/scripts/lookahead_report.md"
+VALIDATION_REPORT="${REPO_ROOT}/scripts/validation_report.md"
+
+# ── 检查 .venv/bin/python 是否存在 ────────────────────────────────────────
+if [ ! -f "${PYTHON}" ]; then
+    echo ""
+    echo "  [pre-push] ERROR: .venv/bin/python not found."
+    echo "  Please create the virtual environment first:"
+    echo "    python3.12 -m venv .venv && source .venv/bin/activate"
+    echo "    pip install yfinance numpy pandas"
+    echo ""
+    exit 1
+fi
+
+# ── 检查本次 push 是否涉及 strategies/ 或 tests/ 下的 .py 文件 ──────────
+# 读取 pre-push 的 stdin（格式：<local_ref> <local_sha1> <remote_ref> <remote_sha1>）
+CHANGED=false
+
+while IFS=' ' read -r local_ref local_sha remote_ref remote_sha; do
+    # 全新分支：remote_sha 为全零
+    if [ "${remote_sha}" = "0000000000000000000000000000000000000000" ]; then
+        # 新分支：与本地 HEAD~1 对比（兜底：与空树对比）
+        BASE=$(git rev-list --max-parents=0 HEAD 2>/dev/null | tail -1)
+        DIFF_BASE="${BASE:-4b825dc642cb6eb9a060e54bf8d69288fbee4904}"
+    else
+        DIFF_BASE="${remote_sha}"
+    fi
+
+    if git diff --name-only "${DIFF_BASE}...${local_sha}" 2>/dev/null \
+        | grep -qE '^(strategies|tests)/.*\.py$'; then
+        CHANGED=true
+        break
+    fi
+done
+
+if [ "${CHANGED}" = "false" ]; then
+    echo "[pre-push] No changes in strategies/ or tests/ — skipping checks."
+    exit 0
+fi
+
+echo ""
+echo "  [pre-push] Detected changes in strategies/ or tests/ — running checks..."
+echo ""
+
+# ── Step 1: 前瞻检测 ───────────────────────────────────────────────────────
+echo "  [pre-push] Step 1/2: Running lookahead detection..."
+if ! "${PYTHON}" "${REPO_ROOT}/scripts/detect_lookahead.py"; then
+    echo ""
+    echo "  ╔═══════════════════════════════════════════════════════════╗"
+    echo "  ║  PUSH BLOCKED: Lookahead bias detected (CRITICAL issues)  ║"
+    echo "  ╚═══════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "  Fix the issues listed above before pushing."
+    if [ -f "${LOOKAHEAD_REPORT}" ]; then
+        echo "  Full report: ${LOOKAHEAD_REPORT}"
+    fi
+    echo ""
+    exit 1
+fi
+echo "  [pre-push] Lookahead detection passed."
+echo ""
+
+# ── Step 2: 回测验证（仅当 baseline computed=true 时运行）────────────────
+if [ ! -f "${BASELINE}" ]; then
+    echo "  [pre-push] WARNING: scripts/golden_baseline.json not found."
+    echo "  Backtest validation skipped. Run 'python scripts/generate_baseline.py' to create baseline."
+    echo ""
+    exit 0
+fi
+
+COMPUTED=$("${PYTHON}" -c "
+import json, sys
+with open('${BASELINE}') as f:
+    d = json.load(f)
+print('true' if d.get('computed', False) else 'false')
+" 2>/dev/null || echo "false")
+
+if [ "${COMPUTED}" = "true" ]; then
+    echo "  [pre-push] Step 2/2: Running backtest validation..."
+    if ! "${PYTHON}" "${REPO_ROOT}/scripts/validate_change.py"; then
+        echo ""
+        echo "  ╔═══════════════════════════════════════════════════════════════╗"
+        echo "  ║  PUSH BLOCKED: Backtest metrics regressed more than threshold  ║"
+        echo "  ╚═══════════════════════════════════════════════════════════════╝"
+        echo ""
+        echo "  One or more key metrics degraded >5% versus the golden baseline."
+        if [ -f "${VALIDATION_REPORT}" ]; then
+            echo "  Full report: ${VALIDATION_REPORT}"
+        fi
+        echo ""
+        echo "  If the regression is intentional (e.g., strategy redesign):"
+        echo "    1. Re-run: python scripts/generate_baseline.py"
+        echo "    2. Commit the updated scripts/golden_baseline.json"
+        echo "    3. Then push again."
+        echo ""
+        exit 1
+    fi
+    echo "  [pre-push] Backtest validation passed."
+else
+    echo "  [pre-push] WARNING: golden_baseline.json has computed=false."
+    echo "  Backtest validation skipped. Run 'python scripts/generate_baseline.py' to compute baseline."
+fi
+
+echo ""
+echo "  [pre-push] All checks passed. Proceeding with push."
+echo ""
+exit 0

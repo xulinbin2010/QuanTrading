@@ -22,7 +22,7 @@ import warnings
 from datetime import date, timedelta
 import pandas as pd
 from strategies.rs_momentum import RSMomentum
-from core.universe import get_tickers
+from core.universe import get_tickers, get_stock_info
 from core.data_store import DataStore
 from core.insider import get_insider_buys, score_to_stars
 from core.fmt import lj, rj
@@ -143,6 +143,38 @@ def run_scanner(
     # insider_only 过滤：只保留有内部人买入的候选
     if insider_only:
         buy_candidates = [c for c in buy_candidates if c.get('insider_score', 0) > 0]
+
+    # 市值 / 行业 / 基本面过滤（与 auto_trader 对齐，数据缺失时放行）
+    if buy_candidates:
+        info_map = get_stock_info([c['symbol'] for c in buy_candidates])
+        deny_set = {d.lower() for d in config.DENY_INDUSTRIES}
+        filtered = []
+        for c in buy_candidates:
+            info = info_map.get(c['symbol'], {})
+            cap  = info.get('market_cap_b')
+            ind  = (info.get('industry') or '').lower()
+            if cap is not None:
+                if cap < config.MIN_CAP_B:
+                    continue
+                if cap > config.MAX_CAP_B:
+                    continue
+            if deny_set and any(d in ind for d in deny_set):
+                continue
+            if config.FUND_FILTER_ENABLED:
+                roe = info.get('roe')
+                de  = info.get('debt_to_equity')
+                rev = info.get('revenue_growth')
+                if roe is not None and roe < config.FUND_MIN_ROE:
+                    continue
+                if de is not None and de > config.FUND_MAX_DE:
+                    continue
+                if rev is not None and rev < config.FUND_MIN_REV_GROWTH:
+                    continue
+            filtered.append(c)
+        n_removed = len(buy_candidates) - len(filtered)
+        if n_removed:
+            print(f"  [过滤] 市值/行业过滤移除 {n_removed} 只，剩余 {len(filtered)} 只买入候选")
+        buy_candidates = filtered
 
     # ── 输出结果 ─────────────────────────────────────────────
     _print_buy_signals(buy_candidates, top_n, use_insider)

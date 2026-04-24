@@ -1,4 +1,5 @@
 import time
+import threading
 from ib_insync import IB
 import config
 
@@ -20,6 +21,11 @@ class IBConnection:
         if not self._should_reconnect:
             return
         print("\n连接已断开，正在尝试重连...")
+        # 必须在新线程中重连：此回调由 ib_insync 事件循环线程触发，
+        # 在其中直接调用 ib.connect() 会死锁自己的 event loop。
+        threading.Thread(target=self._reconnect_loop, daemon=True).start()
+
+    def _reconnect_loop(self):
         for attempt in range(1, self.MAX_RETRIES + 1):
             if self.ib.isConnected():
                 return

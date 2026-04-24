@@ -260,7 +260,7 @@ def get_positions(force_refresh: bool = False, account: str | None = None) -> li
 
     # 优先用 portfolio()（含实时市值/盈亏）；
     # 多账户 FA 结构下 portfolio() 可能为空，改用 positions()
-    portfolio_items = list(_ib.portfolio())
+    portfolio_items = list(_run_ib_sync(_ib.portfolio))
     if portfolio_items:
         for item in portfolio_items:
             if float(item.position) == 0:
@@ -294,7 +294,7 @@ def get_positions(force_refresh: bool = False, account: str | None = None) -> li
             })
     else:
         # 多账户 FA 回退：positions() 跨所有子账户，无实时市值需自行计算
-        raw_list = [p for p in _ib.positions() if float(p.position) != 0
+        raw_list = [p for p in _run_ib_sync(_ib.positions) if float(p.position) != 0
                     and (account is None or p.account == account)]
         if raw_list:
             # ── 通过 IB API 获取实时/昨收价 ─────────────────────────

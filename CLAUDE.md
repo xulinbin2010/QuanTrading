@@ -4,6 +4,39 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ---
 
+## Language
+
+Always respond in Chinese (中文). Do not mix Korean or other languages into responses.
+
+---
+
+## Data Safety
+
+- NEVER mass-delete parquet/cache files based on transient API failures (e.g., yfinance timeouts)
+- Before blacklisting a ticker as delisted/invalid, verify against authoritative source (IVV holdings, NASDAQ listing) — do not rely on a single failed fetch
+- Any denylist/filter that removes data must be reversible and logged
+- Before any code that blacklists, filters out, or deletes tickers/data files: (1) show a dry-run list of what would be removed, (2) cross-check each against IVV holdings CSV or another authoritative source, (3) only proceed after user confirms. Never act on a single failed API call.
+
+---
+
+## Debugging Discipline
+
+- Do not jump to conclusions on root cause; read the relevant code path first
+- For IB/IBKR connection issues, check event loop context and reqAccountUpdates usage before hypothesizing about threading, pooling, or cooldowns
+- When a fix doesn't work the first time, re-read the code rather than iterating on similar hypotheses
+- Before proposing any fix for IB connection or async bugs: read the full call stack from entry point to failure, identify the exact event-loop/thread context at each await/sync boundary, and show the trace. Do not guess at threading or pooling causes.
+
+---
+
+## UI/Theme Conventions
+
+- Match existing button styles (e.g., backtest button style) rather than introducing new colors like amber
+- Keep theme options minimal — do not over-engineer with multiple theme variants unless explicitly requested
+- When fixing theme colors, audit ALL color mappings (including blue-200, etc.) in one pass
+- For any theme change: first grep the entire frontend for every color token and Tailwind class in use, produce a mapping table of old→new, and only then apply changes in one commit. Do not fix colors reactively as user spots them.
+
+---
+
 ## 项目简介
 
 基于 Interactive Brokers（IBKR）的个人量化交易平台，目标资金 ~$60K，策略为**日线波段交易**（非日内/高频）。

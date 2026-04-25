@@ -1,6 +1,10 @@
-import pymysql
+import sqlite3
+import os
+from datetime import datetime, timedelta
 import config
 from core.fmt import lj, rj
+
+sqlite3.register_converter("TIMESTAMP", lambda b: datetime.fromisoformat(b.decode()) if b else None)
 
 
 class Database:
@@ -10,15 +14,15 @@ class Database:
 
     def connect(self):
         try:
-            self.conn = pymysql.connect(
-                host=config.DB_HOST,
-                port=config.DB_PORT,
-                user=config.DB_USER,
-                password=config.DB_PASSWORD,
-                charset='utf8mb4',
-                autocommit=True,
-                connect_timeout=3,
+            os.makedirs(os.path.dirname(os.path.abspath(config.DB_PATH)), exist_ok=True)
+            self.conn = sqlite3.connect(
+                config.DB_PATH,
+                check_same_thread=False,
+                detect_types=sqlite3.PARSE_DECLTYPES,
             )
+            self.conn.isolation_level = None  # autocommit
+            self.conn.execute('PRAGMA journal_mode=WAL')
+            self.conn.execute('PRAGMA foreign_keys=ON')
             self.cursor = self.conn.cursor()
             self._init_db()
             print("数据库连接成功")
@@ -29,116 +33,87 @@ class Database:
             self.cursor = None
 
     def _ensure_conn(self):
-        """检查连接是否有效，断了就自动重连。"""
         if self.conn:
             try:
-                self.conn.ping(reconnect=True)  # 空闲超时后自动重建连接
-                self.cursor = self.conn.cursor()
-                self.cursor.execute(f"USE `{config.DB_NAME}`")  # ping重连后不会自动选库，必须显式执行
+                self.conn.execute('SELECT 1')
                 return True
             except Exception:
                 self.conn = None
                 self.cursor = None
-        # conn 为 None 或 ping 失败 → 手动重连
         try:
-            self.conn = pymysql.connect(
-                host=config.DB_HOST,
-                port=config.DB_PORT,
-                user=config.DB_USER,
-                password=config.DB_PASSWORD,
-                database=config.DB_NAME,   # 重连时直接选库，无需再 USE
-                charset='utf8mb4',
-                autocommit=True,
-                connect_timeout=3,
-            )
-            self.cursor = self.conn.cursor()
-            return True
+            self.connect()
+            return self.conn is not None
         except Exception:
-            self.conn = None
-            self.cursor = None
             return False
 
     def _init_db(self):
-        self.cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{config.DB_NAME}` DEFAULT CHARSET utf8mb4")
-        self.cursor.execute(f"USE `{config.DB_NAME}`")
-
-        self.cursor.execute("""
+        self.cursor.executescript("""
             CREATE TABLE IF NOT EXISTS orders (
-                id          INT AUTO_INCREMENT PRIMARY KEY,
-                symbol      VARCHAR(20)  NOT NULL,
-                action      VARCHAR(10)  NOT NULL,
-                order_type  VARCHAR(10)  NOT NULL,
-                quantity    DECIMAL(12,2) NOT NULL,
-                price       DECIMAL(12,4),
-                filled_price DECIMAL(12,4),
-                status      VARCHAR(20)  NOT NULL,
-                order_id    INT,
-                created_at  DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+                id           INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol       TEXT NOT NULL,
+                action       TEXT NOT NULL,
+                order_type   TEXT NOT NULL,
+                quantity     REAL NOT NULL,
+                price        REAL,
+                filled_price REAL,
+                status       TEXT NOT NULL,
+                order_id     INTEGER,
+                created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
 
-        self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS account_snapshots (
-                id                INT AUTO_INCREMENT PRIMARY KEY,
-                net_liquidation   DECIMAL(16,2),
-                total_cash        DECIMAL(16,2),
-                unrealized_pnl    DECIMAL(16,2),
-                realized_pnl      DECIMAL(16,2),
-                buying_power      DECIMAL(16,2),
-                snapshot_at       DATETIME DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                net_liquidation REAL,
+                total_cash      REAL,
+                unrealized_pnl  REAL,
+                realized_pnl    REAL,
+                buying_power    REAL,
+                snapshot_at     TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
 
-        self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS signals (
-                id         INT AUTO_INCREMENT PRIMARY KEY,
-                scan_date  DATE         NOT NULL,
-                symbol     VARCHAR(20)  NOT NULL,
-                `signal`   TINYINT      NOT NULL,
-                rs_score   DECIMAL(8,4),
-                vol_ratio  DECIMAL(8,4),
-                close      DECIMAL(12,4),
-                reason     VARCHAR(50),
-                created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-                UNIQUE KEY uq_signal (scan_date, symbol, `signal`)
-            )
-        """)
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                scan_date  TEXT    NOT NULL,
+                symbol     TEXT    NOT NULL,
+                signal     INTEGER NOT NULL,
+                rs_score   REAL,
+                vol_ratio  REAL,
+                close      REAL,
+                reason     TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(scan_date, symbol, signal)
+            );
 
-        self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS scheduled_tasks (
-                task_id     VARCHAR(50)   PRIMARY KEY,
-                name        VARCHAR(100)  NOT NULL,
-                command     VARCHAR(500)  NOT NULL,
-                cron_expr   VARCHAR(50),
-                enabled     TINYINT(1)    DEFAULT 1,
-                created_at  DATETIME      DEFAULT CURRENT_TIMESTAMP,
-                updated_at  DATETIME      DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-            )
-        """)
+                task_id    TEXT PRIMARY KEY,
+                name       TEXT NOT NULL,
+                command    TEXT NOT NULL,
+                cron_expr  TEXT,
+                enabled    INTEGER DEFAULT 1,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
 
-        self.cursor.execute("""
             CREATE TABLE IF NOT EXISTS task_runs (
-                id          INT AUTO_INCREMENT PRIMARY KEY,
-                task_id     VARCHAR(50)   NOT NULL,
-                started_at  DATETIME      NOT NULL,
-                finished_at DATETIME,
-                status      VARCHAR(20)   DEFAULT 'running',
-                exit_code   INT,
-                log_text    MEDIUMTEXT,
-                INDEX idx_task (task_id, started_at)
-            )
-        """)
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id     TEXT NOT NULL,
+                started_at  TIMESTAMP NOT NULL,
+                finished_at TIMESTAMP,
+                status      TEXT DEFAULT 'running',
+                exit_code   INTEGER,
+                log_text    TEXT
+            );
 
-        self.cursor.execute("""
+            CREATE INDEX IF NOT EXISTS idx_task ON task_runs(task_id, started_at);
+
             CREATE TABLE IF NOT EXISTS config_store (
-                `key`       VARCHAR(50)  PRIMARY KEY,
-                value       VARCHAR(500) NOT NULL,
-                type        VARCHAR(10)  DEFAULT 'str',
-                category    VARCHAR(20),
-                description VARCHAR(200),
-                updated_at  DATETIME DEFAULT CURRENT_TIMESTAMP
-                            ON UPDATE CURRENT_TIMESTAMP
-            )
+                key         TEXT PRIMARY KEY,
+                value       TEXT NOT NULL,
+                type        TEXT DEFAULT 'str',
+                category    TEXT,
+                description TEXT,
+                updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
         """)
 
     # ---------- orders ----------
@@ -149,30 +124,28 @@ class Database:
             return
         self.cursor.execute("""
             INSERT INTO orders (symbol, action, order_type, quantity, price, filled_price, status, order_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """, (symbol, action, order_type, quantity, price, filled_price, status, order_id))
 
     def update_order_fill(self, order_id: int, filled_price: float,
                           filled_qty: float, status: str):
-        """成交回报回写：更新 filled_price、filled_qty、status。"""
         if not self._ensure_conn():
             return
         self.cursor.execute("""
             UPDATE orders
-               SET filled_price = %s,
-                   quantity     = %s,
-                   status       = %s
-             WHERE order_id = %s
+               SET filled_price = ?,
+                   quantity     = ?,
+                   status       = ?
+             WHERE order_id = ?
         """, (filled_price, filled_qty, status, order_id))
 
     def get_pending_orders(self, trade_date: str) -> list:
-        """返回指定日期 filled_price 仍为 NULL 的订单（待确认）。"""
         if not self._ensure_conn():
             return []
         self.cursor.execute("""
             SELECT id, symbol, action, order_type, quantity, price, order_id
               FROM orders
-             WHERE DATE(created_at) = %s
+             WHERE DATE(created_at) = ?
                AND filled_price IS NULL
                AND order_id IS NOT NULL
                AND status NOT IN ('Cancelled', 'ApiCancelled', 'Inactive')
@@ -186,9 +159,9 @@ class Database:
         sql = "SELECT * FROM orders"
         params = []
         if symbol:
-            sql += " WHERE symbol = %s"
+            sql += " WHERE symbol = ?"
             params.append(symbol)
-        sql += " ORDER BY created_at DESC LIMIT %s"
+        sql += " ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
         self.cursor.execute(sql, params)
         return self.cursor.fetchall()
@@ -203,7 +176,8 @@ class Database:
         print("-" * 72)
         for r in rows:
             # id, symbol, action, order_type, qty, price, filled, status, oid, created
-            created  = r[9].strftime('%Y-%m-%d %H:%M:%S') if r[9] else '-'
+            ts = r[9]
+            created  = ts.strftime('%Y-%m-%d %H:%M:%S') if isinstance(ts, datetime) else (str(ts)[:19] if ts else '-')
             symbol_  = r[1]
             action   = r[2]
             otype    = r[3]
@@ -220,7 +194,7 @@ class Database:
         self.cursor.execute("""
             INSERT INTO account_snapshots
                 (net_liquidation, total_cash, unrealized_pnl, realized_pnl, buying_power)
-            VALUES (%s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?)
         """, (net_liq, total_cash, unrealized_pnl, realized_pnl, buying_power))
 
     def get_account_history(self, limit=30):
@@ -229,7 +203,7 @@ class Database:
         self.cursor.execute("""
             SELECT snapshot_at, net_liquidation, total_cash, unrealized_pnl, realized_pnl, buying_power
             FROM account_snapshots
-            ORDER BY snapshot_at DESC LIMIT %s
+            ORDER BY snapshot_at DESC LIMIT ?
         """, (limit,))
         return self.cursor.fetchall()
 
@@ -242,13 +216,13 @@ class Database:
         print(f"{lj('时间',22)}{rj('净值',14)}{rj('现金',14)}{rj('浮盈',12)}{rj('实盈',12)}")
         print("-" * 76)
         for r in rows:
-            ts = r[0].strftime('%Y-%m-%d %H:%M:%S') if r[0] else '-'
-            print(f"{ts:<22}{r[1]:>14.2f}{r[2]:>14.2f}{r[3]:>12.2f}{r[4]:>12.2f}")
+            ts = r[0]
+            ts_str = ts.strftime('%Y-%m-%d %H:%M:%S') if isinstance(ts, datetime) else (str(ts)[:19] if ts else '-')
+            print(f"{ts_str:<22}{r[1]:>14.2f}{r[2]:>14.2f}{r[3]:>12.2f}{r[4]:>12.2f}")
 
     # ---------- signals ----------
 
     def save_signals(self, scan_date, signals_dict: dict):
-        """保存扫描信号（买入候选 + 卖出报警），重复的自动忽略"""
         if not self._ensure_conn():
             return
         rows = []
@@ -261,9 +235,9 @@ class Database:
         if not rows:
             return
         self.cursor.executemany("""
-            INSERT IGNORE INTO signals
-                (scan_date, symbol, `signal`, rs_score, vol_ratio, close, reason)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
+            INSERT OR IGNORE INTO signals
+                (scan_date, symbol, signal, rs_score, vol_ratio, close, reason)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
         """, rows)
         print(f"  [DB] 信号已存库：买入 {len(signals_dict.get('buy',[]))} 只，"
               f"卖出报警 {len(signals_dict.get('sell',[]))} 只")
@@ -275,14 +249,14 @@ class Database:
         if not self._ensure_conn():
             return
         self.cursor.execute("""
-            INSERT INTO scheduled_tasks (task_id, name, command, cron_expr, enabled)
-            VALUES (%s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-                name       = VALUES(name),
-                command    = VALUES(command),
-                cron_expr  = VALUES(cron_expr),
-                enabled    = VALUES(enabled),
-                updated_at = CURRENT_TIMESTAMP
+            INSERT INTO scheduled_tasks (task_id, name, command, cron_expr, enabled, updated_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(task_id) DO UPDATE SET
+                name      = excluded.name,
+                command   = excluded.command,
+                cron_expr = excluded.cron_expr,
+                enabled   = excluded.enabled,
+                updated_at = datetime('now')
         """, (task_id, name, command, cron_expr, int(enabled)))
 
     def get_tasks(self) -> list:
@@ -297,46 +271,49 @@ class Database:
     def delete_task(self, task_id: str):
         if not self._ensure_conn():
             return
-        self.cursor.execute("DELETE FROM scheduled_tasks WHERE task_id = %s", (task_id,))
+        self.cursor.execute("DELETE FROM scheduled_tasks WHERE task_id = ?", (task_id,))
 
     # ---------- task_runs ----------
 
     def start_task_run(self, task_id: str) -> int:
-        """记录任务开始，返回 run id"""
         if not self._ensure_conn():
             return -1
-        self.cursor.execute("""
-            INSERT INTO task_runs (task_id, started_at, status)
-            VALUES (%s, NOW(), 'running')
-        """, (task_id,))
+        now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        self.cursor.execute(
+            "INSERT INTO task_runs (task_id, started_at, status) VALUES (?, ?, 'running')",
+            (task_id, now)
+        )
         return self.cursor.lastrowid
 
     def finish_task_run(self, run_id: int, exit_code: int, log_text: str):
         if not self._ensure_conn():
             return
         status = 'success' if exit_code == 0 else 'failed'
+        now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
         self.cursor.execute("""
             UPDATE task_runs
-               SET finished_at = NOW(),
-                   status      = %s,
-                   exit_code   = %s,
-                   log_text    = %s
-             WHERE id = %s
-        """, (status, exit_code, log_text, run_id))
+               SET finished_at = ?,
+                   status      = ?,
+                   exit_code   = ?,
+                   log_text    = ?
+             WHERE id = ?
+        """, (now, status, exit_code, log_text, run_id))
 
     def reap_zombie_runs(self, timeout_minutes: int = 5) -> int:
-        """将超时仍处于 running 的僵尸记录标记为 failed，返回清理条数"""
         if not self._ensure_conn():
             return 0
+        cutoff = (datetime.utcnow() - timedelta(minutes=timeout_minutes)).strftime('%Y-%m-%d %H:%M:%S')
+        now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        log_suffix = f'\n[TIMEOUT] 超过 {timeout_minutes} 分钟未完成，自动标记为失败'
         self.cursor.execute("""
             UPDATE task_runs
-               SET finished_at = NOW(),
+               SET finished_at = ?,
                    status      = 'failed',
                    exit_code   = -9,
-                   log_text    = CONCAT(COALESCE(log_text, ''), '\n[TIMEOUT] 超过 %s 分钟未完成，自动标记为失败')
+                   log_text    = COALESCE(log_text, '') || ?
              WHERE status = 'running'
-               AND started_at < DATE_SUB(NOW(), INTERVAL %s MINUTE)
-        """, (timeout_minutes, timeout_minutes))
+               AND started_at < ?
+        """, (now, log_suffix, cutoff))
         return self.cursor.rowcount
 
     def get_task_runs(self, task_id: str = None, limit: int = 50) -> list:
@@ -345,15 +322,15 @@ class Database:
         sql = """
             SELECT r.id, r.task_id, t.name, r.started_at, r.finished_at,
                    r.status, r.exit_code,
-                   TIMESTAMPDIFF(SECOND, r.started_at, r.finished_at) AS duration_s
+                   CAST((julianday(r.finished_at) - julianday(r.started_at)) * 86400 AS INTEGER) AS duration_s
               FROM task_runs r
               LEFT JOIN scheduled_tasks t ON t.task_id = r.task_id
         """
         params = []
         if task_id:
-            sql += " WHERE r.task_id = %s"
+            sql += " WHERE r.task_id = ?"
             params.append(task_id)
-        sql += " ORDER BY r.started_at DESC LIMIT %s"
+        sql += " ORDER BY r.started_at DESC LIMIT ?"
         params.append(limit)
         self.cursor.execute(sql, params)
         return self.cursor.fetchall()
@@ -361,10 +338,9 @@ class Database:
     def delete_task_run(self, run_id: int):
         if not self._ensure_conn():
             return
-        self.cursor.execute("DELETE FROM task_runs WHERE id = %s", (run_id,))
+        self.cursor.execute("DELETE FROM task_runs WHERE id = ?", (run_id,))
 
     def get_last_runs_per_task(self) -> dict:
-        """批量获取每个 task_id 的最近一次执行记录，返回 {task_id: (id, started_at, status)}"""
         if not self._ensure_conn():
             return {}
         self.cursor.execute("""
@@ -381,17 +357,16 @@ class Database:
     def get_run_log(self, run_id: int) -> str:
         if not self._ensure_conn():
             return ''
-        self.cursor.execute("SELECT log_text FROM task_runs WHERE id = %s", (run_id,))
+        self.cursor.execute("SELECT log_text FROM task_runs WHERE id = ?", (run_id,))
         row = self.cursor.fetchone()
         return row[0] if row else ''
 
     # ---------- config_store ----------
 
     def get_config(self, key: str):
-        """返回单个配置值（字符串），不存在返回 None"""
         if not self._ensure_conn():
             return None
-        self.cursor.execute("SELECT value FROM config_store WHERE `key` = %s", (key,))
+        self.cursor.execute("SELECT value FROM config_store WHERE key = ?", (key,))
         row = self.cursor.fetchone()
         return row[0] if row else None
 
@@ -400,20 +375,19 @@ class Database:
         if not self._ensure_conn():
             return
         self.cursor.execute("""
-            INSERT INTO config_store (`key`, value, type, category, description)
-            VALUES (%s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-                value = VALUES(value),
-                updated_at = NOW()
+            INSERT INTO config_store (key, value, type, category, description, updated_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(key) DO UPDATE SET
+                value      = excluded.value,
+                updated_at = datetime('now')
         """, (key, value, typ, category, description))
 
     def get_all_config(self) -> list:
-        """返回所有配置项 (key, value, type, category, description, updated_at)"""
         if not self._ensure_conn():
             return []
         self.cursor.execute(
-            "SELECT `key`, value, type, category, description, updated_at "
-            "FROM config_store ORDER BY category, `key`"
+            "SELECT key, value, type, category, description, updated_at "
+            "FROM config_store ORDER BY category, key"
         )
         return self.cursor.fetchall()
 

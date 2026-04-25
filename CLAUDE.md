@@ -51,24 +51,20 @@ Always respond in Chinese (中文). Do not mix Korean or other languages into re
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-pip install ib_insync pymysql yfinance numpy pandas requests lxml html5lib fastapi "uvicorn[standard]" apscheduler python-dotenv
+pip install ib_insync yfinance numpy pandas requests lxml html5lib fastapi "uvicorn[standard]" apscheduler python-dotenv
 ```
 
 **注意：** 需手动创建 `.env` 文件（已加入 .gitignore），填写连接参数：
 
 ```ini
-DB_HOST=127.0.0.1
-DB_PORT=3306
-DB_USER=root
-DB_PASSWORD=你的密码
-DB_NAME=quantrading
+DB_PATH=data/quantrading.db
 IB_HOST=127.0.0.1
 IB_PORT=4002    # 模拟盘 4002 / 实盘 4001
 IB_CLIENT_ID=1
 IB_TIMEOUT=60
 ```
 
-策略/风控参数在 DB `config_store` 表中管理，通过 Web UI 的「系统配置」页修改，无需手动编辑文件。
+策略/风控参数在 DB `config_store` 表中管理，通过 Web UI 的「系统配置」页修改，无需手动编辑文件。数据库为 SQLite，文件位于 `data/quantrading.db`，首次运行自动创建，无需额外安装。
 
 ---
 

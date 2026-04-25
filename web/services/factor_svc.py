@@ -77,30 +77,7 @@ def update_factor_config(key: str, enabled: bool | None = None, params: dict | N
     if params:
         for pname, pval in params.items():
             cfg_key = f'FACTOR_{key}_PARAM_{pname}'
-            # 动态写入，不需要预定义
-            try:
-                import pymysql
-                conn = pymysql.connect(
-                    host=config.DB_HOST, port=config.DB_PORT,
-                    user=config.DB_USER, password=config.DB_PASSWORD,
-                    database=config.DB_NAME, charset='utf8mb4',
-                    autocommit=True, connect_timeout=3,
-                )
-                cur = conn.cursor()
-                cur.execute("""
-                    CREATE TABLE IF NOT EXISTS config_store (
-                        `key` VARCHAR(80) PRIMARY KEY, value VARCHAR(500) NOT NULL,
-                        type VARCHAR(10), category VARCHAR(20), description VARCHAR(200),
-                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
-                    )
-                """)
-                cur.execute("""
-                    INSERT INTO config_store (`key`, value, type, category, description)
-                    VALUES (%s, %s, %s, %s, %s)
-                    ON DUPLICATE KEY UPDATE value = VALUES(value), updated_at = NOW()
-                """, (cfg_key, str(pval), type(pval).__name__, '因子参数', f'{key}.{pname}'))
-                conn.close()
-            except Exception:
+            if not config.set_param(cfg_key, str(pval)):
                 ok = False
     return ok
 
@@ -115,16 +92,11 @@ def get_factor_params_from_db(key: str) -> dict:
         return {}
     params = {pname: pdefault for pname, (pdefault, _, _) in meta.params.items()}
     try:
-        import pymysql
-        conn = pymysql.connect(
-            host=config.DB_HOST, port=config.DB_PORT,
-            user=config.DB_USER, password=config.DB_PASSWORD,
-            database=config.DB_NAME, charset='utf8mb4',
-            autocommit=True, connect_timeout=3,
-        )
+        import sqlite3
+        conn = sqlite3.connect(config.DB_PATH, timeout=2)
         cur = conn.cursor()
         prefix = f'FACTOR_{key}_PARAM_'
-        cur.execute("SELECT `key`, value FROM config_store WHERE `key` LIKE %s", (prefix + '%',))
+        cur.execute("SELECT key, value FROM config_store WHERE key LIKE ?", (prefix + '%',))
         for row_key, row_val in cur.fetchall():
             pname = row_key[len(prefix):]
             if pname in meta.params:

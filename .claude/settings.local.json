@@ -70,11 +70,14 @@
       "Bash(mkdir -p .claude/skills/verify-build)",
       "Bash(cat)",
       "Bash(/tmp/analyze_ib_calls.sh)",
-      "Bash(unset http_proxy)",
-      "Bash(unset https_proxy)",
-      "Bash(tee /tmp/server2.log)",
-      "Bash(echo \"---EXIT $?---\")",
-      "Bash(jobs -l)"
+      "Bash(brew install *)",
+      "Bash(/opt/homebrew/bin/python3.12 -c \"import ssl; print\\(ssl.get_default_verify_paths\\(\\)\\)\")",
+      "Bash(/opt/homebrew/bin/python3.12 -c \"import certifi; print\\(certifi.where\\(\\)\\)\")",
+      "Bash(brew list *)",
+      "Bash(ln -sf /opt/homebrew/share/ca-certificates/cacert.pem /opt/homebrew/etc/openssl@3/cert.pem)",
+      "Bash(/opt/homebrew/bin/python3.12 -m venv .venv)",
+      "Bash(echo \"venv created with: $\\(.venv/bin/python --version\\)\")",
+      "Bash(/usr/bin/env python3 *)"
     ]
   }
 }

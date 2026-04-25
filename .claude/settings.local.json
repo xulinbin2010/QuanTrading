@@ -77,7 +77,9 @@
       "Bash(ln -sf /opt/homebrew/share/ca-certificates/cacert.pem /opt/homebrew/etc/openssl@3/cert.pem)",
       "Bash(/opt/homebrew/bin/python3.12 -m venv .venv)",
       "Bash(echo \"venv created with: $\\(.venv/bin/python --version\\)\")",
-      "Bash(/usr/bin/env python3 *)"
+      "Bash(/usr/bin/env python3 *)",
+      "Bash(./start_web.sh *)",
+      "Bash(git config *)"
     ]
   }
 }

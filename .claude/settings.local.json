@@ -79,7 +79,11 @@
       "Bash(echo \"venv created with: $\\(.venv/bin/python --version\\)\")",
       "Bash(/usr/bin/env python3 *)",
       "Bash(./start_web.sh *)",
-      "Bash(git config *)"
+      "Bash(git config *)",
+      "Bash(pkill -f \"web.server\")",
+      "Bash(pkill -f \"start_web\")",
+      "Bash(lsof -ti:3001)",
+      "Bash(xargs kill *)"
     ]
   }
 }

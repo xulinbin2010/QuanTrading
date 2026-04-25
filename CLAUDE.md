@@ -51,7 +51,7 @@ Always respond in Chinese (中文). Do not mix Korean or other languages into re
 ```bash
 python3.12 -m venv .venv
 source .venv/bin/activate
-pip install ib_insync yfinance numpy pandas requests lxml html5lib fastapi "uvicorn[standard]" apscheduler python-dotenv
+pip install ib_insync yfinance numpy pandas pyarrow requests lxml html5lib fastapi "uvicorn[standard]" apscheduler python-dotenv
 ```
 
 **注意：** 需手动创建 `.env` 文件（已加入 .gitignore），填写连接参数：

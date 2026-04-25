@@ -30,10 +30,10 @@ type ConnParam = {
   readonly: boolean
 }
 
-function MySQLCard({ params }: { params: ConnParam[] }) {
+function SQLiteCard({ params }: { params: ConnParam[] }) {
   return (
     <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
-      <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">🗄 MySQL 数据库</div>
+      <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">🗄 SQLite 数据库</div>
       <div className="grid grid-cols-2 gap-2">
         {params.map(p => (
           <div key={p.key} className="flex items-center justify-between text-sm py-1">
@@ -331,7 +331,7 @@ export default function Config() {
       <div className="max-w-2xl">
         <div className="text-sm font-medium text-slate-300 mb-3">连接参数</div>
         <div className="space-y-4">
-          {connByGroup['MySQL'] && <MySQLCard params={connByGroup['MySQL']} />}
+          {connByGroup['SQLite'] && <SQLiteCard params={connByGroup['SQLite']} />}
           {connByGroup['IB']    && <IBGatewayCard params={connByGroup['IB']} />}
         </div>
       </div>

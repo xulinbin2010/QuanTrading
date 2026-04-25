@@ -38,9 +38,7 @@ def get_factor_registry() -> list[dict]:
     for key, meta in registry.items():
         # 从 config 读取启用状态（默认取注册表 default_enabled）
         cfg_key = f'FACTOR_{key}_ENABLED'
-        enabled = config.get(cfg_key)
-        if enabled is None:
-            enabled = meta.default_enabled
+        enabled = _parse_bool(config.get(cfg_key), meta.default_enabled)
 
         params_info = {
             pname: {
@@ -65,14 +63,22 @@ def get_factor_registry() -> list[dict]:
     return result
 
 
+def _parse_bool(val, default=False) -> bool:
+    """正确解析 DB 中存储的布尔字符串（避免 bool('False') == True 的陷阱）"""
+    if val is None:
+        return default
+    if isinstance(val, bool):
+        return val
+    return str(val).lower() in ('true', '1', 'yes')
+
+
 def update_factor_config(key: str, enabled: bool | None = None, params: dict | None = None) -> bool:
     """更新因子开关或参数，写入 config_store"""
     import config
     ok = True
     if enabled is not None:
         cfg_key = f'FACTOR_{key}_ENABLED'
-        if cfg_key in config._DEFAULTS:
-            ok = config.set_param(cfg_key, enabled) and ok
+        ok = config.set_param(cfg_key, enabled) and ok
     # 因子参数更新（暂存到独立 key，供 DynamicFactorStrategy 读取）
     if params:
         for pname, pval in params.items():
@@ -166,12 +172,12 @@ def scan_factors(universe: str = 'sp500', top: int = 50, force: bool = False) ->
         'debt_to_equity', 'fcf_yield', 'pe_ratio', 'pb_ratio',
     ]
     enabled_fundamental = {
-        k: bool(config.get(f'FACTOR_{k}_ENABLED') or False)
+        k: _parse_bool(config.get(f'FACTOR_{k}_ENABLED'))
         for k in fundamental_keys
     }
 
     # 财报回避因子是否启用
-    earnings_avoid_enabled = bool(config.get('FACTOR_earnings_avoid_ENABLED') or False)
+    earnings_avoid_enabled = _parse_bool(config.get('FACTOR_earnings_avoid_ENABLED'))
     earnings_avoid_days    = int(config.get('EARNINGS_AVOID_DAYS') or 2)
     earnings_cache: dict   = {}
     if earnings_avoid_enabled:
@@ -183,7 +189,7 @@ def scan_factors(universe: str = 'sp500', top: int = 50, force: bool = False) ->
     if earnings_avoid_enabled:
         earnings_cache = prefetch_earnings(tickers)
 
-    sector_rs_enabled = bool(config.get('FACTOR_sector_rs_ENABLED') or False)
+    sector_rs_enabled = _parse_bool(config.get('FACTOR_sector_rs_ENABLED'))
     from strategies.factors.sector_rs import SECTOR_ETFS, compute_sector_rs
 
     strategy = RSMomentum(

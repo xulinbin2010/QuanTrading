@@ -21,6 +21,13 @@ if not os.path.exists(PYTHON):
 # 预设任务（北京时间）
 DEFAULT_TASKS = [
     {
+        'task_id':  'dry_run',
+        'name':     '模拟预览（Dry-run，不下单）',
+        'command':  f'{PYTHON} auto_trader.py --dry-run',
+        'cron_expr': '30 21 * * 1-5',  # 北京 21:30，比正式下单早 30 分钟
+        'enabled':  False,
+    },
+    {
         'task_id':  'auto_trader',
         'name':     '自动交易（OPG 下单）',
         'command':  f'{PYTHON} auto_trader.py --run',
@@ -59,17 +66,26 @@ _UTC_TO_CST = {
 }
 
 
+def _fmt_ts(val) -> str | None:
+    """将 datetime 或 ISO 字符串统一格式化为 'YYYY-MM-DD HH:MM:SS'，None 返回 None。"""
+    if val is None:
+        return None
+    if isinstance(val, datetime):
+        return val.strftime('%Y-%m-%d %H:%M:%S')
+    return str(val)[:19]
+
+
 class SchedulerService:
     def __init__(self):
         self.scheduler = BackgroundScheduler(timezone='Asia/Shanghai')
-        self._db: Database | None = None
+        self._local = threading.local()  # 每个线程独立 DB 连接，避免 sqlite3 并发 segfault
         self._lock = threading.Lock()
 
     def _get_db(self) -> Database:
-        if self._db is None:
-            self._db = Database()
-            self._db.connect()
-        return self._db
+        if not hasattr(self._local, 'db'):
+            self._local.db = Database()
+            self._local.db.connect()
+        return self._local.db
 
     def start(self):
         """启动调度器，加载 DB 中的任务"""
@@ -195,7 +211,7 @@ class SchedulerService:
             if r:
                 last_run = {
                     'id': r[1],
-                    'started_at': r[2].strftime('%Y-%m-%d %H:%M:%S') if r[2] else None,
+                    'started_at': _fmt_ts(r[2]),
                     'status': r[3],
                 }
             result.append({
@@ -258,8 +274,8 @@ class SchedulerService:
                 'id':          r[0],
                 'task_id':     r[1],
                 'task_name':   r[2] or r[1],
-                'started_at':  r[3].strftime('%Y-%m-%d %H:%M:%S') if r[3] else None,
-                'finished_at': r[4].strftime('%Y-%m-%d %H:%M:%S') if r[4] else None,
+                'started_at':  _fmt_ts(r[3]),
+                'finished_at': _fmt_ts(r[4]),
                 'status':      r[5],
                 'exit_code':   r[6],
                 'duration_s':  r[7],

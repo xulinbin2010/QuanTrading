@@ -10,11 +10,32 @@ FastAPI 服务器入口
 """
 import sys
 import os
+import logging
+from logging.handlers import TimedRotatingFileHandler
 
 # 确保项目根目录在 sys.path
 ROOT = os.path.dirname(os.path.dirname(__file__))
 if ROOT not in sys.path:
     sys.path.insert(0, ROOT)
+
+# ── 全局文件日志（server.log）────────────────────────────────
+# 在 import 任何业务模块之前配置，确保所有 logger 都能落盘。
+_LOG_DIR  = os.path.join(ROOT, 'logs')
+_LOG_FILE = os.path.join(_LOG_DIR, 'server.log')
+os.makedirs(_LOG_DIR, exist_ok=True)
+
+_file_handler = TimedRotatingFileHandler(
+    _LOG_FILE, when='midnight', backupCount=30, encoding='utf-8'
+)
+_file_handler.setFormatter(logging.Formatter(
+    '%(asctime)s | %(levelname)-5s | %(name)s | %(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+))
+_file_handler.setLevel(logging.DEBUG)
+
+# root logger 兜底：propagate=True 的模块都会写入 server.log
+logging.root.setLevel(logging.DEBUG)
+logging.root.addHandler(_file_handler)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -128,13 +149,16 @@ if __name__ == '__main__':
             },
         },
         'handlers': {
-            'default': {'class': 'logging.StreamHandler', 'formatter': 'default', 'stream': 'ext://sys.stderr'},
-            'access':  {'class': 'logging.StreamHandler', 'formatter': 'access',  'stream': 'ext://sys.stdout'},
+            'default': {'class': 'logging.StreamHandler',               'formatter': 'default', 'stream': 'ext://sys.stderr'},
+            'access':  {'class': 'logging.StreamHandler',               'formatter': 'access',  'stream': 'ext://sys.stdout'},
+            'file':    {'class': 'logging.handlers.TimedRotatingFileHandler',
+                        'formatter': 'default', 'filename': _LOG_FILE,
+                        'when': 'midnight', 'backupCount': 30, 'encoding': 'utf-8'},
         },
         'loggers': {
-            'uvicorn':        {'handlers': ['default'], 'level': 'INFO', 'propagate': False},
-            'uvicorn.error':  {'handlers': ['default'], 'level': 'INFO', 'propagate': False},
-            'uvicorn.access': {'handlers': ['access'],  'level': 'INFO', 'propagate': False},
+            'uvicorn':        {'handlers': ['default', 'file'], 'level': 'INFO', 'propagate': False},
+            'uvicorn.error':  {'handlers': ['default', 'file'], 'level': 'INFO', 'propagate': False},
+            'uvicorn.access': {'handlers': ['access',  'file'], 'level': 'INFO', 'propagate': False},
         },
     }
 

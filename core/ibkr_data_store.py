@@ -222,6 +222,42 @@ class IBKRDataStore:
         df = df.set_index('date').sort_index()
         return df
 
+    def fetch_df(self, symbol: str) -> 'pd.DataFrame | None':
+        """
+        从 IBKR 拉取日线数据，返回 DataFrame，不写入本地文件。
+        供 DataStore 在 yfinance 复权跳变时用作修复数据源。
+
+        优先 ADJUSTED_LAST（分红+拆股调整，与 yfinance auto_adjust 等价），
+        不支持时退回 TRADES（仅拆股调整，无分红调整）。
+        """
+        if self._ib is None or not self._ib.isConnected():
+            return None
+        try:
+            from ib_insync import Stock
+            contract = Stock(symbol, 'SMART', 'USD')
+            self._ib.qualifyContracts(contract)
+            for what, duration in [('ADJUSTED_LAST', '3 Y'), ('TRADES', '5 Y')]:
+                try:
+                    bars = self._ib.reqHistoricalData(
+                        contract,
+                        endDateTime='',
+                        durationStr=duration,
+                        barSizeSetting=BAR_SIZE,
+                        whatToShow=what,
+                        useRTH=True,
+                        formatDate=1,
+                    )
+                    if bars:
+                        df = self._bars_to_df(bars)
+                        if not df.empty:
+                            print(f'  [IBKRDataStore] {symbol} {what} {len(df)} 行')
+                            return df
+                except Exception:
+                    continue
+        except Exception as e:
+            print(f'  [IBKRDataStore] {symbol} fetch_df 失败：{e}')
+        return None
+
     # ── CLI 入口 ──────────────────────────────────────────────
 
     @classmethod

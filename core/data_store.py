@@ -23,6 +23,7 @@ CLI（独立运行，下载 / 更新数据）：
   python -m core.data_store --universe sp500 --start 2022-01-01
 """
 
+import logging
 import warnings
 from datetime import date, timedelta
 from pathlib import Path
@@ -31,6 +32,8 @@ import pandas as pd
 import yfinance as yf
 
 warnings.filterwarnings('ignore')
+
+_logger = logging.getLogger(__name__)
 
 
 class DataStore:
@@ -45,7 +48,7 @@ class DataStore:
       load_multi(symbols, start, end) → DataFrame             # date×symbol 横截面矩阵
     """
 
-    def __init__(self, data_dir: str | Path = 'data'):
+    def __init__(self, data_dir: str | Path = 'data', ibkr_store=None):
         self.root       = Path(data_dir)
         self.stocks_dir = self.root / 'stocks'
         self.stocks_dir.mkdir(parents=True, exist_ok=True)
@@ -53,6 +56,8 @@ class DataStore:
         self._no_data_syms: set[str] = set()
         # update()→_date_range() 期间缓存各 symbol 的最新日期，_load() 复用避免重复读文件
         self._last_date_cache: dict[str, 'date | None'] = {}
+        # 可选：IBKRDataStore 实例，用于 yfinance 复权跳变时的数据修复
+        self._ibkr_store = ibkr_store
 
     # ── 主入口 ────────────────────────────────────────────────
 
@@ -88,11 +93,11 @@ class DataStore:
                 groups.setdefault(dl_from, []).append(sym)
 
         if not groups:
-            print('  [DataStore] 数据已是最新，无需下载')
+            _logger.info('[DataStore] 数据已是最新，无需下载')
             return False
 
         total = sum(len(v) for v in groups.values())
-        print(f'  [DataStore] 需更新 {total} 只，分 {len(groups)} 批下载...')
+        _logger.info(f'[DataStore] 需更新 {total} 只，分 {len(groups)} 批下载...')
         written     = 0
         all_got     : set[str] = set()   # yfinance 有返回数据（含重复）的 symbol
         all_no_data : set[str] = set()   # yfinance 完全无数据的 symbol
@@ -208,13 +213,15 @@ class DataStore:
                 new_rows = df[~df.index.isin(old.index)]
                 if new_rows.empty:
                     continue                          # 无新数据，跳过写入
-                # 校验新行的涨跌幅：若末行与已有数据衔接处涨跌超 50%，触发单只重试
+                # 校验新行的涨跌幅：若末行与已有数据衔接处涨跌超 20%，触发全量重下
                 if not old.empty and 'close' in old.columns and 'close' in new_rows.columns:
                     last_old_close = old['close'].iloc[-1]
                     first_new_close = new_rows['close'].iloc[0]
-                    if last_old_close > 0 and abs(first_new_close / last_old_close - 1) > 0.50:
-                        print(f'  [DataStore] {sym} 涨跌幅异常 '
-                              f'({last_old_close:.2f}→{first_new_close:.2f})，单只重试')
+                    if last_old_close > 0 and abs(first_new_close / last_old_close - 1) > 0.20:
+                        _logger.warning(
+                            f'[DataStore] {sym} 复权跳变 '
+                            f'({last_old_close:.2f}→{first_new_close:.2f})，触发全量重下'
+                        )
                         suspect_syms.add(sym)
                         continue
                 df = pd.concat([old, df])
@@ -223,31 +230,45 @@ class DataStore:
             df.to_parquet(path)
             saved += 1
 
-        # 涨跌幅异常的 symbol 单只重新下载校验
+        # 复权跳变的 symbol：优先从 IBKR 修复，不可用时 yfinance 全量重下
         if suspect_syms:
+            _logger.warning(f'[DataStore] 复权跳变 {len(suspect_syms)} 只，开始修复：{sorted(suspect_syms)}')
+            full_start = (date.today() - timedelta(days=365 * 8)).strftime('%Y-%m-%d')
             for sym in sorted(suspect_syms):
-                try:
-                    r = yf.download(sym, start=start, end=end_exclusive,
-                                    auto_adjust=True, progress=False)
-                    df2 = self._extract(r, sym, 1)
-                    if df2 is not None and not df2.empty:
-                        path = self.stocks_dir / f'{sym}.parquet'
-                        if path.exists():
-                            old      = pd.read_parquet(path)
-                            new_rows = df2[~df2.index.isin(old.index)]
-                            if not new_rows.empty:
-                                df2 = pd.concat([old, df2])
-                                df2 = df2[~df2.index.duplicated(keep='last')].sort_index()
-                            else:
-                                continue
-                        df2.index.name = 'date'
-                        df2.to_parquet(path)
+                path = self.stocks_dir / f'{sym}.parquet'
+                repaired = False
+                # ── 优先：IBKR ────────────────────────────────
+                if self._ibkr_store is not None:
+                    df_ibkr = self._ibkr_store.fetch_df(sym)
+                    if df_ibkr is not None and not df_ibkr.empty:
+                        df_ibkr.index.name = 'date'
+                        df_ibkr.to_parquet(path)
                         saved += 1
-                        print(f'  [DataStore] {sym} 单只重试成功，close={df2["close"].iloc[-1]:.2f}')
-                    else:
+                        got_syms.add(sym)
+                        _logger.info(
+                            f'[DataStore] {sym} 已从 IBKR 修复，'
+                            f'{len(df_ibkr)} 行，close={df_ibkr["close"].iloc[-1]:.2f}'
+                        )
+                        repaired = True
+                # ── 退路：yfinance 全量重下 ────────────────────
+                if not repaired:
+                    try:
+                        r = yf.download(sym, start=full_start, end=end_exclusive,
+                                        auto_adjust=True, progress=False)
+                        df2 = self._extract(r, sym, 1)
+                        if df2 is not None and not df2.empty:
+                            df2.index.name = 'date'
+                            df2.to_parquet(path)
+                            saved += 1
+                            _logger.info(
+                                f'[DataStore] {sym} yfinance 全量重下完成，'
+                                f'{len(df2)} 行，close={df2["close"].iloc[-1]:.2f}'
+                            )
+                        else:
+                            bad_syms.add(sym)
+                    except Exception as e:
+                        _logger.error(f'[DataStore] {sym} 全量重下失败：{e}')
                         bad_syms.add(sym)
-                except Exception:
-                    bad_syms.add(sym)
 
         # 批量下载中空数据的 symbol 逐只重试（yfinance 批量偶发空列问题）
         if bad_syms:
@@ -278,8 +299,8 @@ class DataStore:
             bad_syms = retry_bad
 
         if bad_syms:
-            print(f'  [DataStore] yfinance 无数据（疑似退市）：{sorted(bad_syms)}')
-        print(f'  [DataStore] 写入 {saved}/{len(symbols)} 只')
+            _logger.warning(f'[DataStore] yfinance 无数据（疑似退市）：{sorted(bad_syms)}')
+        _logger.info(f'[DataStore] 写入 {saved}/{len(symbols)} 只')
         return saved, got_syms, bad_syms
 
     # ── 内部：读取 ───────────────────────────────────────────
@@ -333,7 +354,7 @@ class DataStore:
                 continue
             result[sym] = df
         if stale_syms:
-            print(f'  [DataStore] 数据过期跳过 {len(stale_syms)} 只（疑似退市/停牌）：{stale_syms}')
+            _logger.warning(f'[DataStore] 数据过期跳过 {len(stale_syms)} 只（疑似退市/停牌）：{stale_syms}')
         return result
 
     # ── 内部：工具函数 ────────────────────────────────────────

@@ -73,6 +73,16 @@ def stock_detail(symbol: str, days: int = Query(120, le=500)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get('/stock/{symbol}/news')
+def stock_news(symbol: str):
+    """单股新闻 & SEC 公告（8-K/10-K/10-Q），按需加载，2 小时缓存"""
+    try:
+        from core.stock_news import get_stock_news
+        return get_stock_news(symbol.upper())
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get('/insider')
 def insider(days: int = Query(None), min_value_k: int = Query(None)):
     """内部人净买入扫描（OpenInsider，带 20 小时缓存）"""

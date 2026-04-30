@@ -31,7 +31,7 @@ SMH
 HIMS
 ONTO
 rog
-ttmi
-POET
 VMI
-form
+NOK
+BE
+PL

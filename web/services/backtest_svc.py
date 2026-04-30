@@ -2,7 +2,10 @@
 from __future__ import annotations
 import sys
 import os
+import logging
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
+_logger = logging.getLogger(__name__)
 
 import uuid
 import threading
@@ -104,15 +107,39 @@ def submit_backtest(params: dict) -> str:
 def _run(task_id: str, params: dict):
     with _lock:
         _tasks[task_id]['status'] = 'running'
+    short_id = task_id[:8]
+    _logger.info(f'[回测 {short_id}] 开始 params={params}')
     try:
         from tests.backtest_rs import run_backtest
-        result = run_backtest(**params)
+        # 强制带 daily=True，确保每日持仓数据可用于日志和前端展示
+        result = run_backtest(**{**params, 'daily': True})
+
+        # 把每日持仓明细写入 server.log
+        daily = result.get('daily_holdings') or []
+        if daily:
+            _logger.info(f'[回测 {short_id}] 每日持仓明细（共 {len(daily)} 天）:')
+            for snap in daily:
+                holdings = snap.get('holdings') or []
+                syms = ' '.join(h['symbol'] for h in holdings) if holdings else '空仓'
+                _logger.info(
+                    f'  {snap["date"]}  持仓{len(holdings)}只  '
+                    f'净值${snap.get("equity", 0):>10,.0f}  [{syms}]'
+                )
+
+        s = result.get('summary', {})
+        _logger.info(
+            f'[回测 {short_id}] 完成  '
+            f'收益{s.get("total_return", 0):.1%}  '
+            f'Sharpe={s.get("sharpe_ratio", 0):.2f}  '
+            f'交易{s.get("num_trades", 0)}次'
+        )
         with _lock:
             _tasks[task_id]['result']   = result
             _tasks[task_id]['status']   = 'completed'
             _tasks[task_id]['progress'] = 1.0
         _save_task(task_id, _tasks[task_id])
     except Exception as e:
+        _logger.exception(f'[回测 {short_id}] 失败：{e}')
         with _lock:
             _tasks[task_id]['status'] = 'failed'
             _tasks[task_id]['error']  = str(e)

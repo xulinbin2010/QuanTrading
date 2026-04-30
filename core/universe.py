@@ -76,16 +76,21 @@ def get_nasdaq100_tickers(extra: list[str] = None) -> list[str]:
 
 
 
-_STOCK_INFO_CACHE = os.path.join(os.path.dirname(__file__), '..', '.stock_info_cache.pkl')
-_STOCK_INFO_TTL   = timedelta(days=7)
+_STOCK_INFO_CACHE    = os.path.join(os.path.dirname(__file__), '..', '.stock_info_cache.pkl')
+_STOCK_INFO_TTL      = timedelta(days=1)   # 市值每日刷新
+_STOCK_INFO_FIELDS   = {                   # 完整字段集，缺字段的旧条目视为需要重查
+    'market_cap_b', 'industry', 'sector',
+    'revenue_growth', 'earnings_growth', 'roe', 'debt_to_equity',
+    'free_cashflow', 'gross_margins', 'pe_ratio', 'pb_ratio', 'ps_ratio',
+}
 
 
 def get_stock_info(symbols: list[str]) -> dict[str, dict]:
     """
-    返回 {symbol: {'market_cap_b': float, 'industry': str, 'sector': str}}
+    返回 {symbol: {'market_cap_b': float, 'industry': str, 'sector': str, ...}}
     market_cap_b 单位：十亿美元（Billion USD）
 
-    结果本地缓存 7 天（.stock_info_cache.pkl），只查询缓存中没有的 symbol。
+    结果本地缓存 1 天（.stock_info_cache.pkl），字段不完整的旧条目自动补刷。
     仅对 buy signal 候选（通常 10-50 只）调用，速度可接受。
     """
     cache = {}
@@ -94,13 +99,15 @@ def get_stock_info(symbols: list[str]) -> dict[str, dict]:
         try:
             with open(cache_path, 'rb') as f:
                 stored = pickle.load(f)
-            # 过期则清空
+            # 整批过期则清空；未过期则保留，但字段不完整的条目将被标记重查
             if datetime.now() - stored.get('_time', datetime.min) < _STOCK_INFO_TTL:
                 cache = stored.get('data', {})
         except Exception:
             pass
 
-    need = [s for s in symbols if s not in cache]
+    # 缓存中没有、或字段不完整（旧版写入）的 symbol 都需要重查
+    need = [s for s in symbols
+            if s not in cache or not _STOCK_INFO_FIELDS.issubset(cache[s].keys())]
     if need:
         print(f"  [信息] 查询 {len(need)} 只股票市值/行业（首次约需 {len(need)//5+1}s）...")
         for sym in need:

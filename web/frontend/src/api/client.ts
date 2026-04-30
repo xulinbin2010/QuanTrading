@@ -31,6 +31,8 @@ export const scanFactors   = (universe: string, top = 50, force = false) =>
   api.get('/factors/scan', { params: { universe, top, force } }).then(r => r.data)
 export const getStockDetail = (symbol: string, days = 120) =>
   api.get(`/factors/stock/${symbol}`, { params: { days } }).then(r => r.data)
+export const getStockNews = (symbol: string) =>
+  api.get(`/factors/stock/${symbol}/news`).then(r => r.data)
 export const getInsiderData    = () => api.get('/factors/insider').then(r => r.data)
 export const getEarningsDates  = (symbols: string[]) =>
   api.get('/factors/earnings', { params: { symbols: symbols.join(',') } }).then(r => r.data as Record<string, string | null>)

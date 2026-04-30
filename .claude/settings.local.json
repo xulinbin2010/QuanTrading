@@ -87,7 +87,8 @@
       "Read(//Users/xulinbin/.ssh/**)",
       "Bash(ssh-keygen -t ed25519 -C \"xulinbin1988@gmail.com\" -f ~/.ssh/id_ed25519 -N \"\")",
       "Bash(ssh *)",
-      "Bash(git remote *)"
+      "Bash(git remote *)",
+      "Bash(python3.12 *)"
     ]
   }
 }

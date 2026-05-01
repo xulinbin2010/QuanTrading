@@ -3,6 +3,9 @@ config.py
 .env
 .web.pid
 
+# 运行时缓存（可自动重建，无需版本管理）
+*.pkl
+
 # Python
 __pycache__/
 *.pyc

@@ -259,7 +259,7 @@ strategies/
     breakout.py      # 价格突破因子
     volume.py        # 成交量均线 / 放量突破 / 量价背离
     volume_profile.py # OBV 趋势因子（obv_trend）
-    trend.py         # 趋势过滤（MA50 > MA200）
+    trend.py         # 趋势过滤（MA10 > MA20，短期趋势）
     drawdown.py      # 崩跌过滤（距高点最大回撤）
     atr.py           # ATR 波动率（供自适应止损使用，is_dependency）
     volatility.py    # 波动率过滤（atr_pct / vol_ok，ATR/价格过高则排除）
@@ -307,7 +307,7 @@ start_web.sh         # 一键启动脚本
 | 价格突破 | `breakout_period=50` | 收盘价 > 前50日最高收盘价（shift(1) 排除当天） |
 | 放量确认 | `vol_multiplier=1.5` | 当日成交量 > 20日均量 × 1.5 |
 | 崩跌过滤 | `max_drawdown=-30%` | 距52周高点跌幅不超过30% |
-| 趋势向上 | MA50 > MA200 | 黄金交叉过滤，减少熊市假突破 |
+| 趋势向上 | MA10 > MA20 | 短期趋势过滤，避免买入短期下行股 |
 
 **卖出信号：** 价格创50日新高但成交量低于均量 × `VOL_SHRINK_RATIO`（量价背离，顶部信号）
 
@@ -391,7 +391,7 @@ start_web.sh         # 一键启动脚本
 | `volume_ma` | technical | score | 成交量均线（is_dependency） |
 | `volume_surge` | technical | filter | 放量突破（量 > 均量×倍数） |
 | `volume_divergence` | technical | sell_alert | 量价背离顶部信号 |
-| `trend_filter` | technical | filter | MA50 > MA200 趋势过滤 |
+| `trend_filter` | technical | filter | MA10 > MA20 短期趋势过滤 |
 | `drawdown_filter` | technical | filter | 崩跌过滤（距高点最大回撤） |
 | `atr` | technical | score | ATR14（is_dependency，供止损用） |
 | `volatility_filter` | technical | filter | ATR/价格 > max_atr_pct 则过滤（默认5%） |

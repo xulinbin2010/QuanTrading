@@ -76,12 +76,14 @@ def _entry_date(sym: str, db) -> date | None:
     return None
 
 
-def _peak_price(sym: str, avg_cost: float, df) -> float:
-    """从历史数据计算持仓峰值收盘价：只取高于均价的收盘价的最大值。
-    与因子看板 check_trail_stops 逻辑一致，不依赖 orders 表入场日期。
-    df: 该股票的历史 DataFrame（含 close 列）。
-    """
+def _peak_price(sym: str, avg_cost: float, df, entry_date=None) -> float:
+    """计算持仓峰值收盘价：只看入场日之后的数据，避免把买入前旧高误认为峰值。"""
     if df is None or df.empty:
+        return avg_cost
+    if entry_date is not None:
+        import pandas as pd
+        df = df[df.index >= pd.Timestamp(entry_date)]
+    if df.empty:
         return avg_cost
     above = df['close'][df['close'] >= avg_cost]
     return float(above.max()) if not above.empty else avg_cost
@@ -550,7 +552,8 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
         cur_price = signals.get('_prices', {}).get(sym)
         if avg_cost <= 0 or qty <= 0 or cur_price is None:
             continue
-        peak      = _peak_price(sym, avg_cost, held_data.get(sym))
+        ed        = _entry_date(sym, db)   # 只看入场日之后的收盘，避免旧历史高点误触发
+        peak      = _peak_price(sym, avg_cost, held_data.get(sym), entry_date=ed)
         peak_ret  = (peak - avg_cost) / avg_cost
         trail_ret = (cur_price - peak) / peak
         if peak_ret >= eff_trail_activate and trail_ret <= eff_trail_pct:

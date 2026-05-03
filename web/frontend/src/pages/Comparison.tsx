@@ -290,7 +290,7 @@ export default function Comparison() {
           </div>
         </div>
 
-        {/* 自定义输入 */}
+        {/* 股票代码 + 时间范围 + 对比按钮 */}
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex-1 min-w-[260px]">
             <div className="text-xs text-slate-400 mb-1">股票代码（逗号分隔，最多 8 个）</div>
@@ -301,33 +301,38 @@ export default function Comparison() {
               placeholder="NVDA,NVDL,SPY"
               className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-blue-500"
             />
-
           </div>
 
+          {/* 时间范围：快捷区间 与 自定义日期 二选一 */}
           <div>
-            <DatePicker
-              label="开始日期"
-              value={startDate}
-              onChange={v => { setStartDate(v); setActiveDatePreset('') }}
-            />
-          </div>
+            <div className="text-xs text-slate-400 mb-1">时间范围</div>
+            <div className="flex items-center gap-2">
+              {/* 快捷区间按钮 */}
+              <div className={`flex gap-1 transition-opacity ${activeDatePreset === '' ? 'opacity-40' : ''}`}>
+                {DATE_PRESETS.map(p => (
+                  <button
+                    key={p.label}
+                    onClick={() => handleDatePreset(p.label, p.days)}
+                    className={`px-2.5 py-1.5 text-xs rounded transition-colors ${
+                      activeDatePreset === p.label
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-slate-700 border border-slate-600 text-slate-300 hover:border-slate-400 hover:opacity-100'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
 
-          <div>
-            <div className="text-xs text-slate-400 mb-1">快捷区间</div>
-            <div className="flex gap-1">
-              {DATE_PRESETS.map(p => (
-                <button
-                  key={p.label}
-                  onClick={() => handleDatePreset(p.label, p.days)}
-                  className={`px-2.5 py-1.5 text-xs rounded transition-colors ${
-                    activeDatePreset === p.label
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-slate-700 border border-slate-600 text-slate-300 hover:border-slate-400'
-                  }`}
-                >
-                  {p.label}
-                </button>
-              ))}
+              <span className="text-slate-600 text-xs select-none">或</span>
+
+              {/* 自定义起始日 */}
+              <div className={`transition-opacity ${activeDatePreset !== '' ? 'opacity-40' : ''}`}>
+                <DatePicker
+                  value={startDate}
+                  onChange={v => { setStartDate(v); setActiveDatePreset('') }}
+                />
+              </div>
             </div>
           </div>
 
@@ -364,6 +369,19 @@ export default function Comparison() {
                 <span className="ml-2 text-slate-600">（基准价取所选起始日前最近交易日收盘）</span>
               </div>
             </div>
+            {/* 若实际起始晚于所选起始，说明受某只标的上市时间限制 */}
+            {result.start_date > startDate && (() => {
+              // 找到数据起点最晚的那些标的（决定了交集起点）
+              const maxDataStart = result.series.reduce((m: string, s: any) => s.data_start > m ? s.data_start : m, '')
+              const limited = result.series
+                .filter((s: any) => s.data_start === maxDataStart)
+                .map((s: any) => `${s.symbol}（最早 ${s.data_start}）`)
+              return (
+                <div className="mb-3 text-xs text-yellow-500/80 bg-yellow-900/10 border border-yellow-700/30 rounded px-3 py-1.5">
+                  ⚠ 对比区间受以下标的数据起点限制，无法追溯至所选起始日：{limited.join('、')}
+                </div>
+              )
+            })()}
             <ReturnChart series={result.series} />
           </div>
 

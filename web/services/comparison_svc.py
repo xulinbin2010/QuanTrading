@@ -7,6 +7,7 @@ from __future__ import annotations
 import sys
 import os
 import logging
+from pathlib import Path
 from datetime import date, timedelta
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
@@ -18,6 +19,22 @@ import pandas as pd
 from core.data_store import DataStore
 
 PALETTE = ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#ec4899']
+
+_STOCKS_DIR = Path(__file__).resolve().parents[2] / 'data' / 'stocks'
+
+
+def _true_data_start(symbol: str) -> str | None:
+    """直接从 parquet 读取该标的真正的最早数据日期（不被 fetch 窗口截断）。"""
+    path = _STOCKS_DIR / f'{symbol}.parquet'
+    if not path.exists():
+        return None
+    try:
+        idx = pd.read_parquet(path, columns=['close']).index
+        if idx.empty:
+            return None
+        return str(idx[0].date())
+    except Exception:
+        return None
 
 
 def _prev_trading_day_close(df: pd.DataFrame, start_str: str) -> tuple[float, str]:
@@ -40,7 +57,8 @@ def get_comparison(symbols: list[str], start: str, end: str | None = None) -> di
     fetch_start = str((date.fromisoformat(start) - timedelta(days=7)))
 
     try:
-        data = store.get(symbols, start=fetch_start, end=end)
+        # min_rows=2：放行新上市的 ETF（如 DRAM 仅 22 个交易日）
+        data = store.get(symbols, start=fetch_start, end=end, min_rows=2)
     except Exception as e:
         _logger.error(f'[ComparisonSvc] 获取数据失败: {e}')
         raise
@@ -66,6 +84,9 @@ def get_comparison(symbols: list[str], start: str, end: str | None = None) -> di
     base_info: dict[str, dict] = {}     # 各标的基准日期信息
 
     for i, (sym, df) in enumerate(valid.items()):
+        # 直接读 parquet 取真正的数据起点（df.index[0] 是 fetch 窗口起点，不准）
+        sym_data_start = _true_data_start(sym) or str(df.index[0].date())
+
         # 基准价：start 当天或之前最近交易日
         base_price, base_date = _prev_trading_day_close(df, start)
 
@@ -85,6 +106,7 @@ def get_comparison(symbols: list[str], start: str, end: str | None = None) -> di
             ],
             'base_date': base_date,
             'base_price': round(base_price, 4),
+            'data_start': sym_data_start,   # 该标的原始数据的最早日期
         })
 
     metrics = []

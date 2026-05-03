@@ -510,13 +510,14 @@ export default function MarketScan() {
   const [scanState, setScanState] = useState<'idle' | 'scanning' | 'done'>('idle')
   const queryClient = useQueryClient()
 
-  // 因子扫描
-  const { data: scanResult, dataUpdatedAt, isFetching: isAutoFetching } = useQuery({
+  // 因子扫描（disabled 自动加载，点按钮才触发）
+  const { data: scanResult, dataUpdatedAt } = useQuery({
     queryKey: ['factors-scan', universe],
     queryFn: () => scanFactors(universe, 100),
     staleTime: Infinity,
     gcTime: 24 * 3_600_000,
     refetchOnWindowFocus: false,
+    enabled: false,
   })
 
   // 内部人买入
@@ -607,16 +608,16 @@ export default function MarketScan() {
     <div className="space-y-4">
       {/* 标题栏 */}
       <div className="flex items-center justify-between">
-        <h1 className="text-lg font-semibold text-white">市场扫描</h1>
+        <h1 className="text-lg font-semibold text-white">市场扫描(根据63个交易日的RS对比SPY)</h1>
         <div className="flex items-center gap-3">
           <span className="text-xs text-slate-400 bg-slate-700 border border-slate-600 rounded px-2 py-1">sp500+ndx</span>
           {tab === 'scan' && (
             <>
               {lastScan
                 ? <span className="text-xs text-slate-400">上次扫描：{lastScan}</span>
-                : isAutoFetching
-                  ? <span className="text-xs text-slate-500">加载中...</span>
-                  : <span className="text-xs text-slate-500">尚未扫描（每日收盘后自动执行，或手动触发）</span>
+                : scanState === 'scanning'
+                  ? <span className="text-xs text-slate-500">扫描中...</span>
+                  : <span className="text-xs text-slate-500">点击「开始扫描」获取数据</span>
               }
               {totalScanned > 0 && <span className="text-xs text-slate-500">{rows.length}/{totalScanned} 只</span>}
               <button
@@ -644,7 +645,7 @@ export default function MarketScan() {
                   </span>
                 )}
                 {scanState === 'done' && '扫描完成 ✓'}
-                {scanState === 'idle' && '重新扫描'}
+                {scanState === 'idle' && (rows.length === 0 ? '开始扫描' : '重新扫描')}
               </button>
             </>
           )}
@@ -704,7 +705,7 @@ export default function MarketScan() {
                 </tr>
               </thead>
               <tbody>
-                {(scanState === 'scanning' || isAutoFetching) && rows.length === 0 ? (
+                {scanState === 'scanning' && rows.length === 0 ? (
                   <tr>
                     <td colSpan={11 + activeFundCols.length} className="px-4 py-10 text-center text-slate-500">
                       正在扫描因子数据，请稍候...

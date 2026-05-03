@@ -428,7 +428,12 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
 
     net_liq   = account._get_value('NetLiquidation')
     cash      = account._get_value('TotalCashValue')
-    positions = {p.contract.symbol: p for p in ib.positions()}
+    # 过滤 qty=0 的幽灵仓位（IB 平仓后可能残留）和非股票合约（期权等不占槽位）
+    positions = {
+        p.contract.symbol: p
+        for p in ib.positions()
+        if float(p.position) != 0 and getattr(p.contract, 'secType', 'STK') == 'STK'
+    }
 
     # 分离现金等价 ETF（SGOV 等）：市值计入现金，不占槽位
     cash_equiv_pos  = {s: p for s, p in positions.items() if s in CASH_EQUIV}

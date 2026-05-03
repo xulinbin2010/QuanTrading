@@ -164,7 +164,7 @@ python -m tools.compare_data --universe sp500 --sample 30 --start 2024-06-01
 | 价格突破 | `breakout_period=50` | 收盘价 > 前50日最高收盘价 |
 | 放量确认 | `vol_multiplier=1.5` | 成交量 > 20日均量 × 1.5 |
 | 崩跌过滤 | `max_drawdown=-30%` | 距52周高点跌幅不超过30% |
-| 趋势向上 | MA50 > MA200 | 黄金交叉过滤 |
+| 趋势向上 | MA50 > MA200 | 黄金交叉过滤 |/
 
 **卖出信号：** 价格创50日新高但成交量萎缩（量价背离）。
 

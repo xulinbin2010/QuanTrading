@@ -28,6 +28,14 @@ Always respond in Chinese (中文). Do not mix Korean or other languages into re
 
 ---
 
+## 前端共享组件规范
+
+- **日期选择器**：统一使用 `web/frontend/src/components/DatePicker.tsx`，禁止用原生 `<input type="date">`。
+  - 用法：`import DatePicker from '../components/DatePicker'`，props：`value: string`、`onChange: (v: string) => void`、`label?: string`
+  - 工具函数 `dateToStr(d: Date): string` 和 `strToDate(s: string): Date | undefined` 也从该文件导出，可按需导入
+
+---
+
 ## UI/Theme Conventions
 
 - Match existing button styles (e.g., backtest button style) rather than introducing new colors like amber

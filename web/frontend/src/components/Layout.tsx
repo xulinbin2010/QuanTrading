@@ -8,9 +8,10 @@ const NAV = [
   { to: '/',          label: '持仓总览', icon: '📊' },
   { to: '/factors',   label: '因子看板', icon: '🔬' },
   { to: '/scanner',   label: '市场扫描', icon: '🔭' },
-  { to: '/analysis',  label: '自选分析', icon: '🎯' },
   { to: '/optimizer', label: '因子优化', icon: '⚗️'  },
   { to: '/backtest',  label: '策略回测', icon: '📈' },
+  { to: '/comparison',label: '收益对比', icon: '⚖️'  },
+  { to: '/analysis',  label: '自选分析', icon: '🎯' },
   { to: '/scheduler', label: '任务调度', icon: '⏰' },
   { to: '/config',    label: '系统配置', icon: '⚙️'  },
 ]

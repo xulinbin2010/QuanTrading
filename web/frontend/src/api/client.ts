@@ -166,3 +166,8 @@ export const deleteTaskRun      = (runId: number) =>
   api.delete(`/scheduler/runs/${runId}`).then(r => r.data)
 export const getCronPreview     = (expr: string, count = 5) =>
   api.get('/scheduler/cron-preview', { params: { expr, count } }).then(r => r.data)
+
+// ── 收益对比 ──────────────────────────────────────────────
+
+export const getComparison = (symbols: string[], start: string, end?: string) =>
+  api.get('/compare', { params: { symbols: symbols.join(','), start, end }, timeout: 120_000 }).then(r => r.data)

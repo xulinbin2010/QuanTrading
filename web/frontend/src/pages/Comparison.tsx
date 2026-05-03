@@ -360,7 +360,8 @@ export default function Comparison() {
             <div className="flex items-baseline justify-between mb-3">
               <div className="text-sm font-medium text-slate-300">累计收益对比</div>
               <div className="text-xs text-slate-500">
-                {result.start_date} — {result.end_date}（基准日归一化为 0%）
+                {result.start_date} — {result.end_date}
+                <span className="ml-2 text-slate-600">（基准价取所选起始日前最近交易日收盘）</span>
               </div>
             </div>
             <ReturnChart series={result.series} />
@@ -374,6 +375,7 @@ export default function Comparison() {
                 <thead>
                   <tr className="text-xs text-slate-400 border-b border-slate-700">
                     <th className="text-left py-2 pr-6 font-medium">标的</th>
+                    <th className="text-right py-2 px-4 font-medium">基准日 / 价格</th>
                     <th className="text-right py-2 px-4 font-medium">总收益</th>
                     <th className="text-right py-2 px-4 font-medium">年化收益</th>
                     <th className="text-right py-2 px-4 font-medium">最大回撤</th>
@@ -389,6 +391,9 @@ export default function Comparison() {
                         <td className="py-2 pr-6">
                           <span className="inline-block w-2.5 h-2.5 rounded-full mr-2" style={{ background: color }} />
                           <span className="font-medium text-white">{m.symbol}</span>
+                        </td>
+                        <td className="text-right py-2 px-4 text-slate-500 text-xs font-mono">
+                          {m.base_date}<br />${m.base_price}
                         </td>
                         <td className={`text-right py-2 px-4 font-mono ${pctColor(m.total_return)}`}>
                           {pct(m.total_return)}

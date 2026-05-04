@@ -1,0 +1,440 @@
+"""AI 基建追踪服务
+
+三大子主题：GPU/算力芯片 | 数据中心/网络 | 电力/冷却/能源
+
+核心指标（6 维，满分 12）：
+  1. AI 营收占比   (3pt)  >50%=3, >25%=2, >10%=1
+  2. Capex YoY 增速 (2pt) >50%=2, >20%=1
+  3. NVDA 价格相关性 (2pt) >0.8=2, >0.6=1
+  4. RS vs SPY 60日 (2pt) >10%=2, >0%=1
+  5. 营收增速 YoY  (2pt)  >30%=2, >10%=1
+  6. 新闻/叙事评分  (1pt) 近30天 AI 关键词命中 ≥3 条
+"""
+from __future__ import annotations
+import os
+import sys
+import json
+import time
+import pickle
+import logging
+from datetime import datetime, timedelta
+from pathlib import Path
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
+
+_logger = logging.getLogger(__name__)
+
+ROOT = Path(__file__).resolve().parents[2]
+
+_AI_UNIVERSE_FILE    = ROOT / 'data' / 'ai_universe.json'
+_AI_REVENUE_FILE     = ROOT / 'data' / 'ai_revenue_share.json'
+_AI_CACHE_FILE       = ROOT / 'data' / 'ai_tracker_cache.json'
+_AI_CACHE_TTL_HOURS  = 4   # 4 小时缓存
+
+_AI_KEYWORDS = {'ai', 'artificial intelligence', 'machine learning', 'deep learning',
+                'gpu', 'inference', 'training', 'data center', 'accelerat', 'nvidia',
+                'generative', 'large language', 'llm', 'neural network'}
+
+
+# ── 加载配置文件 ──────────────────────────────────────────────
+
+def load_universe() -> dict:
+    with open(_AI_UNIVERSE_FILE, encoding='utf-8') as f:
+        return json.load(f)
+
+
+def save_universe(data: dict):
+    _AI_UNIVERSE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(_AI_UNIVERSE_FILE, 'w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+def load_ai_revenue() -> dict:
+    if not _AI_REVENUE_FILE.exists():
+        return {}
+    with open(_AI_REVENUE_FILE, encoding='utf-8') as f:
+        return json.load(f).get('data', {})
+
+
+def save_ai_revenue(data: dict):
+    raw = {}
+    if _AI_REVENUE_FILE.exists():
+        with open(_AI_REVENUE_FILE, encoding='utf-8') as f:
+            raw = json.load(f)
+    raw['data'] = data
+    raw['_updated'] = datetime.now().strftime('%Y-%m-%d')
+    with open(_AI_REVENUE_FILE, 'w', encoding='utf-8') as f:
+        json.dump(raw, f, ensure_ascii=False, indent=2)
+
+
+# ── 数据计算 ──────────────────────────────────────────────────
+
+def _calc_capex_growth(sym: str) -> float | None:
+    """Capex 同比增速（最近财年 vs 上一财年）"""
+    try:
+        import yfinance as yf
+        cf = yf.Ticker(sym).cashflow
+        if cf is None or cf.empty:
+            return None
+        for label in ['Capital Expenditure', 'Capital Expenditures', 'Purchase Of Property Plant And Equipment']:
+            if label in cf.index:
+                row = cf.loc[label].dropna()
+                if len(row) >= 2:
+                    cur  = abs(float(row.iloc[0]))
+                    prev = abs(float(row.iloc[1]))
+                    return (cur - prev) / prev if prev > 0 else None
+    except Exception:
+        pass
+    return None
+
+
+def _calc_nvda_correlation(sym: str, days: int = 60) -> float | None:
+    """计算与 NVDA 的价格相关性（日收益率）"""
+    if sym == 'NVDA':
+        return 1.0
+    try:
+        from core.data_store import DataStore
+        from datetime import date, timedelta
+        store = DataStore()
+        start = str(date.today() - timedelta(days=days + 10))
+        data = store.get([sym, 'NVDA'], start=start, auto_update=False)
+        if sym not in data or 'NVDA' not in data:
+            return None
+        s_close = data[sym]['close'].pct_change().dropna()
+        n_close = data['NVDA']['close'].pct_change().dropna()
+        common = s_close.index.intersection(n_close.index)
+        if len(common) < 20:
+            return None
+        corr = float(s_close.loc[common].corr(n_close.loc[common]))
+        return round(corr, 3)
+    except Exception:
+        return None
+
+
+def _calc_rs(sym: str) -> float | None:
+    """63 日 RS vs SPY"""
+    try:
+        import yfinance as yf
+        df = yf.download([sym, 'SPY'], period='100d', progress=False, auto_adjust=True)['Close']
+        if df.empty or sym not in df.columns:
+            return None
+        ret = df.pct_change(63).iloc[-1]
+        spy_ret = float(ret.get('SPY', 0))
+        sym_ret = float(ret.get(sym, 0))
+        return round(sym_ret - spy_ret, 4)
+    except Exception:
+        return None
+
+
+def _news_score(sym: str) -> int:
+    """近 30 天 AI 关键词新闻命中数（用现有 stock_news_cache）"""
+    try:
+        cache_path = ROOT / '.stock_news_cache.pkl'
+        if not cache_path.exists():
+            return 0
+        with open(cache_path, 'rb') as f:
+            cache = pickle.load(f)
+        news_list = cache.get('data', {}).get(sym, [])
+        cutoff = datetime.now() - timedelta(days=30)
+        count = 0
+        for item in news_list:
+            try:
+                pub = item.get('providerPublishTime', 0)
+                if pub and datetime.fromtimestamp(pub) < cutoff:
+                    continue
+                title = (item.get('title', '') + ' ' + item.get('summary', '')).lower()
+                if any(kw in title for kw in _AI_KEYWORDS):
+                    count += 1
+            except Exception:
+                pass
+        return min(count, 5)
+    except Exception:
+        return 0
+
+
+def _score_ai(ai_pct: float | None, capex_growth: float | None,
+              nvda_corr: float | None, rs: float | None,
+              rev_growth: float | None, news: int) -> tuple[int, dict]:
+    score = 0
+    bd = {}
+
+    # 1. AI 营收占比
+    s = 3 if (ai_pct or 0) > 0.50 else (2 if (ai_pct or 0) > 0.25 else (1 if (ai_pct or 0) > 0.10 else 0))
+    score += s; bd['ai_revenue'] = s
+
+    # 2. Capex 增速
+    s = 2 if (capex_growth or 0) > 0.50 else (1 if (capex_growth or 0) > 0.20 else 0)
+    score += s; bd['capex_growth'] = s
+
+    # 3. NVDA 相关性
+    c = nvda_corr or 0
+    s = 2 if c > 0.80 else (1 if c > 0.60 else 0)
+    score += s; bd['nvda_corr'] = s
+
+    # 4. RS vs SPY
+    s = 2 if (rs or 0) > 0.10 else (1 if (rs or 0) > 0 else 0)
+    score += s; bd['rs'] = s
+
+    # 5. 营收增速
+    s = 2 if (rev_growth or 0) > 0.30 else (1 if (rev_growth or 0) > 0.10 else 0)
+    score += s; bd['rev_growth'] = s
+
+    # 6. 新闻评分
+    s = 1 if news >= 3 else 0
+    score += s; bd['news'] = s
+
+    return score, bd
+
+
+# ── 主扫描函数 ────────────────────────────────────────────────
+
+def scan_ai_tracker(force: bool = False) -> dict:
+    """扫描 AI 基建全股票池，返回评分结果（4 小时缓存）"""
+    if not force and _AI_CACHE_FILE.exists():
+        try:
+            with open(_AI_CACHE_FILE, encoding='utf-8') as f:
+                cached = json.load(f)
+            age = datetime.now() - datetime.fromisoformat(cached['last_updated'])
+            if age < timedelta(hours=_AI_CACHE_TTL_HOURS):
+                return cached
+        except Exception:
+            pass
+
+    universe   = load_universe()
+    ai_revenue = load_ai_revenue()
+    groups     = universe.get('groups', {})
+
+    # 收集全部 symbol（去重）
+    all_syms: list[str] = []
+    sym_to_group: dict[str, str] = {}
+    for gk, gv in groups.items():
+        for s in gv.get('symbols', []):
+            if s not in sym_to_group:
+                all_syms.append(s)
+                sym_to_group[s] = gk
+
+    _logger.info(f'[AITracker] 扫描 {len(all_syms)} 只...')
+
+    # 批量获取基本面
+    from core.universe import get_stock_info
+    from core.insider import get_insider_buys
+    info_map   = get_stock_info(all_syms)
+    insider_map = get_insider_buys(days=90, min_value_k=50)
+
+    # 批量 RS（一次调用）
+    rs_map = _batch_rs(all_syms)
+
+    rows = []
+    for sym in all_syms:
+        info     = info_map.get(sym, {})
+        ins      = insider_map.get(sym, {})
+        gk       = sym_to_group[sym]
+        gv       = groups[gk]
+        ai_data  = ai_revenue.get(sym, {})
+        ai_pct   = ai_data.get('ai_pct')
+
+        capex_g  = _calc_capex_growth(sym)
+        nvda_c   = _calc_nvda_correlation(sym)
+        rs       = rs_map.get(sym)
+        news     = _news_score(sym)
+        rev_g    = info.get('revenue_growth')
+
+        total, bd = _score_ai(ai_pct, capex_g, nvda_c, rs, rev_g, news)
+
+        rows.append({
+            'symbol':          sym,
+            'group':           gk,
+            'group_label':     gv['label'],
+            'group_color':     gv.get('color', '#94a3b8'),
+            'score':           total,
+            'breakdown':       bd,
+            'ai_revenue_pct':  ai_pct,
+            'ai_revenue_note': ai_data.get('note', ''),
+            'capex_growth':    round(capex_g, 3) if capex_g is not None else None,
+            'nvda_corr':       nvda_c,
+            'rs_score':        rs,
+            'news_score':      news,
+            'revenue_growth':  rev_g,
+            'market_cap_b':    info.get('market_cap_b'),
+            'sector':          info.get('sector', ''),
+            'industry':        info.get('industry', ''),
+            'insider_score':   ins.get('score', 0) if ins else 0,
+            'insider_count':   ins.get('count', 0) if ins else 0,
+        })
+
+        time.sleep(0.15)
+
+    rows.sort(key=lambda x: x['score'], reverse=True)
+
+    result = {
+        'rows':          rows,
+        'last_updated':  datetime.now().isoformat(timespec='seconds'),
+        'total':         len(rows),
+        'groups':        {gk: gv['label'] for gk, gv in groups.items()},
+        'group_colors':  {gk: gv.get('color', '#94a3b8') for gk, gv in groups.items()},
+    }
+
+    _AI_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    with open(_AI_CACHE_FILE, 'w', encoding='utf-8') as f:
+        json.dump(result, f, ensure_ascii=False, indent=2)
+
+    return result
+
+
+def _batch_rs(symbols: list[str]) -> dict[str, float]:
+    try:
+        import yfinance as yf
+        df = yf.download(list(set(symbols + ['SPY'])), period='100d',
+                         progress=False, auto_adjust=True)['Close']
+        if df.empty:
+            return {}
+        ret = df.pct_change(63).iloc[-1]
+        spy = float(ret.get('SPY', 0))
+        return {s: round(float(ret.get(s, 0)) - spy, 4)
+                for s in symbols if s in ret.index}
+    except Exception:
+        return {}
+
+
+# ── 股票池管理 ────────────────────────────────────────────────
+
+def add_symbol_to_universe(symbol: str, group: str) -> dict:
+    u = load_universe()
+    if group not in u['groups']:
+        raise ValueError(f'group "{group}" 不存在')
+    syms = u['groups'][group]['symbols']
+    sym = symbol.upper().strip()
+    if sym not in syms:
+        syms.append(sym)
+    save_universe(u)
+    # 使下次扫描强制刷新
+    if _AI_CACHE_FILE.exists():
+        _AI_CACHE_FILE.unlink()
+    return u
+
+
+def remove_symbol_from_universe(symbol: str) -> dict:
+    u = load_universe()
+    sym = symbol.upper().strip()
+    for gv in u['groups'].values():
+        if sym in gv['symbols']:
+            gv['symbols'].remove(sym)
+    # 从待审核移除
+    u['pending_review'] = [p for p in u.get('pending_review', []) if p.get('symbol') != sym]
+    save_universe(u)
+    if _AI_CACHE_FILE.exists():
+        _AI_CACHE_FILE.unlink()
+    return u
+
+
+def approve_pending(symbol: str, group: str) -> dict:
+    """将待审核股票移入正式列表"""
+    u = load_universe()
+    u['pending_review'] = [p for p in u.get('pending_review', []) if p.get('symbol') != symbol.upper()]
+    save_universe(u)
+    return add_symbol_to_universe(symbol, group)
+
+
+def reject_pending(symbol: str) -> dict:
+    u = load_universe()
+    u['pending_review'] = [p for p in u.get('pending_review', []) if p.get('symbol') != symbol.upper()]
+    save_universe(u)
+    return u
+
+
+# ── 自动发现 ──────────────────────────────────────────────────
+
+_AI_SECTOR_KEYWORDS = {
+    'semiconductors', 'semiconductor equipment', 'information technology',
+    'electronic equipment', 'data center', 'it services', 'cloud', 'software',
+    'utilities', 'electrical', 'diversified utilities',
+}
+
+_AI_INDUSTRY_KEYWORDS = {
+    'semiconductor', 'data center', 'computer hardware', 'cloud computing',
+    'application software', 'information technology services', 'electronic components',
+    'electrical equipment', 'independent power', 'renewable electricity',
+}
+
+_AI_COMPANY_KEYWORDS = {
+    'ai', 'artificial intelligence', 'gpu', 'data center', 'accelerat',
+    'machine learning', 'inference', 'cloud', 'hyperscale', 'nvidia',
+}
+
+
+def auto_discover(limit: int = 20) -> list[dict]:
+    """扫描 sp500+ndx，发现潜在 AI 相关标的，加入 pending_review"""
+    from core.universe import get_sp500_tickers, get_nasdaq100_tickers
+    from core.universe import get_stock_info
+
+    u = load_universe()
+    existing = set()
+    for gv in u['groups'].values():
+        existing.update(s.upper() for s in gv['symbols'])
+    existing.update(p['symbol'] for p in u.get('pending_review', []))
+
+    sp500 = set(get_sp500_tickers())
+    ndx   = set(get_nasdaq100_tickers())
+    candidates = list(sp500 | ndx - existing)
+
+    _logger.info(f'[AITracker] 自动发现扫描 {len(candidates)} 只...')
+    info_map = get_stock_info(candidates)
+
+    suggestions = []
+    for sym, info in info_map.items():
+        if sym in existing:
+            continue
+        sector   = (info.get('sector') or '').lower()
+        industry = (info.get('industry') or '').lower()
+
+        hit_industry = any(kw in industry for kw in _AI_INDUSTRY_KEYWORDS)
+        hit_sector   = any(kw in sector for kw in _AI_SECTOR_KEYWORDS)
+        if not (hit_industry or hit_sector):
+            continue
+
+        # 推测子主题
+        if any(kw in industry for kw in ('semiconductor', 'electronic component')):
+            suggest_group = 'gpu_chips'
+        elif any(kw in industry for kw in ('data center', 'cloud', 'computer hardware', 'application software', 'information technology')):
+            suggest_group = 'datacenter_network'
+        elif any(kw in industry for kw in ('power', 'utilities', 'electrical', 'renewable')):
+            suggest_group = 'power_cooling'
+        else:
+            suggest_group = 'datacenter_network'
+
+        suggestions.append({
+            'symbol':         sym,
+            'suggest_group':  suggest_group,
+            'sector':         info.get('sector', ''),
+            'industry':       info.get('industry', ''),
+            'market_cap_b':   info.get('market_cap_b'),
+            'revenue_growth': info.get('revenue_growth'),
+            'discovered_at':  datetime.now().isoformat(timespec='seconds'),
+        })
+
+    # 按市值排序，取前 limit 只
+    suggestions.sort(key=lambda x: x.get('market_cap_b') or 0, reverse=True)
+    suggestions = suggestions[:limit]
+
+    # 追加到 pending_review（去重）
+    pending_syms = {p['symbol'] for p in u.get('pending_review', [])}
+    for s in suggestions:
+        if s['symbol'] not in pending_syms:
+            u.setdefault('pending_review', []).append(s)
+
+    save_universe(u)
+    return suggestions
+
+
+def update_ai_revenue(symbol: str, ai_pct: float, note: str = '') -> dict:
+    """更新单只股票的 AI 营收占比"""
+    data = load_ai_revenue()
+    data[symbol.upper()] = {
+        'ai_pct': ai_pct,
+        'note': note,
+        'updated': datetime.now().strftime('%Y-%m'),
+    }
+    save_ai_revenue(data)
+    if _AI_CACHE_FILE.exists():
+        _AI_CACHE_FILE.unlink()
+    return data

@@ -198,6 +198,16 @@ def run(trade_date: str, debug: bool = False):
     conn.disconnect()
     db.close()
 
+    # 发送成交通知（若已配置 NOTIFY_EMAIL_TO）
+    try:
+        from core.notifier import send_fill_summary
+        filled_rows    = [{'symbol': r[1], 'action': r[2], 'qty': r[3]} for r in pending[:filled_count]]
+        cancelled_rows = []
+        unfilled_rows  = []
+        send_fill_summary(filled_rows, cancelled_rows, unfilled_rows, target_date=target_date)
+    except Exception:
+        pass
+
 
 def main():
     parser = argparse.ArgumentParser(description='IB 成交确认')

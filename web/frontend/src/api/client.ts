@@ -171,3 +171,21 @@ export const getCronPreview     = (expr: string, count = 5) =>
 
 export const getComparison = (symbols: string[], start: string, end?: string) =>
   api.get('/compare', { params: { symbols: symbols.join(','), start, end }, timeout: 120_000 }).then(r => r.data)
+
+// ── AI 基建追踪器 ─────────────────────────────────────────────
+
+export const scanAITracker     = (force = false) =>
+  api.get('/ai/scan', { params: { force }, timeout: 120_000 }).then(r => r.data)
+export const getAIUniverse     = () => api.get('/ai/universe').then(r => r.data)
+export const addAISymbol       = (group: string, symbol: string) =>
+  api.post(`/ai/universe/${group}/${symbol}`).then(r => r.data)
+export const removeAISymbol    = (symbol: string) =>
+  api.delete(`/ai/universe/${symbol}`).then(r => r.data)
+export const discoverAISymbols = (limit = 20) =>
+  api.post('/ai/discover', null, { params: { limit }, timeout: 120_000 }).then(r => r.data)
+export const approveAIPending  = (symbol: string, group: string) =>
+  api.post('/ai/universe/pending/approve', { symbol, group }).then(r => r.data)
+export const rejectAIPending   = (symbol: string) =>
+  api.post('/ai/universe/pending/reject', { symbol }).then(r => r.data)
+export const updateAIRevenue   = (symbol: string, ai_pct: number, note: string) =>
+  api.put(`/ai/revenue/${symbol}`, { ai_pct, note }).then(r => r.data)

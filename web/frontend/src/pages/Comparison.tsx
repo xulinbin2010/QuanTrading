@@ -291,8 +291,9 @@ export default function Comparison() {
         </div>
 
         {/* 股票代码 + 时间范围 + 对比按钮 */}
-        <div className="flex flex-wrap items-end gap-3">
-          <div className="flex-1 min-w-[260px]">
+        <div className="space-y-2.5">
+          {/* 股票代码 */}
+          <div>
             <div className="text-xs text-slate-400 mb-1">股票代码（逗号分隔，最多 8 个）</div>
             <input
               value={symbols}
@@ -303,46 +304,65 @@ export default function Comparison() {
             />
           </div>
 
-          {/* 时间范围：快捷区间 与 自定义日期 二选一 */}
-          <div>
-            <div className="text-xs text-slate-400 mb-1">时间范围</div>
-            <div className="flex items-center gap-2">
-              {/* 快捷区间按钮 */}
-              <div className={`flex gap-1 transition-opacity ${activeDatePreset === '' ? 'opacity-40' : ''}`}>
-                {DATE_PRESETS.map(p => (
-                  <button
-                    key={p.label}
-                    onClick={() => handleDatePreset(p.label, p.days)}
-                    className={`px-2.5 py-1.5 text-xs rounded transition-colors ${
-                      activeDatePreset === p.label
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-700 border border-slate-600 text-slate-300 hover:border-slate-400 hover:opacity-100'
+          {/* 时间范围 + 对比按钮 同行 */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="text-xs text-slate-500 shrink-0">区间</div>
+
+            {/* 预设 + 自定义 连排按钮组 */}
+            <div className="flex items-center rounded overflow-hidden border border-slate-600">
+              {DATE_PRESETS.map((p, i) => (
+                <button
+                  key={p.label}
+                  onClick={() => handleDatePreset(p.label, p.days)}
+                  className={`px-3 py-1.5 text-xs transition-colors
+                    ${i > 0 ? 'border-l border-slate-600' : ''}
+                    ${activeDatePreset === p.label
+                      ? 'bg-blue-600 text-white font-medium'
+                      : 'text-slate-300 hover:bg-slate-700 hover:text-white'
                     }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
+                >
+                  {p.label}
+                </button>
+              ))}
+              {/* 自定义 按钮 */}
+              <button
+                onClick={() => setActiveDatePreset('')}
+                className={`px-3 py-1.5 text-xs border-l border-slate-600 transition-colors
+                  ${activeDatePreset === ''
+                    ? 'bg-slate-600 text-white font-medium'
+                    : 'text-slate-400 hover:bg-slate-700 hover:text-white'
+                  }`}
+              >
+                自定义
+              </button>
+            </div>
 
-              <span className="text-slate-600 text-xs select-none">或</span>
-
-              {/* 自定义起始日 */}
-              <div className={`transition-opacity ${activeDatePreset !== '' ? 'opacity-40' : ''}`}>
+            {/* 自定义日期选择器：仅当选择「自定义」时展开 */}
+            {activeDatePreset === '' && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-slate-500">从</span>
                 <DatePicker
                   value={startDate}
-                  onChange={v => { setStartDate(v); setActiveDatePreset('') }}
+                  onChange={v => { if (v) setStartDate(v) }}
                 />
               </div>
-            </div>
-          </div>
+            )}
 
-          <button
-            onClick={() => run()}
-            disabled={loading}
-            className="px-5 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded transition-colors font-medium"
-          >
-            {loading ? '加载中…' : '对比'}
-          </button>
+            {/* 当前生效日期提示 */}
+            {activeDatePreset !== '' && (
+              <span className="text-xs text-slate-500">
+                从 {startDate}
+              </span>
+            )}
+
+            <button
+              onClick={() => run()}
+              disabled={loading}
+              className="ml-auto px-5 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white text-sm rounded transition-colors font-medium"
+            >
+              {loading ? '加载中…' : '对比'}
+            </button>
+          </div>
         </div>
       </div>
 

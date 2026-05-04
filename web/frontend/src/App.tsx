@@ -9,6 +9,7 @@ import StockAnalysis from './pages/StockAnalysis'
 import Optimizer from './pages/Optimizer'
 import Backtest from './pages/Backtest'
 import Comparison from './pages/Comparison'
+import AITracker from './pages/AITracker'
 import Scheduler from './pages/Scheduler'
 import Config from './pages/Config'
 
@@ -37,6 +38,7 @@ export default function App() {
               <Route path="optimizer" element={<Optimizer />} />
               <Route path="backtest"    element={<Backtest />} />
               <Route path="comparison"  element={<Comparison />} />
+              <Route path="ai"          element={<AITracker />} />
               <Route path="scheduler" element={<Scheduler />} />
               <Route path="config"    element={<Config />} />
             </Route>

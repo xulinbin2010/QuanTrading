@@ -408,21 +408,22 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
     print(f"  订单类型：{tif_label}")
 
     # ── MSS 自适应：根据市场强度动态覆盖止损/仓位参数 ────────────────────────
+    # MSS_BULL/BEAR_MAX_POS 默认与 MAX_POSITIONS 一致，防止静默扩/缩仓位
     mss = signals.get('_mss', 0.0)
     bull_thr = getattr(config, 'MSS_BULL_THRESHOLD',      0.5)
     bear_thr = getattr(config, 'MSS_BEAR_THRESHOLD',      0.0)
     if mss >= bull_thr:
-        eff_max_pos       = getattr(config, 'MSS_BULL_MAX_POS',        8)
+        eff_max_pos        = getattr(config, 'MSS_BULL_MAX_POS',        config.MAX_POSITIONS)
         eff_trail_activate = getattr(config, 'MSS_BULL_TRAIL_ACTIVATE', 0.15)
-        eff_trail_pct     = getattr(config, 'MSS_BULL_TRAIL_PCT',      -0.10)
+        eff_trail_pct      = getattr(config, 'MSS_BULL_TRAIL_PCT',      -0.10)
     elif mss < bear_thr:
-        eff_max_pos       = getattr(config, 'MSS_BEAR_MAX_POS',        4)
+        eff_max_pos        = getattr(config, 'MSS_BEAR_MAX_POS',        config.MAX_POSITIONS)
         eff_trail_activate = getattr(config, 'MSS_BEAR_TRAIL_ACTIVATE', 0.06)
-        eff_trail_pct     = getattr(config, 'MSS_BEAR_TRAIL_PCT',      -0.06)
+        eff_trail_pct      = getattr(config, 'MSS_BEAR_TRAIL_PCT',      -0.06)
     else:
-        eff_max_pos       = config.MAX_POSITIONS
+        eff_max_pos        = config.MAX_POSITIONS
         eff_trail_activate = config.TRAIL_STOP_ACTIVATE_PCT
-        eff_trail_pct     = config.TRAIL_STOP_PCT
+        eff_trail_pct      = config.TRAIL_STOP_PCT
     print(f"  MSS={mss:.2f} ({mss_label(mss)}) → 仓位上限={eff_max_pos}  "
           f"移动止损激活={eff_trail_activate:.0%} 触发={eff_trail_pct:.0%}")
 
@@ -874,6 +875,17 @@ def main():
 
     print("\n第二步：执行交易")
     execute(signals, dry_run=dry_run)
+
+    # 发送信号通知（若已配置 NOTIFY_EMAIL_TO）
+    try:
+        from core.notifier import send_signal_summary
+        buy_list  = [{'symbol': s, 'rs_score': signals.get('_scores', {}).get(s, 0)}
+                     for s in signals.get('buy', [])]
+        sell_list = [{'symbol': s, 'reason': signals.get('_reasons', {}).get(s, '')}
+                     for s in signals.get('sell', [])]
+        send_signal_summary(buy_list, sell_list, dry_run=dry_run)
+    except Exception:
+        pass
 
 
 if __name__ == '__main__':

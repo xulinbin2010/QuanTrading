@@ -146,11 +146,11 @@ class DataStore:
         """
         计算该 symbol 的下载起始日期，返回 None 表示无需下载。
 
-        规则：
+        规则（按优先级顺序）：
           1. 本地无文件              → 从 requested_start 全量下载
-          2. 本地最早日期 > 请求起点 → 从 requested_start 补历史
-          3. 本地最新日期 < end-7天  → 从 latest+1 增量补充
-          4. 已经足够新              → None（跳过）
+          2. 本地最早日期 > 请求起点 → 从 requested_start 补历史（即使 latest 已最新）
+          3. 已经足够新且无历史缺口  → None（跳过）
+          4. 本地最新日期 < end      → 从 latest+1 增量补充
         """
         last_trading = self._last_trading_day()
         end_date     = date.fromisoformat(end)
@@ -159,18 +159,18 @@ class DataStore:
         latest, earliest = self._date_range(symbol)
 
         if latest is None:
-            dl_from = requested_start                            # 完全没有数据
-        elif latest >= min(end_date, last_trading):
-            return None                                          # 已经足够新（优先判断）
-        elif earliest is not None and earliest > start_date:
-            dl_from = requested_start                            # 历史不够，向前补（仅在不是最新时）
-        else:
-            next_day = (latest + timedelta(days=1)).strftime('%Y-%m-%d')
-            if next_day > end:
-                return None                                      # 超过请求终点
-            dl_from = next_day
+            return requested_start                               # 完全没有数据
 
-        return dl_from if dl_from <= end else None
+        # 先检查历史是否完整（不受 latest 是否最新影响）
+        if earliest is not None and earliest > start_date:
+            return requested_start                               # 历史不够，向前补
+
+        # 历史完整再判断是否最新
+        if latest >= min(end_date, last_trading):
+            return None                                          # 数据已最新，无需下载
+
+        next_day = (latest + timedelta(days=1)).strftime('%Y-%m-%d')
+        return next_day if next_day <= end else None             # 增量补充
 
     # ── 内部：下载 & 存储 ─────────────────────────────────────
 
@@ -213,17 +213,33 @@ class DataStore:
                 new_rows = df[~df.index.isin(old.index)]
                 if new_rows.empty:
                     continue                          # 无新数据，跳过写入
-                # 校验新行的涨跌幅：若末行与已有数据衔接处涨跌超 20%，触发全量重下
+                # 校验衔接处涨跌幅：区分回补（新数据比现有更旧）和追加（新数据比现有更新）
                 if not old.empty and 'close' in old.columns and 'close' in new_rows.columns:
-                    last_old_close = old['close'].iloc[-1]
-                    first_new_close = new_rows['close'].iloc[0]
-                    if last_old_close > 0 and abs(first_new_close / last_old_close - 1) > 0.20:
-                        _logger.warning(
-                            f'[DataStore] {sym} 复权跳变 '
-                            f'({last_old_close:.2f}→{first_new_close:.2f})，触发全量重下'
-                        )
-                        suspect_syms.add(sym)
-                        continue
+                    is_backfill = new_rows.index.max() < old.index[0]   # 历史回补
+                    is_append   = new_rows.index.min() > old.index[-1]  # 向前追加
+                    if is_append:
+                        # 追加：检查 new_rows 首行 vs old 末行的衔接
+                        ref_old = old['close'].iloc[-1]
+                        ref_new = new_rows['close'].iloc[0]
+                        if ref_old > 0 and abs(ref_new / ref_old - 1) > 0.20:
+                            _logger.warning(
+                                f'[DataStore] {sym} 复权跳变（追加）'
+                                f'({ref_old:.2f}→{ref_new:.2f})，触发全量重下'
+                            )
+                            suspect_syms.add(sym)
+                            continue
+                    elif is_backfill:
+                        # 回补：检查 new_rows 末行 vs old 首行的衔接
+                        ref_new = new_rows['close'].iloc[-1]
+                        ref_old = old['close'].iloc[0]
+                        if ref_old > 0 and abs(ref_new / ref_old - 1) > 0.20:
+                            _logger.warning(
+                                f'[DataStore] {sym} 复权跳变（回补）'
+                                f'({ref_new:.2f}→{ref_old:.2f})，触发全量重下'
+                            )
+                            suspect_syms.add(sym)
+                            continue
+                    # 跨范围混合（既有回补又有追加）：直接合并，dedup 处理
                 df = pd.concat([old, df])
                 df = df[~df.index.duplicated(keep='last')].sort_index()
             df.index.name = 'date'

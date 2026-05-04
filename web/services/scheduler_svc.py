@@ -55,6 +55,14 @@ DEFAULT_TASKS = [
         'cron_expr': '0 7 * * 2-6',    # 北京 周二至六 07:00
         'enabled':  False,
     },
+    {
+        'task_id':  'data_health_check',
+        'name':     '数据健康检查与修复',
+        'command':  f'{PYTHON} -m tools.data_health --fix --no-volume',
+        'cron_expr': '30 7 * * 2-6',   # 北京 周二至六 07:30（数据更新后 30 分钟）
+        'enabled':  False,
+        'description': '扫描所有缓存数据，自动修复历史缺失/价格偏移/退市等问题',
+    },
 ]
 
 # 旧 UTC cron → 新北京时间 cron（自动迁移）

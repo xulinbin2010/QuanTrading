@@ -156,9 +156,11 @@ def main():
         result = check_one(sym)
         if result['needs_fix']:
             bad.append(result)
-        # 每 20 只暂停一下，避免 yfinance 速率限制
-        if (i + 1) % 20 == 0:
-            time.sleep(2)
+        # 节流：每只 0.3s，每 30 只额外 sleep 5s
+        time.sleep(0.3)
+        if (i + 1) % 30 == 0:
+            time.sleep(5)
+            print(f'  [{i+1}/{len(symbols)}] 已检查...')
 
     print(f'\n── 汇总 ──────────────────────────────────────────')
     print(f'  总计: {len(symbols)} 只  正常: {len(symbols)-len(bad)} 只  有问题: {len(bad)} 只')
@@ -171,11 +173,18 @@ def main():
     if bad and args.fix:
         print(f'\n── 开始修复 {len(bad)} 只 ──────────────────────────────')
         fixed = 0
+        failures = []
         for r in bad:
             if fix_one(r['symbol']):
                 fixed += 1
+            else:
+                failures.append(r['symbol'])
             time.sleep(0.5)
         print(f'\n  修复完成：{fixed}/{len(bad)} 只')
+        if failures:
+            fail_path = Path(__file__).parent / 'check_cache_failures.txt'
+            fail_path.write_text('\n'.join(failures))
+            print(f'  失败列表已保存：{fail_path}')
     elif bad and not args.fix:
         print(f'\n  运行 --fix 参数可自动修复以上问题。')
 

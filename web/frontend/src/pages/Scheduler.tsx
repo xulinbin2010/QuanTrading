@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getSchedulerTasks, getTaskRuns, runTaskNow,
@@ -23,24 +23,42 @@ function StatusDot({ status }: { status?: string }) {
   return <span className="text-slate-600">●</span>
 }
 
-function LogModal({ runId, onClose }: { runId: number; onClose: () => void }) {
+function LogModal({ runId, isRunning, onClose }: { runId: number; isRunning?: boolean; onClose: () => void }) {
   const { data, isLoading } = useQuery({
     queryKey: ['run-log', runId],
     queryFn: () => getRunLog(runId),
+    refetchInterval: isRunning ? 3000 : false,   // 运行中每 3 秒自动刷新
   })
+
+  // 日志更新时自动滚到底部
+  const logRef = useRef<HTMLPreElement>(null)
+  useEffect(() => {
+    if (logRef.current) {
+      logRef.current.scrollTop = logRef.current.scrollHeight
+    }
+  }, [data?.log])
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-slate-800 rounded-xl border border-slate-700 w-[720px] max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700">
-          <div className="text-white font-medium text-sm">执行日志 #{runId}</div>
+          <div className="flex items-center gap-2">
+            <span className="text-white font-medium text-sm">执行日志 #{runId}</span>
+            {isRunning && (
+              <span className="flex items-center gap-1 text-xs text-yellow-400">
+                <span className="w-1.5 h-1.5 rounded-full bg-yellow-400 animate-pulse" />
+                运行中
+              </span>
+            )}
+          </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white">✕</button>
         </div>
         <div className="flex-1 overflow-auto p-4">
           {isLoading ? (
             <div className="text-slate-400 text-sm">加载中...</div>
           ) : (
-            <pre className="text-xs text-slate-300 font-mono whitespace-pre-wrap leading-5">
-              {data?.log || '（无日志）'}
+            <pre ref={logRef} className="text-xs text-slate-300 font-mono whitespace-pre-wrap leading-5 max-h-full overflow-auto">
+              {data?.log || (isRunning ? '任务启动中，等待输出...' : '（无日志）')}
             </pre>
           )}
         </div>
@@ -50,7 +68,7 @@ function LogModal({ runId, onClose }: { runId: number; onClose: () => void }) {
 }
 
 export default function Scheduler() {
-  const [selectedLog, setSelectedLog] = useState<number | null>(null)
+  const [selectedLog, setSelectedLog] = useState<{ id: number; running: boolean } | null>(null)
   const [editTask, setEditTask] = useState<any | null>(null)
   const [cronTimes, setCronTimes] = useState<string[]>([])
   const [cronError, setCronError] = useState<string>('')
@@ -304,7 +322,7 @@ export default function Scheduler() {
                     <td className="px-4 py-2">
                       <div className="flex items-center gap-3">
                         <button
-                          onClick={() => setSelectedLog(r.id)}
+                          onClick={() => setSelectedLog({ id: r.id, running: r.status === 'running' })}
                           className="text-blue-400 hover:text-blue-300"
                         >
                           查看日志
@@ -328,7 +346,11 @@ export default function Scheduler() {
 
       {/* 日志弹窗 */}
       {selectedLog !== null && (
-        <LogModal runId={selectedLog} onClose={() => setSelectedLog(null)} />
+        <LogModal
+          runId={selectedLog.id}
+          isRunning={selectedLog.running}
+          onClose={() => setSelectedLog(null)}
+        />
       )}
 
       {/* 编辑任务弹窗 */}

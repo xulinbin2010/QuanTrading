@@ -189,8 +189,15 @@ class SchedulerService:
                 stderr=subprocess.STDOUT,
                 text=True,
             )
+            pending: list[str] = []
             for line in proc.stdout:
                 log_lines.append(line)
+                pending.append(line)
+                if len(pending) >= 10:          # 每 10 行实时写一次 DB
+                    db.append_run_log(run_id, ''.join(pending))
+                    pending.clear()
+            if pending:                          # 剩余不足 10 行
+                db.append_run_log(run_id, ''.join(pending))
             proc.wait(timeout=3600)
             exit_code = proc.returncode
         except Exception as e:

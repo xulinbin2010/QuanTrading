@@ -285,6 +285,15 @@ class Database:
         )
         return self.cursor.lastrowid
 
+    def append_run_log(self, run_id: int, chunk: str):
+        """运行中增量追加日志，供实时查看。"""
+        if not self._ensure_conn() or not chunk:
+            return
+        self.cursor.execute(
+            "UPDATE task_runs SET log_text = COALESCE(log_text, '') || ? WHERE id = ?",
+            (chunk, run_id)
+        )
+
     def finish_task_run(self, run_id: int, exit_code: int, log_text: str):
         if not self._ensure_conn():
             return

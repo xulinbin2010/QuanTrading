@@ -389,13 +389,12 @@ export default function Comparison() {
                 <span className="ml-2 text-slate-600">（基准价取所选起始日前最近交易日收盘）</span>
               </div>
             </div>
-            {/* 若实际起始晚于所选起始，说明受某只标的上市时间限制 */}
-            {result.start_date > startDate && (() => {
-              // 找到数据起点最晚的那些标的（决定了交集起点）
-              const maxDataStart = result.series.reduce((m: string, s: any) => s.data_start > m ? s.data_start : m, '')
+            {/* 若某标的数据起点晚于所选起始，说明该标的数据不足以追溯 */}
+            {(() => {
               const limited = result.series
-                .filter((s: any) => s.data_start === maxDataStart)
+                .filter((s: any) => s.data_start > startDate)
                 .map((s: any) => `${s.symbol}（最早 ${s.data_start}）`)
+              if (!limited.length) return null
               return (
                 <div className="mb-3 text-xs text-yellow-500/80 bg-yellow-900/10 border border-yellow-700/30 rounded px-3 py-1.5">
                   ⚠ 对比区间受以下标的数据起点限制，无法追溯至所选起始日：{limited.join('、')}

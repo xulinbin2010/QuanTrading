@@ -35,3 +35,6 @@ VMI
 NOK
 BE
 PL
+axti
+alab
+cpsh

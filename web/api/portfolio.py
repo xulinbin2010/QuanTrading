@@ -1,5 +1,7 @@
 """持仓总览 API 路由"""
 from fastapi import APIRouter, HTTPException, Query
+from pydantic import BaseModel
+from typing import Optional
 from web.services import portfolio_svc
 
 router = APIRouter(prefix='/api/portfolio', tags=['portfolio'])
@@ -94,6 +96,32 @@ def performance(days: int = Query(30, ge=7, le=730)):
     from web.services import performance_svc
     try:
         return performance_svc.get_performance(days=days)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+class SellOrderRequest(BaseModel):
+    symbol: str
+    qty: int
+    order_type: str          # 'MKT' | 'LMT'
+    limit_price: Optional[float] = None
+    tif: str = 'DAY'
+
+
+@router.post('/sell')
+def place_sell(req: SellOrderRequest):
+    try:
+        return portfolio_svc.place_sell_order(
+            symbol=req.symbol,
+            qty=req.qty,
+            order_type=req.order_type,
+            limit_price=req.limit_price,
+            tif=req.tif,
+        )
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

@@ -21,6 +21,10 @@ export const getPerformance = (days = 30) =>
   api.get('/portfolio/performance', { params: { days } }).then(r => r.data)
 export const getSignals = (universe = 'sp500+ndx') =>
   api.get('/portfolio/signals', { params: { universe } }).then(r => r.data)
+export const placeSellOrder = (body: {
+  symbol: string; qty: number; order_type: 'MKT' | 'LMT'
+  limit_price?: number; tif?: string
+}) => api.post('/portfolio/sell', body).then(r => r.data)
 
 // ── 因子看板 ──────────────────────────────────────────────
 

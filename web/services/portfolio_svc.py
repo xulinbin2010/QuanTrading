@@ -452,6 +452,40 @@ def get_account_history(limit: int = 90) -> list[dict]:
     return list(reversed(result))  # 升序，方便图表
 
 
+def place_sell_order(symbol: str, qty: int, order_type: str,
+                     limit_price: float | None = None, tif: str = 'DAY') -> dict:
+    """通过 IB 提交卖出订单（市价单或限价单）。order_type: 'MKT' | 'LMT'"""
+    _ensure_connected()
+    if not _ib or not _ib.isConnected():
+        raise RuntimeError("IB Gateway 未连接")
+
+    from core.trading import Trading
+    db = get_db()
+    trading = Trading(_ib, db)
+
+    def _do():
+        if order_type == 'LMT':
+            if limit_price is None:
+                raise ValueError("限价单需要提供限价")
+            return trading.limit_sell(symbol, qty, limit_price, tif=tif)
+        else:
+            return trading.market_sell(symbol, qty, tif=tif)
+
+    trade = _run_ib_sync(_do, timeout=30)
+    if trade is None:
+        raise RuntimeError("下单失败，请检查 IB Gateway 日志")
+
+    return {
+        "symbol":     symbol,
+        "qty":        qty,
+        "order_type": order_type,
+        "price":      limit_price,
+        "tif":        tif,
+        "status":     trade.orderStatus.status,
+        "order_id":   trade.order.orderId,
+    }
+
+
 def get_signals(universe: str = 'sp500') -> dict:
     """调用 scan_signals() dry-run，不需要 IB"""
     from auto_trader import scan_signals

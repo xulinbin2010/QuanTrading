@@ -5,9 +5,24 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 import time
+import math
 import pandas as pd
 from datetime import date, timedelta
 import config
+
+
+def _clean_floats(obj):
+    """递归将 nan/inf/-inf 替换为 None，确保结果可 JSON 序列化。
+    yfinance 会返回 float('nan') 而非 None，直接序列化会报 ValueError。
+    """
+    if isinstance(obj, float):
+        return None if (math.isnan(obj) or math.isinf(obj)) else obj
+    if isinstance(obj, dict):
+        return {k: _clean_floats(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_clean_floats(v) for v in obj]
+    return obj
+
 
 # ── 内存缓存（factor scan 结果，TTL 1 小时）────────────────
 _scan_cache: dict = {}   # key: universe, value: {ts, data}
@@ -263,11 +278,11 @@ def scan_factors(universe: str = 'sp500', top: int = 50, force: bool = False) ->
             'pct': round(valid / n * 100, 1) if n > 0 else 0,
         }
 
-    data = {
+    data = _clean_floats({
         'rows': top_rows,
         'coverage': coverage,
         'total': n,
-    }
+    })
 
     _scan_cache[universe] = {'ts': time.time(), 'data': data}
     return data
@@ -363,8 +378,12 @@ def preview_signals(universe: str, factors: list[str], top: int = 100) -> dict:
 def _compute_fcf_yield(info: dict) -> float | None:
     fcf = info.get('free_cashflow')
     mc  = info.get('market_cap_b')
-    if fcf is not None and mc is not None and mc > 0:
-        return round(float(fcf) / (float(mc) * 1e9), 4)
+    try:
+        if fcf is not None and mc is not None and float(mc) > 0:
+            v = float(fcf) / (float(mc) * 1e9)
+            return round(v, 4) if math.isfinite(v) else None
+    except (TypeError, ValueError):
+        pass
     return None
 
 
@@ -662,8 +681,17 @@ def _batch_rs_scores(symbols: list) -> dict:
         if df.empty:
             return {}
         ret = df.pct_change(63).iloc[-1]
-        spy = float(ret.get('SPY', 0))
-        return {s: float(ret.get(s, 0)) - spy for s in symbols if s in ret.index}
+        spy_val = ret.get('SPY', 0)
+        spy = float(spy_val) if spy_val == spy_val else 0.0  # NaN guard
+        result = {}
+        for s in symbols:
+            if s not in ret.index:
+                continue
+            v = ret.get(s)
+            if v is None or v != v:  # None or NaN
+                continue
+            result[s] = float(v) - spy
+        return result
     except Exception:
         return {}
 
@@ -798,12 +826,12 @@ def screen_fivebagger(force: bool = False) -> dict:
 
     rows.sort(key=lambda x: x['score'], reverse=True)
 
-    result = {
+    result = _clean_floats({
         'rows':          rows[:30],
         'last_updated':  datetime.now().isoformat(timespec='seconds'),
         'total_scanned': total_scanned,
         'total_passed':  len(rows),
-    }
+    })
 
     os.makedirs(os.path.dirname(cache_path), exist_ok=True)
     try:

@@ -1,5 +1,5 @@
-import { useQuery } from '@tanstack/react-query'
-import { getOrders, getBalance, getPositions, refreshPositions, getEarningsDates, getPerformance, getStockDetail, getStockNews } from '../api/client'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { getOrders, getBalance, getPositions, refreshPositions, getEarningsDates, getPerformance, getStockDetail, getStockNews, placeSellOrder } from '../api/client'
 import ReactECharts from 'echarts-for-react'
 import { useState } from 'react'
 import { useAccount } from '../App'
@@ -28,6 +28,161 @@ function FmtPct({ v, decimals = 1 }: { v?: number | null; decimals?: number }) {
 function FmtNum({ v, decimals = 1, suffix = '' }: { v?: number | null; decimals?: number; suffix?: string }) {
   if (v == null) return <span className="text-slate-600">-</span>
   return <span className="font-mono text-xs text-slate-300">{v.toFixed(decimals)}{suffix}</span>
+}
+
+// ── 卖出弹窗 ─────────────────────────────────────────────────
+function SellOrderModal({ position, onClose, onSuccess }: { position: any; onClose: () => void; onSuccess: () => void }) {
+  const [orderType, setOrderType] = useState<'MKT' | 'LMT'>('MKT')
+  const [qty, setQty] = useState(String(Math.abs(Math.round(position.qty))))
+  const [limitPrice, setLimitPrice] = useState(position.market_price.toFixed(2))
+  const [tif, setTif] = useState('DAY')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const maxQty = Math.abs(Math.round(position.qty))
+
+  const handleSubmit = async () => {
+    const qtyNum = parseInt(qty)
+    if (!qtyNum || qtyNum <= 0) { setError('请输入有效数量'); return }
+    if (qtyNum > maxQty) { setError(`数量不能超过持仓 ${maxQty} 股`); return }
+    if (orderType === 'LMT' && (!limitPrice || parseFloat(limitPrice) <= 0)) {
+      setError('请输入有效限价'); return
+    }
+    setLoading(true)
+    setError(null)
+    try {
+      await placeSellOrder({
+        symbol: position.symbol,
+        qty: qtyNum,
+        order_type: orderType,
+        limit_price: orderType === 'LMT' ? parseFloat(limitPrice) : undefined,
+        tif,
+      })
+      onSuccess()
+      onClose()
+    } catch (e: any) {
+      setError(e.response?.data?.detail || '下单失败，请检查 IB Gateway 连接')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[60]" onClick={onClose}>
+      <div className="bg-slate-800 rounded-xl border border-slate-700 w-[420px]" onClick={e => e.stopPropagation()}>
+
+        {/* 标题 */}
+        <div className="flex items-center justify-between px-5 py-3.5 border-b border-slate-700">
+          <div className="flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-red-500 inline-block" />
+            <span className="font-mono font-bold text-white">卖出 {position.symbol}</span>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-lg leading-none">✕</button>
+        </div>
+
+        {/* 持仓摘要 */}
+        <div className="grid grid-cols-4 gap-px bg-slate-700/30 border-b border-slate-700">
+          {[
+            { label: '持仓', value: `${maxQty} 股` },
+            { label: '均价', value: `$${position.avg_cost.toFixed(2)}` },
+            { label: '现价', value: `$${position.market_price.toFixed(2)}` },
+            {
+              label: '浮盈',
+              value: `${position.unrealized_pnl_pct >= 0 ? '+' : ''}${(position.unrealized_pnl_pct * 100).toFixed(2)}%`,
+              color: position.unrealized_pnl_pct >= 0 ? 'text-green-400' : 'text-red-400',
+            },
+          ].map(({ label, value, color }) => (
+            <div key={label} className="bg-slate-800 px-3 py-2 text-center">
+              <div className="text-[10px] text-slate-500 mb-0.5">{label}</div>
+              <div className={`text-xs font-semibold font-mono ${color ?? 'text-slate-200'}`}>{value}</div>
+            </div>
+          ))}
+        </div>
+
+        <div className="p-5 space-y-4">
+          {/* 订单类型 */}
+          <div>
+            <div className="text-xs text-slate-400 mb-1.5">订单类型</div>
+            <div className="grid grid-cols-2 gap-2">
+              {(['MKT', 'LMT'] as const).map(t => (
+                <button
+                  key={t}
+                  onClick={() => setOrderType(t)}
+                  className={`py-2 rounded-lg text-sm font-medium transition-colors ${
+                    orderType === t
+                      ? 'bg-red-600 text-white'
+                      : 'bg-slate-700 text-slate-400 hover:text-white'
+                  }`}
+                >
+                  {t === 'MKT' ? '市价单' : '限价单'}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 数量 */}
+          <div>
+            <div className="flex items-center justify-between mb-1.5">
+              <span className="text-xs text-slate-400">卖出数量</span>
+              <button onClick={() => setQty(String(maxQty))} className="text-xs text-blue-400 hover:text-blue-300">全部</button>
+            </div>
+            <input
+              type="number"
+              value={qty}
+              onChange={e => setQty(e.target.value)}
+              min={1}
+              max={maxQty}
+              className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-red-500 font-mono"
+            />
+          </div>
+
+          {/* 限价 */}
+          {orderType === 'LMT' && (
+            <div>
+              <div className="text-xs text-slate-400 mb-1.5">限价（$）</div>
+              <input
+                type="number"
+                step="0.01"
+                value={limitPrice}
+                onChange={e => setLimitPrice(e.target.value)}
+                className="w-full bg-slate-700 border border-slate-600 rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:border-red-500 font-mono"
+              />
+            </div>
+          )}
+
+          {/* TIF */}
+          <div>
+            <div className="text-xs text-slate-400 mb-1.5">有效期</div>
+            <div className="grid grid-cols-2 gap-2">
+              {[['DAY', '当日有效'], ['OPG', '开盘集合竞价']].map(([v, label]) => (
+                <button
+                  key={v}
+                  onClick={() => setTif(v)}
+                  className={`py-1.5 rounded-lg text-xs font-medium transition-colors ${
+                    tif === v ? 'bg-slate-600 text-white' : 'bg-slate-700/60 text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  {v} · {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {error && (
+            <div className="text-xs text-red-400 bg-red-900/20 border border-red-800/50 rounded-lg px-3 py-2">{error}</div>
+          )}
+
+          <button
+            onClick={handleSubmit}
+            disabled={loading}
+            className="w-full py-2.5 rounded-lg bg-red-600 hover:bg-red-700 active:bg-red-800 text-white font-semibold text-sm transition-colors disabled:opacity-40"
+          >
+            {loading ? '提交中...' : `确认卖出 ${qty} 股 ${position.symbol}`}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
 }
 
 // ── 持仓详情弹窗 ──────────────────────────────────────────────
@@ -780,6 +935,8 @@ export default function Portfolio() {
   const [refreshMsg, setRefreshMsg] = useState<'ok' | 'error' | null>(null)
   const [spinning, setSpinning] = useState(false)
   const [selectedPos, setSelectedPos] = useState<any>(null)
+  const [sellPos, setSellPos] = useState<any>(null)
+  const queryClient = useQueryClient()
 
   const { data: balance, isError: balanceErr, refetch: refetchBalance } = useQuery({
     queryKey: ['balance'],
@@ -918,7 +1075,7 @@ export default function Portfolio() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-slate-400 text-xs border-b border-slate-700">
-                  {['股票', '行业', '买入日', '数量', '均价', '现价', '市值', '浮盈', '浮盈%', '财报'].map(h => (
+                  {['股票', '行业', '买入日', '数量', '均价', '现价', '市值', '浮盈', '浮盈%', '财报', ''].map(h => (
                     <th key={h} className="px-4 py-2 text-left font-medium">{h}</th>
                   ))}
                 </tr>
@@ -953,6 +1110,16 @@ export default function Portfolio() {
                         const color = days <= 2 ? 'text-red-400 font-semibold' : days <= 7 ? 'text-yellow-400' : 'text-slate-400'
                         return <span className={color} title={`${days}天后`}>{d.slice(5)}</span>
                       })()}
+                    </td>
+                    <td className="px-4 py-2" onClick={e => e.stopPropagation()}>
+                      {!p.symbol.includes(' ') && (
+                        <button
+                          onClick={() => setSellPos(p)}
+                          className="px-2.5 py-1 text-xs rounded bg-red-900/40 text-red-400 hover:bg-red-800/60 hover:text-red-300 transition-colors border border-red-800/50"
+                        >
+                          卖出
+                        </button>
+                      )}
                     </td>
                   </tr>
                 ))}
@@ -1016,6 +1183,16 @@ export default function Portfolio() {
 
     {selectedPos && (
       <PositionDetailModal position={selectedPos} onClose={() => setSelectedPos(null)} />
+    )}
+    {sellPos && (
+      <SellOrderModal
+        position={sellPos}
+        onClose={() => setSellPos(null)}
+        onSuccess={() => {
+          queryClient.invalidateQueries({ queryKey: ['orders'] })
+          queryClient.invalidateQueries({ queryKey: ['positions'] })
+        }}
+      />
     )}
     </>
   )

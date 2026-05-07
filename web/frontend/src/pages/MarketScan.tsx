@@ -504,7 +504,7 @@ function StockDetailPanel({ symbol, onClose }: { symbol: string; onClose: () => 
 
 export default function MarketScan() {
   const [tab, setTab] = useState<'scan' | 'insider' | 'tenbagger'>('scan')
-  const [universe] = useState('sp500+ndx')
+  const [universe, setUniverse] = useState('sp500+ndx')
   const [selected, setSelected] = useState<string | null>(null)
   const [showCoverage, setShowCoverage] = useState(false)
   const [scanState, setScanState] = useState<'idle' | 'scanning' | 'done'>('idle')
@@ -610,7 +610,32 @@ export default function MarketScan() {
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-white">市场扫描(根据63个交易日的RS对比SPY)</h1>
         <div className="flex items-center gap-3">
-          <span className="text-xs text-slate-400 bg-slate-700 border border-slate-600 rounded px-2 py-1">sp500+ndx</span>
+          {/* Universe 选择器 */}
+          <div className="flex gap-1">
+            {[
+              { key: 'sp500+ndx', label: 'SP500+NDX' },
+              { key: 'ai',        label: 'AI产业链', sub: '$10B–$500B' },
+              { key: 'sp500',     label: 'SP500' },
+            ].map(u => (
+              <button
+                key={u.key}
+                onClick={() => {
+                  if (u.key !== universe) {
+                    setUniverse(u.key)
+                    setScanState('idle')
+                  }
+                }}
+                title={u.sub}
+                className={`px-2.5 py-1 text-xs rounded transition-colors border ${
+                  universe === u.key
+                    ? 'bg-blue-600 border-blue-500 text-white'
+                    : 'bg-slate-700 border-slate-600 text-slate-400 hover:text-white hover:border-slate-400'
+                }`}
+              >
+                {u.label}
+              </button>
+            ))}
+          </div>
           {tab === 'scan' && (
             <>
               {lastScan

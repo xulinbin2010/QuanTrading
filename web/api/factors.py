@@ -11,7 +11,7 @@ router = APIRouter(prefix='/api/factors', tags=['factors'])
 
 @router.get('/universes')
 def universes():
-    return ['sp500+ndx']
+    return ['sp500+ndx', 'ai', 'sp500', 'nasdaq100', 'russell2000']
 
 
 @router.get('/tickers')

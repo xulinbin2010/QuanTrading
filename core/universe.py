@@ -210,8 +210,37 @@ def _rewrite_extra_file(clean_tickers: list[str]) -> None:
         f.writelines(new_lines)
 
 
+def get_ai_tickers() -> list[str]:
+    """从 data/ai_universe.json 读取 AI 产业链全股票池（去重，保留分组顺序）。"""
+    import json
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[1] / 'data' / 'ai_universe.json'
+    if not path.exists():
+        return []
+    data = json.loads(path.read_text(encoding='utf-8'))
+    seen: set[str] = set()
+    result: list[str] = []
+    for gv in data.get('groups', {}).values():
+        for s in gv.get('symbols', []):
+            if s not in seen:
+                seen.add(s)
+                result.append(s)
+    return result
+
+
 def get_tickers(universe: str = 'sp500', extra: list[str] = None) -> list[str]:
     """统一入口，按名称选择股票池。自动合并 data/extra_tickers.txt 中的自定义股票。"""
+    # AI 产业链股票池自管理，不走 extra_tickers.txt
+    if universe.lower() == 'ai':
+        tickers = get_ai_tickers()
+        if extra:
+            seen = set(tickers)
+            for t in extra:
+                if t not in seen:
+                    tickers.append(t)
+                    seen.add(t)
+        return tickers
+
     mapping = {
         'sp500+ndx':   get_sp500_ndx_tickers,
         'sp500':       get_sp500_tickers,
@@ -222,7 +251,7 @@ def get_tickers(universe: str = 'sp500', extra: list[str] = None) -> list[str]:
     }
     fn = mapping.get(universe.lower())
     if fn is None:
-        raise ValueError(f"未知股票池：{universe}，可选：sp500+ndx / sp500 / nasdaq100 / russell2000")
+        raise ValueError(f"未知股票池：{universe}，可选：sp500+ndx / sp500 / nasdaq100 / russell2000 / ai")
 
     # 先获取基础股票池（不含 file extra）
     base = fn(extra=extra)

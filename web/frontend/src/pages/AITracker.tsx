@@ -19,7 +19,7 @@ function fmt(v: number | null | undefined) {
   return v >= 1000 ? `$${(v / 1000).toFixed(1)}T` : `$${v.toFixed(1)}B`
 }
 
-function ScoreBadge({ score, max = 12 }: { score: number; max?: number }) {
+function ScoreBadge({ score, max = 15 }: { score: number; max?: number }) {
   const pct = score / max
   const color = pct >= 0.7 ? 'bg-emerald-500' : pct >= 0.4 ? 'bg-amber-500' : 'bg-slate-600'
   return (
@@ -46,6 +46,7 @@ function BreakdownBar({ bd }: { bd: Record<string, number> }) {
     { key: 'rs', label: 'RS', max: 2 },
     { key: 'rev_growth', label: '营收', max: 2 },
     { key: 'news', label: '新闻', max: 1 },
+    { key: 'tech', label: '技术', max: 3 },
   ]
   return (
     <div className="flex gap-1">
@@ -69,6 +70,8 @@ export default function AITracker() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<'tracker' | 'pending' | 'manage'>('tracker')
   const [groupFilter, setGroupFilter] = useState<string>('all')
+  const [capMin, setCapMin] = useState(30)
+  const [capMax, setCapMax] = useState(500)
   const [forcing, setForcing] = useState(false)
   const [addForm, setAddForm] = useState<{ symbol: string; group: string } | null>(null)
   const [editRevenue, setEditRevenue] = useState<{ symbol: string; ai_pct: number; note: string } | null>(null)
@@ -146,7 +149,13 @@ export default function AITracker() {
     : {}
 
   const rows: any[] = scanData?.rows ?? []
-  const filteredRows = groupFilter === 'all' ? rows : rows.filter(r => r.group === groupFilter)
+  const filteredRows = rows.filter(r => {
+    if (groupFilter !== 'all' && r.group !== groupFilter) return false
+    const cap = r.market_cap_b
+    if (cap != null && cap < capMin) return false
+    if (cap != null && cap > capMax) return false
+    return true
+  })
   const pending: any[] = universe?.pending_review ?? []
 
   return (
@@ -186,27 +195,49 @@ export default function AITracker() {
       {/* ── Tab: 追踪清单 ─────────────────────────────────────── */}
       {tab === 'tracker' && (
         <div className="space-y-3">
-          {/* 子主题过滤 */}
-          <div className="flex gap-2 flex-wrap">
-            <button onClick={() => setGroupFilter('all')}
-              className={`px-3 py-1 text-xs rounded transition-colors ${
-                groupFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
-              全部
-            </button>
-            {Object.entries(groups).map(([gk, gv]) => (
-              <button key={gk} onClick={() => setGroupFilter(gk)}
+          {/* 过滤栏：子主题 + 市值范围 */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={() => setGroupFilter('all')}
                 className={`px-3 py-1 text-xs rounded transition-colors ${
-                  groupFilter === gk ? 'text-white' : 'text-slate-300 hover:opacity-80'}`}
-                style={groupFilter === gk ? { background: gv.color } : { background: gv.color + '33' }}>
-                {gv.label}
+                  groupFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
+                全部
               </button>
-            ))}
+              {Object.entries(groups).map(([gk, gv]) => (
+                <button key={gk} onClick={() => setGroupFilter(gk)}
+                  className={`px-3 py-1 text-xs rounded transition-colors ${
+                    groupFilter === gk ? 'text-white' : 'text-slate-300 hover:opacity-80'}`}
+                  style={groupFilter === gk ? { background: gv.color } : { background: gv.color + '33' }}>
+                  {gv.label}
+                </button>
+              ))}
+            </div>
+            {/* 市值过滤 */}
+            <div className="flex items-center gap-1.5 ml-auto text-xs text-slate-400">
+              <span>市值</span>
+              <span className="text-slate-600">$</span>
+              <input
+                type="number" min={0} step={10}
+                value={capMin}
+                onChange={e => setCapMin(Number(e.target.value))}
+                className="w-16 bg-slate-700 border border-slate-600 rounded px-2 py-0.5 text-white text-xs focus:outline-none focus:border-blue-500 font-mono"
+              />
+              <span className="text-slate-600">—</span>
+              <input
+                type="number" min={0} step={50}
+                value={capMax}
+                onChange={e => setCapMax(Number(e.target.value))}
+                className="w-16 bg-slate-700 border border-slate-600 rounded px-2 py-0.5 text-white text-xs focus:outline-none focus:border-blue-500 font-mono"
+              />
+              <span className="text-slate-500">B</span>
+              <span className="text-slate-600 ml-1">({filteredRows.length} 只)</span>
+            </div>
           </div>
 
           {/* 评分说明 */}
           <div className="text-xs text-slate-600 flex gap-3">
-            <span>评分 /12：</span>
-            <span>AI收入(3) Capex增速(2) NVDA联动(2) RS动量(2) 营收增速(2) AI新闻(1)</span>
+            <span>评分 /15：</span>
+            <span>AI收入(3) Capex增速(2) NVDA联动(2) RS动量(2) 营收增速(2) AI新闻(1) 技术信号(3：突破+量能+趋势)</span>
           </div>
 
           {isLoading ? (
@@ -217,8 +248,9 @@ export default function AITracker() {
                 <thead>
                   <tr className="text-xs text-slate-400 border-b border-slate-700">
                     <th className="text-left px-4 py-2.5 font-medium">标的</th>
-                    <th className="text-center px-3 py-2.5 font-medium">评分</th>
+                    <th className="text-center px-3 py-2.5 font-medium">评分/15</th>
                     <th className="text-left px-3 py-2.5 font-medium">维度</th>
+                    <th className="text-center px-3 py-2.5 font-medium">信号</th>
                     <th className="text-right px-3 py-2.5 font-medium">AI营收</th>
                     <th className="text-right px-3 py-2.5 font-medium">Capex增速</th>
                     <th className="text-right px-3 py-2.5 font-medium">NVDA相关</th>
@@ -239,6 +271,20 @@ export default function AITracker() {
                       </td>
                       <td className="px-3 py-2">
                         <BreakdownBar bd={r.breakdown ?? {}} />
+                      </td>
+                      {/* 技术信号列 */}
+                      <td className="px-3 py-2 text-center">
+                        <div className="flex items-center justify-center gap-1">
+                          {r.signal === 1 && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-700 text-emerald-200 font-semibold">买</span>
+                          )}
+                          {r.signal === -1 && (
+                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-800 text-red-300 font-semibold">警</span>
+                          )}
+                          {r.breakout && <span title="价格突破" className="text-yellow-400 text-xs">⚡</span>}
+                          {r.vol_surge && <span title="成交量放量" className="text-blue-400 text-xs">▲</span>}
+                          {r.uptrend  && <span title="趋势向上"   className="text-emerald-400 text-xs">↑</span>}
+                        </div>
                       </td>
                       <td className="px-3 py-2 text-right">
                         <button
@@ -437,7 +483,9 @@ export default function AITracker() {
       <div className="text-xs text-slate-600 space-y-0.5">
         <div>· AI营收占比需手动维护（点击数值编辑），数据来源：公司财报/业绩会</div>
         <div>· Capex增速/NVDA相关性/RS动量为实时计算，首次加载约需 1-2 分钟</div>
-        <div>· 新闻评分基于近 30 天已缓存新闻中 AI 关键词命中数</div>
+        <div>· 技术信号（⚡突破 ▲量能 ↑趋势）来自 RSMomentum，"买"=满足5个条件，"警"=量价背离</div>
+        <div>· 市场扫描器 "AI产业链" 模式只跑 $10B–$500B（本追踪器含超大市值全覆盖）</div>
+        <div>· 自动发现扫描 S&P500+NDX+Russell2000，过滤 $10B–$500B AI 相关标的</div>
       </div>
     </div>
   )

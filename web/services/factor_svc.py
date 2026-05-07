@@ -225,6 +225,12 @@ def scan_factors(universe: str = 'sp500', top: int = 50, force: bool = False) ->
             last = sig_df.iloc[-1]
             info = stock_info.get(sym, {})
 
+            # AI 产业链扫描：只保留 $10B–$500B 中等市值（超大市值由 AI 追踪器监控）
+            if universe == 'ai':
+                cap = info.get('market_cap_b')
+                if cap is not None and (cap < 10.0 or cap > 500.0):
+                    continue
+
             row = {
                 "symbol": sym,
                 "close": round(float(last['close']), 2),

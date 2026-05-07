@@ -14,11 +14,23 @@ from __future__ import annotations
 import os
 import sys
 import json
+import math
 import time
 import pickle
 import logging
 from datetime import datetime, timedelta
 from pathlib import Path
+
+
+def _clean_floats(obj):
+    """递归将 nan/inf/-inf 替换为 None，确保结果可 JSON 序列化。"""
+    if isinstance(obj, float):
+        return None if (math.isnan(obj) or math.isinf(obj)) else obj
+    if isinstance(obj, dict):
+        return {k: _clean_floats(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_clean_floats(v) for v in obj]
+    return obj
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
@@ -152,9 +164,33 @@ def _news_score(sym: str) -> int:
         return 0
 
 
+def _calc_tech_signals(sym: str) -> dict:
+    """从 DataStore 拉取最新价格，调用 RSMomentum 计算技术信号。"""
+    try:
+        from core.data_store import DataStore
+        from strategies.rs_momentum import RSMomentum
+        from datetime import date, timedelta
+        store = DataStore()
+        start = str(date.today() - timedelta(days=130))
+        data = store.get([sym], start=start, auto_update=False)
+        df = data.get(sym)
+        if df is None or len(df) < 60:
+            return {}
+        sig = RSMomentum().generate_signals(df).iloc[-1]
+        return {
+            'breakout':  bool(sig.get('breakout', False)),
+            'vol_surge': bool(sig.get('vol_surge', False)),
+            'uptrend':   bool(sig.get('uptrend', False)),
+            'signal':    int(sig.get('signal', 0)),  # 1=买入信号, -1=卖出预警
+        }
+    except Exception:
+        return {}
+
+
 def _score_ai(ai_pct: float | None, capex_growth: float | None,
               nvda_corr: float | None, rs: float | None,
-              rev_growth: float | None, news: int) -> tuple[int, dict]:
+              rev_growth: float | None, news: int,
+              tech: dict | None = None) -> tuple[int, dict]:
     score = 0
     bd = {}
 
@@ -182,6 +218,15 @@ def _score_ai(ai_pct: float | None, capex_growth: float | None,
     # 6. 新闻评分
     s = 1 if news >= 3 else 0
     score += s; bd['news'] = s
+
+    # 7. 技术信号（满分 3）：突破 + 量能 + 趋势
+    if tech:
+        s = (1 if tech.get('breakout') else 0) + \
+            (1 if tech.get('vol_surge') else 0) + \
+            (1 if tech.get('uptrend') else 0)
+        score += s; bd['tech'] = s
+    else:
+        bd['tech'] = 0
 
     return score, bd
 
@@ -238,8 +283,9 @@ def scan_ai_tracker(force: bool = False) -> dict:
         rs       = rs_map.get(sym)
         news     = _news_score(sym)
         rev_g    = info.get('revenue_growth')
+        tech     = _calc_tech_signals(sym)
 
-        total, bd = _score_ai(ai_pct, capex_g, nvda_c, rs, rev_g, news)
+        total, bd = _score_ai(ai_pct, capex_g, nvda_c, rs, rev_g, news, tech)
 
         rows.append({
             'symbol':          sym,
@@ -260,23 +306,31 @@ def scan_ai_tracker(force: bool = False) -> dict:
             'industry':        info.get('industry', ''),
             'insider_score':   ins.get('score', 0) if ins else 0,
             'insider_count':   ins.get('count', 0) if ins else 0,
+            # 技术信号（来自 RSMomentum）
+            'breakout':        tech.get('breakout', False),
+            'vol_surge':       tech.get('vol_surge', False),
+            'uptrend':         tech.get('uptrend', False),
+            'signal':          tech.get('signal', 0),
         })
 
-        time.sleep(0.15)
+        time.sleep(0.05)
 
     rows.sort(key=lambda x: x['score'], reverse=True)
 
-    result = {
+    result = _clean_floats({
         'rows':          rows,
         'last_updated':  datetime.now().isoformat(timespec='seconds'),
         'total':         len(rows),
         'groups':        {gk: gv['label'] for gk, gv in groups.items()},
         'group_colors':  {gk: gv.get('color', '#94a3b8') for gk, gv in groups.items()},
-    }
+    })
 
     _AI_CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
-    with open(_AI_CACHE_FILE, 'w', encoding='utf-8') as f:
-        json.dump(result, f, ensure_ascii=False, indent=2)
+    try:
+        with open(_AI_CACHE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
 
     return result
 
@@ -289,9 +343,17 @@ def _batch_rs(symbols: list[str]) -> dict[str, float]:
         if df.empty:
             return {}
         ret = df.pct_change(63).iloc[-1]
-        spy = float(ret.get('SPY', 0))
-        return {s: round(float(ret.get(s, 0)) - spy, 4)
-                for s in symbols if s in ret.index}
+        spy_val = ret.get('SPY', 0)
+        spy = float(spy_val) if spy_val == spy_val else 0.0  # NaN guard
+        result = {}
+        for s in symbols:
+            if s not in ret.index:
+                continue
+            v = ret.get(s)
+            if v is None or v != v:  # None or NaN
+                continue
+            result[s] = round(float(v) - spy, 4)
+        return result
     except Exception:
         return {}
 
@@ -363,8 +425,8 @@ _AI_COMPANY_KEYWORDS = {
 
 
 def auto_discover(limit: int = 20) -> list[dict]:
-    """扫描 sp500+ndx，发现潜在 AI 相关标的，加入 pending_review"""
-    from core.universe import get_sp500_tickers, get_nasdaq100_tickers
+    """扫描 sp500+ndx+russell2000，发现潜在 AI 相关标的（$10B–$500B），加入 pending_review"""
+    from core.universe import get_sp500_tickers, get_nasdaq100_tickers, get_russell2000_tickers
     from core.universe import get_stock_info
 
     u = load_universe()
@@ -373,9 +435,13 @@ def auto_discover(limit: int = 20) -> list[dict]:
         existing.update(s.upper() for s in gv['symbols'])
     existing.update(p['symbol'] for p in u.get('pending_review', []))
 
-    sp500 = set(get_sp500_tickers())
-    ndx   = set(get_nasdaq100_tickers())
-    candidates = list(sp500 | ndx - existing)
+    sp500   = set(get_sp500_tickers())
+    ndx     = set(get_nasdaq100_tickers())
+    try:
+        r2000 = set(get_russell2000_tickers())
+    except Exception:
+        r2000 = set()
+    candidates = list((sp500 | ndx | r2000) - existing)
 
     _logger.info(f'[AITracker] 自动发现扫描 {len(candidates)} 只...')
     info_map = get_stock_info(candidates)
@@ -390,6 +456,11 @@ def auto_discover(limit: int = 20) -> list[dict]:
         hit_industry = any(kw in industry for kw in _AI_INDUSTRY_KEYWORDS)
         hit_sector   = any(kw in sector for kw in _AI_SECTOR_KEYWORDS)
         if not (hit_industry or hit_sector):
+            continue
+
+        # 市值过滤：只发现 $10B–$500B 的新标的（超大市值已在追踪器内手动管理）
+        cap = info.get('market_cap_b') or 0
+        if cap < 10.0 or cap > 500.0:
             continue
 
         # 推测子主题

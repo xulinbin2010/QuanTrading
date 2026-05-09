@@ -13,7 +13,12 @@ def compute_rs_score(
     """
     stock_ret = df['close'] / df['close'].shift(period) - 1
     if spy_close is not None:
-        spy = spy_close.reindex(df.index).ffill()
+        # 统一 DatetimeIndex 单位，避免 pandas 2.x "Cannot losslessly convert units"
+        idx = df.index.as_unit('us') if hasattr(df.index, 'as_unit') else df.index
+        spy_aligned = spy_close.copy()
+        if hasattr(spy_aligned.index, 'as_unit'):
+            spy_aligned.index = spy_aligned.index.as_unit('us')
+        spy = spy_aligned.reindex(idx).ffill()
         spy_ret = spy / spy.shift(period) - 1
         df['rs_score'] = stock_ret - spy_ret
     else:

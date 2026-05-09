@@ -21,6 +21,9 @@ def run(req: BacktestRequest):
         'deny_industries': req.deny_industries,
         'factors':         req.factors,
         'factor_params':   req.factor_params,
+        'strategy':        req.strategy,
+        'hard_stop':       req.hard_stop,
+        'pos_pct':         req.pos_pct,
     }
     task_id = backtest_svc.submit_backtest(params)
     return {'task_id': task_id}

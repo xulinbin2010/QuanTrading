@@ -104,14 +104,18 @@ class BacktestRequest(BaseModel):
     period: Optional[str] = '3mo'
     start: Optional[str] = None
     end: Optional[str] = None
-    universe: str = 'sp500+ndx'  # 固定，不对外暴露选项
+    universe: str = 'sp500+ndx'
     top_n: int = 10
     min_cap_b: Optional[float] = None
     max_cap_b: Optional[float] = None
     deny_industries: Optional[list[str]] = None
     daily: bool = False
-    factors: Optional[list[str]] = None           # 自定义因子列表（None = 使用默认 RSMomentum）
-    factor_params: Optional[dict] = None          # 因子参数覆盖，如 {"rs_score": {"period": 126}}
+    factors: Optional[list[str]] = None
+    factor_params: Optional[dict] = None
+    # 5日动量策略专用参数
+    strategy: str = 'rs_momentum'      # 'rs_momentum' | 'momentum5d'
+    hard_stop: float = -0.08           # 硬止损（momentum5d）
+    pos_pct: float = 0.22              # 每仓比例（momentum5d）
 
 
 class FactorComboSaveRequest(BaseModel):

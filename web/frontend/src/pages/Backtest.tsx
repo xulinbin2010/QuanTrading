@@ -187,6 +187,9 @@ const DEFAULT_PARAMS = {
   min_cap_b: 10, max_cap_b: 5000,
   deny_industries: [] as string[],
   useCustomDate: false,
+  strategy: 'rs_momentum' as 'rs_momentum' | 'momentum5d',
+  hard_stop: -0.08,
+  pos_pct: 0.22,
 }
 
 function loadStored<T>(key: string, fallback: T): T {
@@ -714,12 +717,15 @@ export default function Backtest() {
       period: params.useCustomDate ? undefined : params.period,
       start: params.useCustomDate ? params.start : undefined,
       end: params.useCustomDate ? params.end : undefined,
-      universe: params.universe,
+      universe: params.strategy === 'momentum5d' ? 'ai' : params.universe,
       top_n: params.top_n,
       min_cap_b: params.min_cap_b,
       max_cap_b: params.max_cap_b,
       deny_industries: params.deny_industries.length ? params.deny_industries : undefined,
-      factors: selectedFactors.length > 0 ? selectedFactors : undefined,
+      factors: params.strategy === 'rs_momentum' && selectedFactors.length > 0 ? selectedFactors : undefined,
+      strategy: params.strategy,
+      hard_stop: params.hard_stop,
+      pos_pct: params.pos_pct,
     }),
     onSuccess: (data) => {
       setActiveTask(data.task_id)
@@ -759,10 +765,34 @@ export default function Backtest() {
       {/* ── 回测配置 Tab ─────────────────────────────────────── */}
       {tab === 'config' && <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
         <div className="text-sm font-medium text-slate-300 mb-4">回测参数</div>
+
+        {/* 策略选择器 */}
+        <div className="flex gap-2 mb-4">
+          {([
+            { key: 'rs_momentum', label: 'RS动量（主策略）', sub: '63日RS · 突破 · 量能 · SP500+NDX' },
+            { key: 'momentum5d',  label: '5日动量 · AI专属',  sub: '5日RS vs SPY · RS转负即出 · AI产业链' },
+          ] as const).map(s => (
+            <button
+              key={s.key}
+              onClick={() => setParams(p => ({ ...p, strategy: s.key }))}
+              className={`flex-1 px-4 py-2.5 rounded-lg border text-left transition-colors ${
+                params.strategy === s.key
+                  ? 'border-blue-500 bg-blue-900/30 text-white'
+                  : 'border-slate-600 bg-slate-700/30 text-slate-400 hover:border-slate-400'
+              }`}
+            >
+              <div className="text-sm font-medium">{s.label}</div>
+              <div className="text-xs text-slate-500 mt-0.5">{s.sub}</div>
+            </button>
+          ))}
+        </div>
+
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {/* Top N */}
+          {/* Top N / 最大仓位数 */}
           <div>
-            <label className="block text-xs text-slate-400 mb-1">Top N（最大持仓候选）</label>
+            <label className="block text-xs text-slate-400 mb-1">
+              {params.strategy === 'momentum5d' ? '最大持仓数' : 'Top N（最大持仓候选）'}
+            </label>
             <input
               type="number" min={1} max={50}
               className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
@@ -770,6 +800,28 @@ export default function Backtest() {
               onChange={e => setParams(p => ({ ...p, top_n: +e.target.value }))}
             />
           </div>
+
+          {/* 5日动量专属：硬止损 + 每仓比例 */}
+          {params.strategy === 'momentum5d' && (<>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">硬止损（如 -0.08）</label>
+              <input
+                type="number" step={0.01} min={-0.5} max={-0.01}
+                className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                value={params.hard_stop}
+                onChange={e => setParams(p => ({ ...p, hard_stop: +e.target.value }))}
+              />
+            </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">每仓比例（如 0.22）</label>
+              <input
+                type="number" step={0.01} min={0.05} max={0.5}
+                className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                value={params.pos_pct}
+                onChange={e => setParams(p => ({ ...p, pos_pct: +e.target.value }))}
+              />
+            </div>
+          </>)}
 
           {/* 最小市值 */}
           <div>

@@ -105,14 +105,36 @@ def submit_backtest(params: dict) -> str:
 
 
 def _run(task_id: str, params: dict):
+    # 后台线程默认没有 event loop，yfinance 等库可能需要，提前初始化
+    import asyncio
+    try:
+        asyncio.get_event_loop()
+    except RuntimeError:
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
     with _lock:
         _tasks[task_id]['status'] = 'running'
     short_id = task_id[:8]
     _logger.info(f'[回测 {short_id}] 开始 params={params}')
     try:
-        from tests.backtest_rs import run_backtest
-        # 强制带 daily=True，确保每日持仓数据可用于日志和前端展示
-        result = run_backtest(**{**params, 'daily': True})
+        strategy = params.get('strategy', 'rs_momentum')
+        if strategy == 'momentum5d':
+            from tests.backtest_momentum5d import run_backtest as _run_m5d
+            result = _run_m5d(
+                period    = params.get('period', '3mo'),
+                start     = params.get('start'),
+                end       = params.get('end'),
+                max_pos   = params.get('top', 4),
+                pos_pct   = params.get('pos_pct', 0.22),
+                hard_stop = params.get('hard_stop', -0.08),
+                daily     = True,
+            )
+        else:
+            from tests.backtest_rs import run_backtest
+            # 过滤掉 momentum5d 专用字段，避免 run_backtest 收到意外参数
+            rs_params = {k: v for k, v in params.items()
+                         if k not in ('strategy', 'hard_stop', 'pos_pct')}
+            result = run_backtest(**{**rs_params, 'daily': True})
 
         # 把每日持仓明细写入 server.log
         daily = result.get('daily_holdings') or []

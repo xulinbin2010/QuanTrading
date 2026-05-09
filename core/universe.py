@@ -105,9 +105,11 @@ def get_stock_info(symbols: list[str]) -> dict[str, dict]:
         except Exception:
             pass
 
-    # 缓存中没有、或字段不完整（旧版写入）的 symbol 都需要重查
+    # 缓存中没有、字段不完整、或 industry+sector 均为 None（上次抓取失败）的都需要重查
     need = [s for s in symbols
-            if s not in cache or not _STOCK_INFO_FIELDS.issubset(cache[s].keys())]
+            if s not in cache
+            or not _STOCK_INFO_FIELDS.issubset(cache[s].keys())
+            or (cache[s].get('industry') is None and cache[s].get('sector') is None)]
     if need:
         print(f"  [信息] 查询 {len(need)} 只股票市值/行业（首次约需 {len(need)//5+1}s）...")
         for sym in need:

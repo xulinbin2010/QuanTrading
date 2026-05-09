@@ -95,6 +95,53 @@ CASH_EQUIV = {'SGOV', 'BIL', 'USFR'}
 
 # ══════════════════════════════════════════════════════
 
+def _load_ai_boost_map() -> dict[str, float]:
+    """
+    返回 {symbol: ai_boost} 供 _entry_score 使用。
+
+    boost 计算规则：
+      - 在 ai_universe.json 中且有 AI 追踪器评分（0–15）：boost = (score/15) * 0.20
+      - 在 ai_universe.json 中但无评分缓存：                boost = 0.10（基础加成）
+      - 不在 AI 股票池：                                     boost = 0.0
+
+    最终对 rs_score 乘数项加成，最高 +20%。
+    """
+    import json
+    from pathlib import Path
+    root = Path(__file__).parent
+    boost_map: dict[str, float] = {}
+
+    # 读取 AI 股票池（确定成员资格）
+    universe_file = root / 'data' / 'ai_universe.json'
+    if not universe_file.exists():
+        return boost_map
+    try:
+        u = json.loads(universe_file.read_text(encoding='utf-8'))
+        for gv in u.get('groups', {}).values():
+            for s in gv.get('symbols', []):
+                boost_map[s.upper()] = 0.10   # 基础加成
+    except Exception:
+        return boost_map
+
+    if not boost_map:
+        return boost_map
+
+    # 叠加 AI 追踪器评分（有缓存则用，无则保持基础值）
+    cache_file = root / 'data' / 'ai_tracker_cache.json'
+    if cache_file.exists():
+        try:
+            cached = json.loads(cache_file.read_text(encoding='utf-8'))
+            score_max = 15
+            for row in cached.get('rows', []):
+                sym   = row.get('symbol', '').upper()
+                score = row.get('score')
+                if sym in boost_map and score is not None:
+                    boost_map[sym] = min((score / score_max) * 0.20, 0.20)
+        except Exception:
+            pass
+
+    return boost_map
+
 
 def scan_signals(
     held_symbols:     list[str],
@@ -233,18 +280,24 @@ def scan_signals(
         candidates = [s['symbol'] for s in buy_signals]
         info_map   = get_stock_info(candidates)
         filtered   = []
-        deny_set   = {d.lower() for d in (deny_industries or [])}
+        import re as _re
+        def _norm_ind(s: str) -> str:
+            # 统一各种破折号/连字符为空格，折叠多余空格，小写
+            s = _re.sub(r'[—–‒\-_/]', ' ', s.lower())
+            return _re.sub(r'\s+', ' ', s).strip()
+        deny_set = {_norm_ind(d) for d in (deny_industries or [])}
         for sig in buy_signals:
             info = info_map.get(sig['symbol'], {})
             cap  = info.get('market_cap_b')
-            ind  = (info.get('industry') or '').lower()
+            ind  = _norm_ind(info.get('industry') or '')
             # 市值过滤（无法获取市值的股票放行）
             if cap is not None:
                 if min_cap_b is not None and cap < min_cap_b:
                     continue
                 if max_cap_b is not None and cap > max_cap_b:
                     continue
-            # 行业过滤
+            # 行业过滤：deny 关键词只要是行业名的子串即可匹配
+            # 例：'software' 匹配 'Software - Application' / 'Enterprise Software' 等
             if deny_set and any(d in ind for d in deny_set):
                 continue
             # 基本面硬门槛（数据缺失时放行）
@@ -268,19 +321,30 @@ def scan_signals(
             print(f"  [过滤] 市值/行业过滤移除 {n_removed} 只，剩余 {len(filtered)} 只买入候选")
         buy_signals = filtered
 
+    # ── AI 关联度加成（一次性加载，后续 _entry_score 直接读 sig['ai_boost']）──
+    ai_boost_map = _load_ai_boost_map()
+    if ai_boost_map:
+        ai_cnt = sum(1 for s in buy_signals if s['symbol'] in ai_boost_map)
+        if ai_cnt:
+            print(f"  [AI关联] {ai_cnt} 只候选在 AI 股票池，入场优先级加成最高 +20%")
+    for sig in buy_signals:
+        sig['ai_boost'] = ai_boost_map.get(sig['symbol'], 0.0)
+
     # ── 复合入场得分排序（过滤后执行，insider_score / sector 已就位）────────────
     def _entry_score(sig: dict) -> float:
         rs       = sig.get('rs_score', 0)
         vol      = sig.get('vol_ratio', 1.0)
         drawdown = sig.get('drawdown_from_high', -0.15)   # 负数，越接近 0 越强
         insider  = sig.get('insider_score', 0)
+        ai       = sig.get('ai_boost', 0.0)
         # 量比加成：最高 +15%，3x 以上不再加分（避免一次性暴量失真）
-        vol_boost      = min(vol / 3.0, 1.0) * 0.15
+        vol_boost       = min(vol / 3.0, 1.0) * 0.15
         # 近高点加成：drawdown=0% → +10%；drawdown=-30% → +0%
         proximity_boost = max(0.0, (drawdown + 0.30) / 0.30) * 0.10
         # 内幕加成：有内幕买入 → +10%（上限）
         insider_boost   = min(insider / 10.0, 1.0) * 0.10
-        return rs * (1 + vol_boost + proximity_boost + insider_boost)
+        # AI 关联加成：在 AI 池中基础 +10%，有追踪器评分最高 +20%
+        return rs * (1 + vol_boost + proximity_boost + insider_boost + ai)
 
     buy_signals.sort(key=_entry_score, reverse=True)
 
@@ -786,7 +850,8 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
             if tif == 'OPG':
                 limit_price = round(sig['close'] * (1 + MAX_ENTRY_SLIPPAGE), 2)
                 ind_display = sig.get('industry') or sec
-                print(f"  [{symbol}]  RS={sig['rs_score']:+.3f}  量比={sig['vol_ratio']:.1f}x  行业={ind_display}")
+                ai_tag = f"  🤖AI+{sig.get('ai_boost', 0)*100:.0f}%" if sig.get('ai_boost') else ''
+                print(f"  [{symbol}]  RS={sig['rs_score']:+.3f}  量比={sig['vol_ratio']:.1f}x  行业={ind_display}{ai_tag}")
                 print(f"    {sizing_note}  限价 ${limit_price:.2f}  预计成本 ${qty*limit_price:,.0f}")
                 if not dry_run:
                     _cancel_existing(symbol, 'BUY')
@@ -800,7 +865,8 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
                     print(f"  → [dry-run] 将下限价 OPG 单 ${limit_price:.2f}")
             else:
                 ind_display = sig.get('industry') or sec
-                print(f"  [{symbol}]  RS={sig['rs_score']:+.3f}  量比={sig['vol_ratio']:.1f}x  行业={ind_display}")
+                ai_tag = f"  🤖AI+{sig.get('ai_boost', 0)*100:.0f}%" if sig.get('ai_boost') else ''
+                print(f"  [{symbol}]  RS={sig['rs_score']:+.3f}  量比={sig['vol_ratio']:.1f}x  行业={ind_display}{ai_tag}")
                 print(f"    {sizing_note}  拟成本 ${cost:,.0f}")
                 if not dry_run:
                     _cancel_existing(symbol, 'BUY')

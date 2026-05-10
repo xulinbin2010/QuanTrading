@@ -18,6 +18,8 @@ import math
 import time
 import pickle
 import logging
+import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
 
@@ -34,6 +36,11 @@ def _clean_floats(obj):
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
+# 主线程预加载：ib_insync 在后台线程初始化 asyncio.event_loop 会失败（Py3.12）
+from core import data_store as _data_store           # noqa: F401
+from core import universe as _universe               # noqa: F401
+from strategies import rs_momentum as _rs_momentum   # noqa: F401
+
 _logger = logging.getLogger(__name__)
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -41,7 +48,13 @@ ROOT = Path(__file__).resolve().parents[2]
 _AI_UNIVERSE_FILE    = ROOT / 'data' / 'ai_universe.json'
 _AI_REVENUE_FILE     = ROOT / 'data' / 'ai_revenue_share.json'
 _AI_CACHE_FILE       = ROOT / 'data' / 'ai_tracker_cache.json'
+_AI_CAPEX_CACHE      = ROOT / 'data' / '.ai_capex_cache.pkl'
 _AI_CACHE_TTL_HOURS  = 4   # 4 小时缓存
+_AI_CAPEX_TTL_DAYS   = 7   # capex 缓存 7 天（财报数据，更新慢）
+
+# 后台扫描状态
+_ai_scan_running: dict[str, bool] = {}
+_ai_scan_lock = threading.Lock()
 
 _AI_KEYWORDS = {'ai', 'artificial intelligence', 'machine learning', 'deep learning',
                 'gpu', 'inference', 'training', 'data center', 'accelerat', 'nvidia',
@@ -100,23 +113,68 @@ def _calc_capex_growth(sym: str) -> float | None:
     return None
 
 
-def _calc_nvda_correlation(sym: str, days: int = 60) -> float | None:
-    """计算与 NVDA 的价格相关性（日收益率）"""
+def _load_capex_cache() -> dict:
+    if _AI_CAPEX_CACHE.exists():
+        try:
+            with open(_AI_CAPEX_CACHE, 'rb') as f:
+                stored = pickle.load(f)
+            if datetime.now() - stored.get('_time', datetime.min) < timedelta(days=_AI_CAPEX_TTL_DAYS):
+                return stored.get('data', {})
+        except Exception:
+            pass
+    return {}
+
+
+def _save_capex_cache(data: dict):
+    _AI_CAPEX_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with open(_AI_CAPEX_CACHE, 'wb') as f:
+            pickle.dump({'_time': datetime.now(), 'data': data}, f)
+    except Exception:
+        pass
+
+
+def _batch_capex_growth(symbols: list[str]) -> dict[str, float | None]:
+    """并发查询 capex 同比，带 7 天缓存。"""
+    cache = _load_capex_cache()
+    need  = [s for s in symbols if s not in cache]
+    if need:
+        _logger.info(f'[AITracker] 并发查询 {len(need)} 只 capex（max_workers=10）...')
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            futs = {ex.submit(_calc_capex_growth, s): s for s in need}
+            for fut in as_completed(futs):
+                sym = futs[fut]
+                try:
+                    cache[sym] = fut.result()
+                except Exception:
+                    cache[sym] = None
+        _save_capex_cache(cache)
+    return {s: cache.get(s) for s in symbols}
+
+
+def _calc_nvda_correlation(sym: str, days: int = 60, price_map: dict | None = None) -> float | None:
+    """计算与 NVDA 的价格相关性（日收益率）。
+    price_map 为预加载的 {sym: df}，避免逐股调 DataStore。
+    """
     if sym == 'NVDA':
         return 1.0
     try:
-        from core.data_store import DataStore
-        from datetime import date, timedelta
-        store = DataStore()
-        start = str(date.today() - timedelta(days=days + 10))
-        data = store.get([sym, 'NVDA'], start=start, auto_update=False)
-        if sym not in data or 'NVDA' not in data:
+        if price_map is None:
+            from core.data_store import DataStore
+            from datetime import date, timedelta
+            store = DataStore()
+            start = str(date.today() - timedelta(days=days + 10))
+            price_map = store.get([sym, 'NVDA'], start=start, auto_update=False)
+
+        if sym not in price_map or 'NVDA' not in price_map:
             return None
-        s_close = data[sym]['close'].pct_change().dropna()
-        n_close = data['NVDA']['close'].pct_change().dropna()
+        s_close = price_map[sym]['close'].pct_change().dropna()
+        n_close = price_map['NVDA']['close'].pct_change().dropna()
         common = s_close.index.intersection(n_close.index)
         if len(common) < 20:
             return None
+        # 限制窗口
+        common = common[-days:]
         corr = float(s_close.loc[common].corr(n_close.loc[common]))
         return round(corr, 3)
     except Exception:
@@ -164,16 +222,17 @@ def _news_score(sym: str) -> int:
         return 0
 
 
-def _calc_tech_signals(sym: str) -> dict:
-    """从 DataStore 拉取最新价格，调用 RSMomentum 计算技术信号。"""
+def _calc_tech_signals(sym: str, price_map: dict | None = None) -> dict:
+    """从预加载 price_map（或 DataStore）拉最新价格，调用 RSMomentum 计算技术信号。"""
     try:
-        from core.data_store import DataStore
         from strategies.rs_momentum import RSMomentum
-        from datetime import date, timedelta
-        store = DataStore()
-        start = str(date.today() - timedelta(days=130))
-        data = store.get([sym], start=start, auto_update=False)
-        df = data.get(sym)
+        if price_map is None:
+            from core.data_store import DataStore
+            from datetime import date, timedelta
+            store = DataStore()
+            start = str(date.today() - timedelta(days=130))
+            price_map = store.get([sym], start=start, auto_update=False)
+        df = price_map.get(sym)
         if df is None or len(df) < 60:
             return {}
         sig = RSMomentum().generate_signals(df).iloc[-1]
@@ -233,23 +292,77 @@ def _score_ai(ai_pct: float | None, capex_growth: float | None,
 
 # ── 主扫描函数 ────────────────────────────────────────────────
 
+def _read_disk_cache() -> dict | None:
+    """读盘上 AI 扫描结果，TTL 内返回，否则返回 None。"""
+    if not _AI_CACHE_FILE.exists():
+        return None
+    try:
+        with open(_AI_CACHE_FILE, encoding='utf-8') as f:
+            cached = json.load(f)
+        age = datetime.now() - datetime.fromisoformat(cached['last_updated'])
+        if age < timedelta(hours=_AI_CACHE_TTL_HOURS):
+            return cached
+        return cached   # 也返回过期缓存供 stale 回退使用
+    except Exception:
+        return None
+
+
 def scan_ai_tracker(force: bool = False) -> dict:
-    """扫描 AI 基建全股票池，返回评分结果（4 小时缓存）"""
-    if not force and _AI_CACHE_FILE.exists():
-        try:
-            with open(_AI_CACHE_FILE, encoding='utf-8') as f:
-                cached = json.load(f)
-            age = datetime.now() - datetime.fromisoformat(cached['last_updated'])
-            if age < timedelta(hours=_AI_CACHE_TTL_HOURS):
-                return cached
-        except Exception:
-            pass
+    """扫描 AI 基建全股票池。
+
+    缓存策略（与 factor_svc 一致）：
+    - 缓存有效 → 立即返回
+    - 缓存过期但存在 → 立即返回 stale + 后台刷新
+    - 无缓存（首次）→ 同步等待
+    """
+    cached = _read_disk_cache()
+    if not force and cached is not None:
+        age = datetime.now() - datetime.fromisoformat(cached['last_updated'])
+        if age < timedelta(hours=_AI_CACHE_TTL_HOURS):
+            return cached
+
+    key = 'ai'
+    thread_to_wait = None
+    with _ai_scan_lock:
+        if not _ai_scan_running.get(key, False):
+            _ai_scan_running[key] = True
+            t = threading.Thread(target=_run_ai_scan_bg, daemon=True)
+            t.start()
+            if cached is None:
+                thread_to_wait = t   # 首次运行，无任何缓存可返回
+
+    if thread_to_wait is not None:
+        thread_to_wait.join()
+        cached = _read_disk_cache()
+
+    if cached is not None:
+        is_bg = _ai_scan_running.get(key, False)
+        return {**cached, 'scanning': is_bg}
+    return {'rows': [], 'total': 0, 'scanning': True}
+
+
+def _run_ai_scan_bg() -> None:
+    """后台线程入口，捕获异常并清理状态。"""
+    try:
+        _do_ai_scan()
+    except Exception as e:
+        _logger.error(f'[AITracker] 扫描失败：{e}', exc_info=True)
+    finally:
+        with _ai_scan_lock:
+            _ai_scan_running.pop('ai', None)
+
+
+def _do_ai_scan() -> dict:
+    """实际扫描逻辑，返回结果 dict 并写盘缓存。"""
+    from core.universe import get_stock_info
+    from core.insider import get_insider_buys
+    from core.data_store import DataStore
+    from datetime import date, timedelta as _td
 
     universe   = load_universe()
     ai_revenue = load_ai_revenue()
     groups     = universe.get('groups', {})
 
-    # 收集全部 symbol（去重）
     all_syms: list[str] = []
     sym_to_group: dict[str, str] = {}
     for gk, gv in groups.items():
@@ -258,16 +371,18 @@ def scan_ai_tracker(force: bool = False) -> dict:
                 all_syms.append(s)
                 sym_to_group[s] = gk
 
-    _logger.info(f'[AITracker] 扫描 {len(all_syms)} 只...')
+    _logger.info(f'[AITracker] 扫描 {len(all_syms)} 只 (后台线程)...')
 
-    # 批量获取基本面
-    from core.universe import get_stock_info
-    from core.insider import get_insider_buys
-    info_map   = get_stock_info(all_syms)
+    # ── 一次性预加载 ────────────────────────────────────────
+    info_map    = get_stock_info(all_syms)
     insider_map = get_insider_buys(days=90, min_value_k=50)
+    rs_map      = _batch_rs(all_syms)
+    capex_map   = _batch_capex_growth(all_syms)
 
-    # 批量 RS（一次调用）
-    rs_map = _batch_rs(all_syms)
+    # 批量价格预加载（130 天，覆盖 NVDA 相关性 + RSMomentum 信号）
+    store     = DataStore()
+    start_d   = str(date.today() - _td(days=130))
+    price_map = store.get(list(set(all_syms + ['NVDA'])), start=start_d, auto_update=False)
 
     rows = []
     for sym in all_syms:
@@ -278,12 +393,12 @@ def scan_ai_tracker(force: bool = False) -> dict:
         ai_data  = ai_revenue.get(sym, {})
         ai_pct   = ai_data.get('ai_pct')
 
-        capex_g  = _calc_capex_growth(sym)
-        nvda_c   = _calc_nvda_correlation(sym)
+        capex_g  = capex_map.get(sym)
+        nvda_c   = _calc_nvda_correlation(sym, price_map=price_map)
         rs       = rs_map.get(sym)
         news     = _news_score(sym)
         rev_g    = info.get('revenue_growth')
-        tech     = _calc_tech_signals(sym)
+        tech     = _calc_tech_signals(sym, price_map=price_map)
 
         total, bd = _score_ai(ai_pct, capex_g, nvda_c, rs, rev_g, news, tech)
 
@@ -306,14 +421,11 @@ def scan_ai_tracker(force: bool = False) -> dict:
             'industry':        info.get('industry', ''),
             'insider_score':   ins.get('score', 0) if ins else 0,
             'insider_count':   ins.get('count', 0) if ins else 0,
-            # 技术信号（来自 RSMomentum）
             'breakout':        tech.get('breakout', False),
             'vol_surge':       tech.get('vol_surge', False),
             'uptrend':         tech.get('uptrend', False),
             'signal':          tech.get('signal', 0),
         })
-
-        time.sleep(0.05)
 
     rows.sort(key=lambda x: x['score'], reverse=True)
 

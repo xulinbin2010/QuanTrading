@@ -6,9 +6,18 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 import time
 import math
+import threading
 import pandas as pd
 from datetime import date, timedelta
 import config
+
+# 主线程预加载：ib_insync 在后台线程初始化 asyncio.event_loop 会失败（Py3.12）
+# 这些模块通过 core/__init__.py 链式 import IBConnection → ib_insync
+from core import data_store as _data_store           # noqa: F401
+from core import universe as _universe               # noqa: F401
+from core import earnings as _earnings               # noqa: F401
+from strategies import rs_momentum as _rs_momentum   # noqa: F401
+from strategies.factors import sector_rs as _sector_rs   # noqa: F401
 
 
 def _clean_floats(obj):
@@ -25,8 +34,10 @@ def _clean_floats(obj):
 
 
 # ── 内存缓存（factor scan 结果，TTL 1 小时）────────────────
-_scan_cache: dict = {}   # key: universe, value: {ts, data}
-CACHE_TTL = 3600         # 秒
+_scan_cache: dict = {}         # key: universe, value: {ts, data}
+_scan_running: dict[str, bool] = {}   # 正在后台扫描的 universe
+_scan_lock = threading.Lock()
+CACHE_TTL = 3600               # 秒
 
 
 def _cache_valid(universe: str) -> bool:
@@ -166,46 +177,102 @@ def _load_price_map(universe: str):
 def scan_factors(universe: str = 'sp500', top: int = 50, force: bool = False) -> dict:
     """
     返回股票池内各股最新一天的因子数据（技术 + 基本面），按 rs_score 降序。
-    同时返回覆盖率统计。
+
+    缓存策略：
+    - 缓存有效 → 立即返回
+    - 缓存过期 → 立即返回旧缓存（含 scanning=True），后台启动刷新
+    - 无缓存（首次）→ 同步等待完成
+    """
+    if not force and _cache_valid(universe):
+        return _scan_cache[universe]['data']
+
+    # 关键：t.join() 必须在锁外，否则与 _run_scan finally 里的 lock.acquire() 死锁
+    thread_to_wait = None
+    with _scan_lock:
+        if not _scan_running.get(universe, False):
+            _scan_running[universe] = True
+            t = threading.Thread(
+                target=_run_scan, args=(universe, top), daemon=True
+            )
+            t.start()
+            if universe not in _scan_cache:
+                thread_to_wait = t   # 首次运行，没有任何缓存可返回，需等待
+            # 否则有旧缓存 → 后台刷新，直接返回 stale
+
+    if thread_to_wait is not None:
+        thread_to_wait.join()
+
+    entry = _scan_cache.get(universe)
+    if entry:
+        data = entry['data']
+        is_bg = _scan_running.get(universe, False)
+        return {**data, 'scanning': is_bg}
+    return {'rows': [], 'coverage': {}, 'total': 0, 'scanning': True}
+
+
+def _run_scan(universe: str, top: int) -> None:
+    """实际扫描逻辑，在后台线程中运行。"""
+    try:
+        data = _do_scan(universe, top)
+        _scan_cache[universe] = {'ts': time.time(), 'data': data}
+    finally:
+        with _scan_lock:
+            _scan_running.pop(universe, None)
+
+
+def _do_scan(universe: str, top: int) -> dict:
+    """
+    同步扫描全股票池，返回结果 dict。
 
     返回格式：
     {
         'rows': [...],
         'coverage': {'rs_score': {'total': 500, 'valid': 498, 'pct': 99.6}, ...},
-        'total': N,   # 扫描总数
+        'total': N,
     }
     """
-    if not force and _cache_valid(universe):
-        return _scan_cache[universe]['data']
-
     from strategies.rs_momentum import RSMomentum
+    from strategies.factors.sector_rs import SECTOR_ETFS, ALL_SECTOR_ETFS
     import config
 
-    # 读取基本面因子启用状态
-    fundamental_keys = [
-        'revenue_growth', 'earnings_growth', 'roe',
-        'debt_to_equity', 'fcf_yield', 'pe_ratio', 'pb_ratio',
-    ]
-    enabled_fundamental = {
-        k: _parse_bool(config.get(f'FACTOR_{k}_ENABLED'))
-        for k in fundamental_keys
-    }
-
-    # 财报回避因子是否启用
     earnings_avoid_enabled = _parse_bool(config.get('FACTOR_earnings_avoid_ENABLED'))
     earnings_avoid_days    = int(config.get('EARNINGS_AVOID_DAYS') or 2)
     earnings_cache: dict   = {}
-    if earnings_avoid_enabled:
-        from core.earnings import prefetch_earnings
 
     tickers, price_map, spy_close, stock_info = _load_price_map(universe)
 
-    # 预取财报日期（批量一次，避免逐只联网）
     if earnings_avoid_enabled:
+        from core.earnings import prefetch_earnings
         earnings_cache = prefetch_earnings(tickers)
 
     sector_rs_enabled = _parse_bool(config.get('FACTOR_sector_rs_ENABLED'))
-    from strategies.factors.sector_rs import SECTOR_ETFS, compute_sector_rs
+
+    # ── 预计算 sector_rs（在循环外一次性完成，避免逐股滚动运算）────
+    sector_rs_pre: dict[str, tuple] = {}   # sym -> (sector_rs, stock_vs_sector)
+    if sector_rs_enabled and spy_close is not None and len(spy_close) > 63:
+        spy_ret63 = float(spy_close.iloc[-1] / spy_close.iloc[-64] - 1)
+        etf_ret63: dict[str, float] = {}
+        for etf_sym in ALL_SECTOR_ETFS:
+            etf_df = price_map.get(etf_sym)
+            if etf_df is not None and len(etf_df) > 63:
+                etf_ret63[etf_sym] = float(
+                    etf_df['close'].iloc[-1] / etf_df['close'].iloc[-64] - 1
+                )
+        for sym in tickers:
+            df = price_map.get(sym)
+            if df is None or len(df) <= 63:
+                continue
+            info     = stock_info.get(sym, {})
+            etf_sym  = SECTOR_ETFS.get(info.get('sector', ''))
+            sect_ret = etf_ret63.get(etf_sym) if etf_sym else None
+            stk_ret  = float(df['close'].iloc[-1] / df['close'].iloc[-64] - 1)
+            if sect_ret is not None:
+                sector_rs_pre[sym] = (
+                    round(sect_ret - spy_ret63, 4),
+                    round(stk_ret  - sect_ret,  4),
+                )
+            else:
+                sector_rs_pre[sym] = (0.0, round(stk_ret - spy_ret63, 4))
 
     strategy = RSMomentum(
         vol_shrink_ratio=float(config.get('VOL_SHRINK_RATIO') or 0.7),
@@ -222,40 +289,38 @@ def scan_factors(universe: str = 'sp500', top: int = 50, force: bool = False) ->
         total_scanned += 1
         try:
             sig_df = strategy.generate_signals(df)
-            last = sig_df.iloc[-1]
-            info = stock_info.get(sym, {})
+            last   = sig_df.iloc[-1]
+            info   = stock_info.get(sym, {})
 
-            # AI 产业链扫描：只保留 $10B–$500B 中等市值（超大市值由 AI 追踪器监控）
             if universe == 'ai':
                 cap = info.get('market_cap_b')
                 if cap is not None and (cap < 10.0 or cap > 500.0):
                     continue
 
+            sr_vals = sector_rs_pre.get(sym, (None, None))
             row = {
-                "symbol": sym,
-                "close": round(float(last['close']), 2),
-                "rs_score": round(float(last.get('rs_score', 0)), 4),
-                "vol_ratio": round(float(last['volume'] / last['vol_ma20']), 2)
-                             if last.get('vol_ma20') else 0,
-                "breakout": bool(last.get('breakout', False)),
-                "vol_surge": bool(last.get('vol_surge', False)),
-                "uptrend": bool(last.get('uptrend', False)),
-                "not_crashed": bool(last.get('not_crashed', True)),
-                "signal": int(last.get('signal', 0)),
-                "market_cap_b": info.get('market_cap_b'),
-                "industry": info.get('industry'),
-                "sector": info.get('sector'),
-                # 基本面因子（始终附带，前端按启用状态显示）
-                "revenue_growth": info.get('revenue_growth'),
+                "symbol":        sym,
+                "close":         round(float(last['close']), 2),
+                "rs_score":      round(float(last.get('rs_score', 0)), 4),
+                "vol_ratio":     round(float(last['volume'] / last['vol_ma20']), 2)
+                                 if last.get('vol_ma20') else 0,
+                "breakout":      bool(last.get('breakout', False)),
+                "vol_surge":     bool(last.get('vol_surge', False)),
+                "uptrend":       bool(last.get('uptrend', False)),
+                "not_crashed":   bool(last.get('not_crashed', True)),
+                "signal":        int(last.get('signal', 0)),
+                "market_cap_b":  info.get('market_cap_b'),
+                "industry":      info.get('industry'),
+                "sector":        info.get('sector'),
+                "revenue_growth":  info.get('revenue_growth'),
                 "earnings_growth": info.get('earnings_growth'),
-                "roe": info.get('roe'),
-                "debt_to_equity": info.get('debt_to_equity'),
-                "fcf_yield": _compute_fcf_yield(info),
-                "pe_ratio": info.get('pe_ratio'),
-                "pb_ratio": info.get('pb_ratio'),
-                # 行业相对强度（仅当 sector_rs 启用时有意义）
-                **_compute_sector_rs_vals(sym, info, price_map, spy_close, sector_rs_enabled),
-                # 财报回避（display_only，仅当 earnings_avoid 启用时有意义）
+                "roe":             info.get('roe'),
+                "debt_to_equity":  info.get('debt_to_equity'),
+                "fcf_yield":       _compute_fcf_yield(info),
+                "pe_ratio":        info.get('pe_ratio'),
+                "pb_ratio":        info.get('pb_ratio'),
+                "sector_rs":       sr_vals[0],
+                "stock_vs_sector": sr_vals[1],
                 "earnings_safe": (
                     _earnings_safe(sym, earnings_cache, earnings_avoid_days)
                     if earnings_avoid_enabled else None
@@ -268,30 +333,22 @@ def scan_factors(universe: str = 'sp500', top: int = 50, force: bool = False) ->
     rows.sort(key=lambda x: x['rs_score'], reverse=True)
     top_rows = rows[:top] if top else rows
 
-    # ── 覆盖率统计 ────────────────────────────────────────
     factor_cols = [
         'rs_score', 'vol_ratio', 'breakout', 'vol_surge', 'uptrend', 'not_crashed',
         'revenue_growth', 'earnings_growth', 'roe', 'debt_to_equity',
         'fcf_yield', 'pe_ratio', 'pb_ratio',
     ]
-    coverage = {}
     n = len(rows)
-    for col in factor_cols:
-        valid = sum(1 for r in rows if r.get(col) is not None)
-        coverage[col] = {
+    coverage = {
+        col: {
             'total': n,
-            'valid': valid,
-            'pct': round(valid / n * 100, 1) if n > 0 else 0,
+            'valid': sum(1 for r in rows if r.get(col) is not None),
+            'pct':   round(sum(1 for r in rows if r.get(col) is not None) / n * 100, 1) if n else 0,
         }
+        for col in factor_cols
+    }
 
-    data = _clean_floats({
-        'rows': top_rows,
-        'coverage': coverage,
-        'total': n,
-    })
-
-    _scan_cache[universe] = {'ts': time.time(), 'data': data}
-    return data
+    return _clean_floats({'rows': top_rows, 'coverage': coverage, 'total': n})
 
 
 # ── 自定义因子组合信号预览 ─────────────────────────────────

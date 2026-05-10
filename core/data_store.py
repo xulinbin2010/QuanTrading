@@ -25,6 +25,7 @@ CLI（独立运行，下载 / 更新数据）：
 
 import logging
 import warnings
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -286,32 +287,37 @@ class DataStore:
                         _logger.error(f'[DataStore] {sym} 全量重下失败：{e}')
                         bad_syms.add(sym)
 
-        # 批量下载中空数据的 symbol 逐只重试（yfinance 批量偶发空列问题）
+        # 批量下载中空数据的 symbol 并行重试（yfinance 批量偶发空列问题）
         if bad_syms:
-            retry_bad: set[str] = set()
-            for sym in sorted(bad_syms):
+            def _retry_one(sym: str):
                 try:
                     r = yf.download(sym, start=start, end=end_exclusive,
                                     auto_adjust=True, progress=False)
-                    df2 = self._extract(r, sym, 1)
-                    if df2 is not None and not df2.empty:
-                        got_syms.add(sym)
-                        path = self.stocks_dir / f'{sym}.parquet'
-                        if path.exists():
-                            old      = pd.read_parquet(path)
-                            new_rows = df2[~df2.index.isin(old.index)]
-                            if not new_rows.empty:
-                                df2 = pd.concat([old, df2])
-                                df2 = df2[~df2.index.duplicated(keep='last')].sort_index()
-                            else:
-                                continue
-                        df2.index.name = 'date'
-                        df2.to_parquet(path)
-                        saved += 1
-                    else:
-                        retry_bad.add(sym)
+                    return sym, self._extract(r, sym, 1)
                 except Exception:
-                    retry_bad.add(sym)
+                    return sym, None
+
+            retry_bad: set[str] = set()
+            with ThreadPoolExecutor(max_workers=8) as ex:
+                futs = {ex.submit(_retry_one, s): s for s in sorted(bad_syms)}
+                for fut in as_completed(futs, timeout=90):
+                    sym, df2 = fut.result()
+                    if df2 is None or df2.empty:
+                        retry_bad.add(sym)
+                        continue
+                    got_syms.add(sym)
+                    path = self.stocks_dir / f'{sym}.parquet'
+                    if path.exists():
+                        old      = pd.read_parquet(path)
+                        new_rows = df2[~df2.index.isin(old.index)]
+                        if not new_rows.empty:
+                            df2 = pd.concat([old, df2])
+                            df2 = df2[~df2.index.duplicated(keep='last')].sort_index()
+                        else:
+                            continue
+                    df2.index.name = 'date'
+                    df2.to_parquet(path)
+                    saved += 1
             bad_syms = retry_bad
 
         if bad_syms:

@@ -69,6 +69,7 @@ export interface BacktestParams {
   strategy?: 'rs_momentum' | 'momentum5d'
   hard_stop?: number
   pos_pct?: number
+  ema_stop?: number
 }
 
 export const runBacktest      = (params: BacktestParams) =>

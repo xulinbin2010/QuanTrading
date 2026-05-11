@@ -33,6 +33,7 @@ warnings.filterwarnings('ignore')
 MAX_POSITIONS = 4
 POSITION_PCT  = 0.22    # 每仓 22%
 HARD_STOP     = -0.08   # 硬止损 -8%
+EMA_STOP      = 8       # EMA 破位止损周期（0 = 禁用）
 INITIAL_CASH  = 60_000
 MAX_ENTRY_SLIPPAGE = 0.01   # 开盘跳价超过昨收 1% 则放弃
 
@@ -82,6 +83,7 @@ def run_backtest(
     max_pos: int = MAX_POSITIONS,
     pos_pct: float = POSITION_PCT,
     hard_stop: float = HARD_STOP,
+    ema_stop: int = EMA_STOP,
     daily: bool = False,
     deny_software: bool = True,
 ) -> dict:
@@ -131,7 +133,7 @@ def run_backtest(
     dates = all_dates
 
     # ── 生成信号 ──────────────────────────────────────────────
-    strategy = Momentum5D()
+    strategy = Momentum5D(ema_stop_period=ema_stop)
     strategy.set_spy(spy_close)
 
     stock_data = {s: _norm(df) for s, df in all_data.items() if s != 'SPY'}
@@ -237,7 +239,17 @@ def run_backtest(
 
             if ret <= hard_stop:
                 pending_sells[sym] = f'硬止损({hard_stop:.0%})'
-            elif sym in signals and date in signals[sym].index:
+                continue
+
+            # EMA 破位止损（强牛市里比 RS 转负更早触发）
+            if ema_stop and sym in signals and date in signals[sym].index:
+                row = signals[sym].loc[date]
+                ema_val = row.get('ema_stop')
+                if ema_val is not None and pd.notna(ema_val) and price < float(ema_val):
+                    pending_sells[sym] = f'破EMA{ema_stop}'
+                    continue
+
+            if sym in signals and date in signals[sym].index:
                 if signals[sym].loc[date, 'signal'] == -1:
                     pending_sells[sym] = 'RS转负'
 
@@ -363,7 +375,8 @@ def run_backtest(
     }
 
     return {
-        'params':          {'max_pos': max_pos, 'pos_pct': pos_pct, 'hard_stop': hard_stop},
+        'params':          {'max_pos': max_pos, 'pos_pct': pos_pct,
+                            'hard_stop': hard_stop, 'ema_stop': ema_stop},
         'summary':         summary,
         'equity_curve':    equity_history,
         'trades':          trades,
@@ -390,7 +403,8 @@ def print_report(result: dict):
     print("═" * 56)
     print(f"  回测区间  : {s['bt_start']} → {s['bt_end']}  ({s['days']}天)")
     print(f"  股票池    : AI产业链 {s['universe_size']} 只（剔软件后）")
-    print(f"  参数      : 最多{p['max_pos']}仓 × {p['pos_pct']:.0%}  硬止损{p['hard_stop']:.0%}")
+    ema_tag = f"  EMA{p['ema_stop']}破位止损" if p.get('ema_stop') else "  EMA止损关闭"
+    print(f"  参数      : 最多{p['max_pos']}仓 × {p['pos_pct']:.0%}  硬止损{p['hard_stop']:.0%}{ema_tag}")
     print("─" * 56)
     print(f"  总收益    : {pct(s['total_return'])}  {bar(s['total_return'])}")
     print(f"  年化收益  : {pct(s['annual_return'])}")
@@ -438,6 +452,8 @@ def _parse_args():
                         help='每仓比例，默认 0.22')
     parser.add_argument('--hard-stop', type=float, default=HARD_STOP, dest='hard_stop',
                         help='硬止损比例，默认 -0.08')
+    parser.add_argument('--ema-stop',  type=int,   default=EMA_STOP,  dest='ema_stop',
+                        help='EMA 破位止损周期，默认 8 天（0 = 禁用）')
     parser.add_argument('--daily',    action='store_true', help='打印每日持仓')
     parser.add_argument('--no-software-filter', action='store_true', dest='no_sw',
                         help='不过滤软件行业（默认过滤）')
@@ -453,6 +469,7 @@ if __name__ == '__main__':
         max_pos     = args.max_pos,
         pos_pct     = args.pos_pct,
         hard_stop   = args.hard_stop,
+        ema_stop    = args.ema_stop,
         daily       = args.daily,
         deny_software = not args.no_sw,
     )

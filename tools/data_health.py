@@ -94,70 +94,86 @@ def check_existence(symbols: list[str]) -> list[HealthIssue]:
     return issues
 
 
-def check_history_and_price(symbols: list[str]) -> list[HealthIssue]:
-    """维度 1+2：历史缺失 + 价格偏移（一次 yfinance 调用同时完成两项）"""
-    issues = []
-    for sym in symbols:
-        path = DATA_DIR / f'{sym}.parquet'
-        if not path.exists():
-            continue   # 维度 7 已报告
+def _check_one_history_and_price(sym: str) -> list[HealthIssue]:
+    """单只股票的历史/价格检查（供并发调用，所有 IO 都在内部）"""
+    out: list[HealthIssue] = []
+    path = DATA_DIR / f'{sym}.parquet'
+    if not path.exists():
+        return out
 
-        try:
-            cached = pd.read_parquet(path)
-        except Exception as e:
-            issues.append(HealthIssue(
-                symbol=sym, severity='warning', category='history_gap',
-                message=f'parquet 读取失败: {e}',
-            ))
-            continue
+    try:
+        cached = pd.read_parquet(path)
+    except Exception as e:
+        return [HealthIssue(
+            symbol=sym, severity='warning', category='history_gap',
+            message=f'parquet 读取失败: {e}',
+        )]
 
-        if cached.empty:
-            issues.append(HealthIssue(
-                symbol=sym, severity='warning', category='history_gap',
-                message='缓存文件为空',
-            ))
-            continue
+    if cached.empty:
+        return [HealthIssue(
+            symbol=sym, severity='warning', category='history_gap',
+            message='缓存文件为空',
+        )]
 
-        cached_start = cached.index[0].date()
+    cached_start = cached.index[0].date()
 
-        # 拉 yfinance 最早数据
-        try:
-            hist = yf.Ticker(sym).history(start=YF_HISTORY_START, auto_adjust=True)
-            if hist.empty:
-                continue
-            if hist.index.tz is not None:
-                hist.index = hist.index.tz_localize(None)
-        except Exception:
-            continue
+    # 优化：如果本地缓存起点比 YF_HISTORY_START 还早，没必要再请求 yfinance
+    yf_start_ref = date.fromisoformat(YF_HISTORY_START)
+    if cached_start <= yf_start_ref:
+        return out
 
-        yf_start = hist.index[0].date()
-        gap = (cached_start - yf_start).days
+    try:
+        hist = yf.Ticker(sym).history(start=YF_HISTORY_START, auto_adjust=True)
+        if hist.empty:
+            return out
+        if hist.index.tz is not None:
+            hist.index = hist.index.tz_localize(None)
+    except Exception:
+        return out
 
-        # 维度 1：历史缺失
-        sev = 'critical' if sym in CRITICAL_ASSETS + SECTOR_ETFS else 'warning'
-        if gap > GAP_DAYS:
-            issues.append(HealthIssue(
-                symbol=sym, severity=sev, category='history_gap',
-                message=f'历史缺失 {gap} 天（缓存从 {cached_start}，yfinance 从 {yf_start}）',
-                details={'cached_start': str(cached_start), 'yf_start': str(yf_start), 'gap_days': gap},
-            ))
+    yf_start = hist.index[0].date()
+    gap = (cached_start - yf_start).days
 
-        # 维度 2：价格偏移
-        ts = pd.Timestamp(cached_start)
-        if ts in hist.index:
-            yf_price = float(hist.loc[ts, 'Close'])
-            cached_price = float(cached['close'].iloc[0])
-            if yf_price > 0:
-                ratio = cached_price / yf_price
-                if abs(ratio - 1) > PRICE_TOL:
-                    issues.append(HealthIssue(
-                        symbol=sym, severity='warning', category='price_offset',
-                        message=f'首日价格偏移 {ratio:.2f}x（缓存 {cached_price:.3f} vs yfinance {yf_price:.3f}）',
-                        details={'ratio': round(ratio, 3), 'cached_price': cached_price, 'yf_price': yf_price},
-                    ))
+    sev = 'critical' if sym in CRITICAL_ASSETS + SECTOR_ETFS else 'warning'
+    if gap > GAP_DAYS:
+        out.append(HealthIssue(
+            symbol=sym, severity=sev, category='history_gap',
+            message=f'历史缺失 {gap} 天（缓存从 {cached_start}，yfinance 从 {yf_start}）',
+            details={'cached_start': str(cached_start), 'yf_start': str(yf_start), 'gap_days': gap},
+        ))
 
-        time.sleep(0.2)   # 轻量节流
+    ts = pd.Timestamp(cached_start)
+    if ts in hist.index:
+        yf_price = float(hist.loc[ts, 'Close'])
+        cached_price = float(cached['close'].iloc[0])
+        if yf_price > 0:
+            ratio = cached_price / yf_price
+            if abs(ratio - 1) > PRICE_TOL:
+                out.append(HealthIssue(
+                    symbol=sym, severity='warning', category='price_offset',
+                    message=f'首日价格偏移 {ratio:.2f}x（缓存 {cached_price:.3f} vs yfinance {yf_price:.3f}）',
+                    details={'ratio': round(ratio, 3), 'cached_price': cached_price, 'yf_price': yf_price},
+                ))
 
+    return out
+
+
+def check_history_and_price(symbols: list[str], workers: int = 12) -> list[HealthIssue]:
+    """维度 1+2：历史缺失 + 价格偏移（并发执行，500 只从 8 分钟降到 ~40 秒）"""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    issues: list[HealthIssue] = []
+    done = 0
+    total = len(symbols)
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = {ex.submit(_check_one_history_and_price, s): s for s in symbols}
+        for fut in as_completed(futs):
+            try:
+                issues.extend(fut.result())
+            except Exception:
+                pass
+            done += 1
+            if done % 50 == 0 or done == total:
+                print(f'    进度 {done}/{total} ...', flush=True)
     return issues
 
 
@@ -355,57 +371,73 @@ def _fix_pkl_cache(name: str) -> bool:
     return False
 
 
-def auto_repair(issues: list[HealthIssue], use_ibkr: bool = False) -> list[HealthIssue]:
-    """按严重性排序，自动修复所有 fixable 的问题。"""
+def auto_repair(issues: list[HealthIssue], use_ibkr: bool = False, workers: int = 10) -> list[HealthIssue]:
+    """按严重性排序，自动修复所有 fixable 的问题（yfinance 修复并发执行）。"""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
     SEV_ORDER = {'critical': 0, 'warning': 1, 'info': 2}
     fixable = [i for i in issues if i.fixable and not i.auto_fixed]
     fixable.sort(key=lambda i: SEV_ORDER.get(i.severity, 9))
 
-    # 合并同一 symbol 的多个问题，只修复一次
-    repaired: set[str] = set()
-
+    # 1. pkl 缓存（瞬时操作，直接串行）
     for issue in fixable:
-        sym = issue.symbol
-
-        # pkl 缓存单独处理
         if issue.category == 'pkl_stale':
-            cache_name = sym.replace('[cache:', '').replace(']', '')
-            ok = _fix_pkl_cache(cache_name)
-            issue.auto_fixed = ok
-            continue
+            cache_name = issue.symbol.replace('[cache:', '').replace(']', '')
+            issue.auto_fixed = _fix_pkl_cache(cache_name)
 
-        # 数据空洞：用 DataStore 增量修复（不需要全量重下）
+    # 2. 数据空洞（DataStore 增量更新，串行避免并发改 parquet）
+    for issue in fixable:
         if issue.category == 'data_hole':
             try:
                 from core.data_store import DataStore
                 store = DataStore()
-                store.update([sym], start=YF_HISTORY_START)
+                store.update([issue.symbol], start=YF_HISTORY_START)
                 issue.auto_fixed = True
             except Exception:
                 issue.auto_fixed = False
-            continue
 
-        if sym in repaired:
-            issue.auto_fixed = True   # 已被同 symbol 其他 issue 顺带修复
-            continue
+    # 3. yfinance 全量重建（最耗时，并发执行）
+    yf_repairs = [i for i in fixable
+                  if i.category in ('missing', 'history_gap', 'price_offset', 'stale')
+                  and not i.auto_fixed]
 
-        print(f'  修复 {sym} ({issue.category}) ...', end=' ', flush=True)
+    if yf_repairs:
+        # 同一 symbol 只修一次
+        unique_syms: list[str] = []
+        sym_seen: set[str] = set()
+        sym_to_issues: dict[str, list[HealthIssue]] = {}
+        for i in yf_repairs:
+            if i.symbol not in sym_seen:
+                sym_seen.add(i.symbol)
+                unique_syms.append(i.symbol)
+            sym_to_issues.setdefault(i.symbol, []).append(i)
 
-        # 主路：yfinance
-        ok = _fix_with_yfinance(sym)
+        print(f'  并发修复 {len(unique_syms)} 只（workers={workers}）...')
+        results: dict[str, bool] = {}
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            futs = {ex.submit(_fix_with_yfinance, s): s for s in unique_syms}
+            done = 0
+            for fut in as_completed(futs):
+                sym = futs[fut]
+                try:
+                    ok = fut.result()
+                except Exception:
+                    ok = False
+                # yfinance 失败 + 开启 IBKR 兜底（串行执行，IBKR 连接不适合并发）
+                results[sym] = ok
+                done += 1
+                if done % 20 == 0 or done == len(unique_syms):
+                    print(f'    进度 {done}/{len(unique_syms)} ...', flush=True)
 
-        # 备路：IBKR（仅 yfinance 失败时）
-        if not ok and use_ibkr:
-            ok = _fix_with_ibkr(sym)
+        # IBKR 兜底（如启用）
+        if use_ibkr:
+            for sym in unique_syms:
+                if not results.get(sym):
+                    results[sym] = _fix_with_ibkr(sym)
 
-        issue.auto_fixed = ok
-        if ok:
-            repaired.add(sym)
-            print(f'完成')
-        else:
-            print(f'失败')
-
-        time.sleep(0.3)   # 节流
+        # 把结果回填到所有相关 issue
+        for sym, ok in results.items():
+            for i in sym_to_issues[sym]:
+                i.auto_fixed = ok
 
     return issues
 

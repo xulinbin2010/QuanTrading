@@ -24,6 +24,7 @@ def run(req: BacktestRequest):
         'strategy':        req.strategy,
         'hard_stop':       req.hard_stop,
         'pos_pct':         req.pos_pct,
+        'ema_stop':        req.ema_stop,
     }
     task_id = backtest_svc.submit_backtest(params)
     return {'task_id': task_id}

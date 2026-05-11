@@ -190,6 +190,7 @@ const DEFAULT_PARAMS = {
   strategy: 'rs_momentum' as 'rs_momentum' | 'momentum5d',
   hard_stop: -0.08,
   pos_pct: 0.22,
+  ema_stop: 8,
 }
 
 function loadStored<T>(key: string, fallback: T): T {
@@ -726,6 +727,7 @@ export default function Backtest() {
       strategy: params.strategy,
       hard_stop: params.hard_stop,
       pos_pct: params.pos_pct,
+      ema_stop: params.ema_stop,
     }),
     onSuccess: (data) => {
       setActiveTask(data.task_id)
@@ -821,6 +823,15 @@ export default function Backtest() {
                 onChange={e => setParams(p => ({ ...p, pos_pct: +e.target.value }))}
               />
             </div>
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">EMA破位止损（天，0=禁用）</label>
+              <input
+                type="number" step={1} min={0} max={50}
+                className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                value={params.ema_stop}
+                onChange={e => setParams(p => ({ ...p, ema_stop: +e.target.value }))}
+              />
+            </div>
           </>)}
 
           {/* 最小市值 */}
@@ -887,7 +898,19 @@ export default function Backtest() {
           )}
         </div>
 
-        {/* 因子组合 */}
+        {/* 5日动量策略提示（不需要因子选择）*/}
+        {params.strategy === 'momentum5d' && (
+          <div className="mt-4 px-3 py-2.5 rounded border border-blue-700/40 bg-blue-900/15 text-xs text-slate-300 flex items-start gap-2">
+            <span className="text-blue-400 mt-0.5">ℹ</span>
+            <div>
+              <span className="text-slate-200 font-medium">5日动量策略不读因子注册表</span>
+              <span className="text-slate-500"> — 入场固定为 5日RS &gt; 0 排名，出场为 RS 转负 / EMA 破位 / 硬止损，因子面板已隐藏。</span>
+            </div>
+          </div>
+        )}
+
+        {/* 因子组合（仅 RS动量策略需要）*/}
+        {params.strategy === 'rs_momentum' && (
         <div className="mt-4">
           {/* 工具栏：组合选择 + 保存 */}
           <div className="flex items-center gap-2 mb-2">
@@ -1008,6 +1031,7 @@ export default function Backtest() {
             ))}
           </div>
         </div>
+        )}
 
         <div className="mt-4 flex gap-3">
           <button

@@ -611,8 +611,64 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
         print(f"  无止损触发")
         print(f"{'='*54}")
 
-    # ── 移动止损检查 ──────────────────────────────────────────
+    # ── EMA 破位止损检查 ─────────────────────────────────────
+    # 强牛市利器：收盘跌破短期 EMA 立即出场，比移动止损更早触发
     already_hard_stop = {s['symbol'] for s in stop_loss_list}
+    ema_period       = int(getattr(config, 'EMA_STOP_PERIOD', 8) or 0)
+    ema_stop_list    = []
+    if ema_period > 0:
+        for sym, pos in stock_positions.items():
+            if sym in already_hard_stop or sym in CASH_EQUIV:
+                continue
+            qty       = int(pos.position)
+            cur_price = signals.get('_prices', {}).get(sym)
+            if qty <= 0 or cur_price is None:
+                continue
+            df = held_data.get(sym)
+            if df is None or len(df) < ema_period + 1:
+                continue
+            try:
+                ema_today = float(df['close'].ewm(span=ema_period, adjust=False).mean().iloc[-1])
+            except Exception:
+                continue
+            # 现价已跌破今日 EMA → 触发
+            if cur_price < ema_today:
+                ema_stop_list.append({
+                    'symbol': sym, 'qty': qty,
+                    'avg_cost': pos.avgCost, 'cur_price': cur_price,
+                    'ema':      ema_today,
+                    'return':   (cur_price - pos.avgCost) / pos.avgCost if pos.avgCost > 0 else 0,
+                })
+
+    print(f"\n{'='*54}")
+    if ema_stop_list:
+        print(f"  EMA{ema_period}破位止损触发：{len(ema_stop_list)} 只")
+        print(f"{'='*54}")
+        for s in ema_stop_list:
+            print(f"  [{s['symbol']}]  均价 ${s['avg_cost']:.2f}  现价 ${s['cur_price']:.2f}  "
+                  f"EMA{ema_period} ${s['ema']:.2f}  {s['return']:+.1%}")
+            if not dry_run:
+                _cancel_existing(s['symbol'], 'SELL')
+                if tif == 'OPG':
+                    floor = round(s['cur_price'] * 0.95, 2)
+                    trade = trader.limit_sell(s['symbol'], s['qty'], price=floor, tif='OPG')
+                    label = f"限价 OPG EMA止损（下限 ${floor:.2f}）"
+                else:
+                    trade = trader.market_sell(s['symbol'], s['qty'], tif=tif)
+                    label = tif_label
+                if trade is None:
+                    print(f"  → [ERROR] {s['symbol']} EMA止损单提交失败，请手动处理！")
+                else:
+                    print(f"  → 已下 EMA 止损单 [{label}] 卖出 {s['qty']} 股")
+            else:
+                floor_str = f"（限价下限 ${s['cur_price']*0.95:.2f}）" if tif == 'OPG' else ""
+                print(f"  → [dry-run] 将下 EMA{ema_period} 止损单 {tif_label}{floor_str} 卖出 {s['qty']} 股")
+    elif ema_period > 0:
+        print(f"  无 EMA{ema_period} 破位止损触发")
+        print(f"{'='*54}")
+
+    # ── 移动止损检查 ──────────────────────────────────────────
+    already_hard_stop = already_hard_stop | {s['symbol'] for s in ema_stop_list}
     trail_stop_list   = []
     for sym, pos in stock_positions.items():
         if sym in already_hard_stop or sym in CASH_EQUIV:
@@ -661,7 +717,9 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
         print(f"{'='*54}")
 
     # ── 时间止损检查（Time Stop）─────────────────────────────
-    already_stopped = {s['symbol'] for s in stop_loss_list} | {s['symbol'] for s in trail_stop_list}
+    already_stopped = ({s['symbol'] for s in stop_loss_list}
+                       | {s['symbol'] for s in ema_stop_list}
+                       | {s['symbol'] for s in trail_stop_list})
     time_stop_list  = []
     if TIME_STOP_DAYS > 0:
         today = date.today()
@@ -718,7 +776,11 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
     # 用真实 IB 持仓补充：--held 未传入的股票也能被检测到
     sell_list      = list(signals.get('sell', []))
     signal_map     = signals.get('_signal_map', {})
-    already_alerted = {s['symbol'] for s in sell_list} | {s['symbol'] for s in time_stop_list}
+    already_alerted = ({s['symbol'] for s in sell_list}
+                       | {s['symbol'] for s in time_stop_list}
+                       | {s['symbol'] for s in ema_stop_list}
+                       | {s['symbol'] for s in trail_stop_list}
+                       | {s['symbol'] for s in stop_loss_list})
     for sym in stock_positions:
         if sym in already_alerted or sym in CASH_EQUIV:
             continue

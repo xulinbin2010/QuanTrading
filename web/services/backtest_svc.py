@@ -127,13 +127,14 @@ def _run(task_id: str, params: dict):
                 max_pos   = params.get('top', 4),
                 pos_pct   = params.get('pos_pct', 0.22),
                 hard_stop = params.get('hard_stop', -0.08),
+                ema_stop  = params.get('ema_stop', 8),
                 daily     = True,
             )
         else:
             from tests.backtest_rs import run_backtest
             # 过滤掉 momentum5d 专用字段，避免 run_backtest 收到意外参数
             rs_params = {k: v for k, v in params.items()
-                         if k not in ('strategy', 'hard_stop', 'pos_pct')}
+                         if k not in ('strategy', 'hard_stop', 'pos_pct', 'ema_stop')}
             result = run_backtest(**{**rs_params, 'daily': True})
 
         # 把每日持仓明细写入 server.log

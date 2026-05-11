@@ -24,13 +24,20 @@ class Momentum5D:
       signal = -1  → 5日RS ≤ 0，持仓应于次日 OPG 出场
       signal =  0  → 数据不足，忽略
 
+    输出列：
+      - rs_5d     : 5日RS
+      - vol_ratio : 量比（参考）
+      - ema_stop  : EMA 短期均线（默认 8 日），破位作为止损线（period=0 时不计算）
+      - signal    : 1 / -1 / 0
+
     使用前必须调用 set_spy(spy_close) 传入 SPY 日线收盘价。
     """
 
     rs_period = 5   # 相对强度计算窗口（交易日）
 
-    def __init__(self, rs_period: int = 5):
-        self.rs_period = rs_period
+    def __init__(self, rs_period: int = 5, ema_stop_period: int = 8):
+        self.rs_period       = rs_period
+        self.ema_stop_period = ema_stop_period   # 0 = 禁用 EMA 破位止损
         self._spy: pd.Series | None = None
 
     def set_spy(self, spy_close: pd.Series):
@@ -69,6 +76,12 @@ class Momentum5D:
         vol_ma = df['volume'].rolling(20).mean()
         df['vol_ma20'] = vol_ma
         df['vol_ratio'] = df['volume'] / vol_ma.replace(0, float('nan'))
+
+        # EMA 破位止损线（强牛市里比 SMA 更敏感）
+        if self.ema_stop_period and self.ema_stop_period > 0:
+            df['ema_stop'] = df['close'].ewm(
+                span=self.ema_stop_period, adjust=False
+            ).mean()
 
         # 信号
         df['signal'] = 0

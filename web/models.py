@@ -116,6 +116,7 @@ class BacktestRequest(BaseModel):
     strategy: str = 'rs_momentum'      # 'rs_momentum' | 'momentum5d'
     hard_stop: float = -0.08           # 硬止损（momentum5d）
     pos_pct: float = 0.22              # 每仓比例（momentum5d）
+    ema_stop: int = 8                  # EMA 破位止损周期（0 = 禁用）
 
 
 class FactorComboSaveRequest(BaseModel):

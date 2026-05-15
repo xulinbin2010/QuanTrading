@@ -145,12 +145,12 @@ function ETClock() {
   useEffect(() => {
     const tick = () => {
       const now = new Date().toLocaleString('zh-CN', {
-        timeZone: 'America/New_York',
+        timeZone: 'Asia/Shanghai',
         month: '2-digit', day: '2-digit',
         hour: '2-digit', minute: '2-digit', second: '2-digit',
         hour12: false,
       })
-      setTime('ET ' + now)
+      setTime('北京 ' + now)
     }
     tick()
     const id = setInterval(tick, 1000)

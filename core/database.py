@@ -1,6 +1,12 @@
 import sqlite3
 import os
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+_CST = ZoneInfo('Asia/Shanghai')
+
+def _now_cst() -> str:
+    return datetime.now(_CST).strftime('%Y-%m-%d %H:%M:%S')
 import config
 from core.fmt import lj, rj
 
@@ -278,7 +284,7 @@ class Database:
     def start_task_run(self, task_id: str) -> int:
         if not self._ensure_conn():
             return -1
-        now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        now = _now_cst()
         self.cursor.execute(
             "INSERT INTO task_runs (task_id, started_at, status) VALUES (?, ?, 'running')",
             (task_id, now)
@@ -298,7 +304,7 @@ class Database:
         if not self._ensure_conn():
             return
         status = 'success' if exit_code == 0 else 'failed'
-        now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        now = _now_cst()
         self.cursor.execute("""
             UPDATE task_runs
                SET finished_at = ?,
@@ -311,8 +317,8 @@ class Database:
     def reap_zombie_runs(self, timeout_minutes: int = 5) -> int:
         if not self._ensure_conn():
             return 0
-        cutoff = (datetime.utcnow() - timedelta(minutes=timeout_minutes)).strftime('%Y-%m-%d %H:%M:%S')
-        now = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        cutoff = (datetime.now(_CST) - timedelta(minutes=timeout_minutes)).strftime('%Y-%m-%d %H:%M:%S')
+        now = _now_cst()
         log_suffix = f'\n[TIMEOUT] 超过 {timeout_minutes} 分钟未完成，自动标记为失败'
         self.cursor.execute("""
             UPDATE task_runs

@@ -534,6 +534,28 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
         ib.sleep(1)
         print(f"  [{sym}] 已撤销旧 {tif} {action} 挂单（原限价 {old_price}）")
 
+    def _place_sell(sym: str, qty: int, cur_price: float, verb: str, floor_pct: float = 0.95):
+        """提交一笔出场卖单；dry-run 时只打印。"""
+        if not dry_run:
+            _cancel_existing(sym, 'SELL')
+            if tif == 'OPG':
+                floor = round(cur_price * floor_pct, 2)
+                trade = trader.limit_sell(sym, qty, price=floor, tif='OPG')
+                order_label = f"限价 OPG {verb}（下限 ${floor:.2f}）"
+            else:
+                trade = trader.market_sell(sym, qty, tif=tif)
+                order_label = tif_label
+            if trade is None:
+                print(f"  → [ERROR] {sym} {verb}提交失败，请手动处理！")
+            else:
+                print(f"  → 已下{verb} [{order_label}] 卖出 {qty} 股")
+        else:
+            floor_str = f"（限价下限 ${cur_price * floor_pct:.2f}）" if tif == 'OPG' else ""
+            print(f"  → [dry-run] 将下{verb} {tif_label}{floor_str} 卖出 {qty} 股")
+
+    # 统一出场登记表：所有止损类型注册至此，槽位重算从此派生，新增止损类型只需 extend
+    exit_orders: list[dict] = []
+
     # ── 资金计算（与 backtest_rs.py 逻辑对齐）────────────────
     min_cash       = net_liq * CASH_RESERVE_PCT
     deployable     = max(0.0, cash - min_cash)
@@ -591,29 +613,15 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
         for s in stop_loss_list:
             print(f"  [{s['symbol']}]  均价 ${s['avg_cost']:.2f} → 现价 ${s['cur_price']:.2f}  "
                   f"浮亏 {s['return']:.1%}（止损线 {s['stop_pct']:.1%}）")
-            if not dry_run:
-                _cancel_existing(s['symbol'], 'SELL')
-                if tif == 'OPG':
-                    floor = round(s['cur_price'] * 0.95, 2)
-                    trade = trader.limit_sell(s['symbol'], s['qty'], price=floor, tif='OPG')
-                    label = f"限价 OPG 止损（下限 ${floor:.2f}）"
-                else:
-                    trade = trader.market_sell(s['symbol'], s['qty'], tif=tif)
-                    label = tif_label
-                if trade is None:
-                    print(f"  → [ERROR] {s['symbol']} 止损单提交失败，请手动处理！")
-                else:
-                    print(f"  → 已下止损单 [{label}] 卖出 {s['qty']} 股")
-            else:
-                floor_str = f"（限价下限 ${s['cur_price']*0.95:.2f}）" if tif == 'OPG' else ""
-                print(f"  → [dry-run] 将下止损单 {tif_label}{floor_str} 卖出 {s['qty']} 股")
+            _place_sell(s['symbol'], s['qty'], s['cur_price'], '止损单', 0.95)
     else:
         print(f"  无止损触发")
         print(f"{'='*54}")
+    exit_orders.extend(stop_loss_list)
 
     # ── EMA 破位止损检查 ─────────────────────────────────────
     # 强牛市利器：收盘跌破短期 EMA 立即出场，比移动止损更早触发
-    already_hard_stop = {s['symbol'] for s in stop_loss_list}
+    already_hard_stop = {o['symbol'] for o in exit_orders}
     ema_period       = int(getattr(config, 'EMA_STOP_PERIOD', 8) or 0)
     ema_stop_list    = []
     if ema_period > 0:
@@ -647,28 +655,14 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
         for s in ema_stop_list:
             print(f"  [{s['symbol']}]  均价 ${s['avg_cost']:.2f}  现价 ${s['cur_price']:.2f}  "
                   f"EMA{ema_period} ${s['ema']:.2f}  {s['return']:+.1%}")
-            if not dry_run:
-                _cancel_existing(s['symbol'], 'SELL')
-                if tif == 'OPG':
-                    floor = round(s['cur_price'] * 0.95, 2)
-                    trade = trader.limit_sell(s['symbol'], s['qty'], price=floor, tif='OPG')
-                    label = f"限价 OPG EMA止损（下限 ${floor:.2f}）"
-                else:
-                    trade = trader.market_sell(s['symbol'], s['qty'], tif=tif)
-                    label = tif_label
-                if trade is None:
-                    print(f"  → [ERROR] {s['symbol']} EMA止损单提交失败，请手动处理！")
-                else:
-                    print(f"  → 已下 EMA 止损单 [{label}] 卖出 {s['qty']} 股")
-            else:
-                floor_str = f"（限价下限 ${s['cur_price']*0.95:.2f}）" if tif == 'OPG' else ""
-                print(f"  → [dry-run] 将下 EMA{ema_period} 止损单 {tif_label}{floor_str} 卖出 {s['qty']} 股")
+            _place_sell(s['symbol'], s['qty'], s['cur_price'], f'EMA{ema_period}止损单', 0.95)
     elif ema_period > 0:
         print(f"  无 EMA{ema_period} 破位止损触发")
         print(f"{'='*54}")
+    exit_orders.extend(ema_stop_list)
 
     # ── 移动止损检查 ──────────────────────────────────────────
-    already_hard_stop = already_hard_stop | {s['symbol'] for s in ema_stop_list}
+    already_hard_stop = {o['symbol'] for o in exit_orders}
     trail_stop_list   = []
     for sym, pos in stock_positions.items():
         if sym in already_hard_stop or sym in CASH_EQUIV:
@@ -696,30 +690,14 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
         for s in trail_stop_list:
             print(f"  [{s['symbol']}]  均价 ${s['avg_cost']:.2f}  峰值 ${s['peak']:.2f}"
                   f"（+{s['peak_ret']:.1%}）→ 现价 ${s['cur_price']:.2f}  回撤 {s['trail_ret']:.1%}")
-            if not dry_run:
-                _cancel_existing(s['symbol'], 'SELL')
-                if tif == 'OPG':
-                    floor = round(s['cur_price'] * 0.95, 2)
-                    trade = trader.limit_sell(s['symbol'], s['qty'], price=floor, tif='OPG')
-                    label = f"限价 OPG 移动止损（下限 ${floor:.2f}）"
-                else:
-                    trade = trader.market_sell(s['symbol'], s['qty'], tif=tif)
-                    label = tif_label
-                if trade is None:
-                    print(f"  → [ERROR] {s['symbol']} 移动止损单提交失败，请手动处理！")
-                else:
-                    print(f"  → 已下移动止损单 [{label}] 卖出 {s['qty']} 股")
-            else:
-                floor_str = f"（限价下限 ${s['cur_price']*0.95:.2f}）" if tif == 'OPG' else ""
-                print(f"  → [dry-run] 将下移动止损单 {tif_label}{floor_str} 卖出 {s['qty']} 股")
+            _place_sell(s['symbol'], s['qty'], s['cur_price'], '移动止损单', 0.95)
     else:
         print(f"  无移动止损触发")
         print(f"{'='*54}")
+    exit_orders.extend(trail_stop_list)
 
     # ── 时间止损检查（Time Stop）─────────────────────────────
-    already_stopped = ({s['symbol'] for s in stop_loss_list}
-                       | {s['symbol'] for s in ema_stop_list}
-                       | {s['symbol'] for s in trail_stop_list})
+    already_stopped = {o['symbol'] for o in exit_orders}
     time_stop_list  = []
     if TIME_STOP_DAYS > 0:
         today = date.today()
@@ -752,35 +730,17 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
         for s in time_stop_list:
             print(f"  [{s['symbol']}]  均价 ${s['avg_cost']:.2f} → 现价 ${s['cur_price']:.2f}"
                   f"  {s['return']:+.1%}  持仓 {s['days_held']} 天")
-            if not dry_run:
-                _cancel_existing(s['symbol'], 'SELL')
-                if tif == 'OPG':
-                    trade = trader.limit_sell(s['symbol'], s['qty'],
-                                              price=round(s['cur_price'] * 0.97, 2), tif='OPG')
-                    label = f"限价 OPG 时间止损（下限 ${s['cur_price']*0.97:.2f}）"
-                else:
-                    trade = trader.market_sell(s['symbol'], s['qty'], tif=tif)
-                    label = tif_label
-                if trade is None:
-                    print(f"  → [ERROR] {s['symbol']} 时间止损单提交失败，请手动处理！")
-                else:
-                    print(f"  → 已下时间止损单 [{label}] 卖出 {s['qty']} 股")
-            else:
-                floor_str = f"（限价下限 ${s['cur_price']*0.97:.2f}）" if tif == 'OPG' else ""
-                print(f"  → [dry-run] 将下时间止损单 {tif_label}{floor_str} 卖出 {s['qty']} 股")
+            _place_sell(s['symbol'], s['qty'], s['cur_price'], '时间止损单', 0.97)
     else:
         print(f"  无时间止损触发")
         print(f"{'='*54}")
+    exit_orders.extend(time_stop_list)
 
     # ── 卖出报警（量价背离）──────────────────────────────────
     # 用真实 IB 持仓补充：--held 未传入的股票也能被检测到
     sell_list      = list(signals.get('sell', []))
     signal_map     = signals.get('_signal_map', {})
-    already_alerted = ({s['symbol'] for s in sell_list}
-                       | {s['symbol'] for s in time_stop_list}
-                       | {s['symbol'] for s in ema_stop_list}
-                       | {s['symbol'] for s in trail_stop_list}
-                       | {s['symbol'] for s in stop_loss_list})
+    already_alerted = {s['symbol'] for s in sell_list} | {o['symbol'] for o in exit_orders}
     for sym in stock_positions:
         if sym in already_alerted or sym in CASH_EQUIV:
             continue
@@ -797,31 +757,14 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
             print(f"  [{s['symbol']}]  {s['reason']}  收盘 ${s['close']:.2f}")
             if SELL_ON_ALERT and s['symbol'] in stock_positions:
                 qty = int(stock_positions[s['symbol']].position)
-                if not dry_run:
-                    _cancel_existing(s['symbol'], 'SELL')
-                    if tif == 'OPG':
-                        floor = round(s['close'] * 0.97, 2)
-                        trade = trader.limit_sell(s['symbol'], qty, price=floor, tif='OPG')
-                        label = f"限价 OPG（下限 ${floor:.2f}）"
-                    else:
-                        trade = trader.market_sell(s['symbol'], qty, tif=tif)
-                        label = tif_label
-                    if trade is None:
-                        print(f"  → [ERROR] {s['symbol']} 卖出报警单提交失败，请手动处理！")
-                    else:
-                        print(f"  → 已下单 [{label}] 卖出 {qty} 股")
-                else:
-                    floor_str = f"（限价下限 ${s['close']*0.97:.2f}）" if tif == 'OPG' else ""
-                    print(f"  → [dry-run] 将下 {tif_label}{floor_str} 卖出 {qty} 股")
+                _place_sell(s['symbol'], qty, s['close'], '卖出报警单', 0.97)
     else:
         print(f"  持仓无卖出报警")
         print(f"{'='*54}")
 
     # ── 重新计算可用仓位和资金（含本次止损/卖出释放的仓位和回笼资金）──
     exiting_syms = (
-        {s['symbol'] for s in stop_loss_list} |
-        {s['symbol'] for s in trail_stop_list} |
-        {s['symbol'] for s in time_stop_list} |
+        {o['symbol'] for o in exit_orders} |
         {s['symbol'] for s in sell_list
          if SELL_ON_ALERT and s['symbol'] in stock_positions}
     )
@@ -870,6 +813,8 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
         if stock_positions:
             pos_info = get_stock_info(list(stock_positions.keys()))
             for sym in stock_positions:
+                if sym in exiting_syms:
+                    continue  # 本次已触发止损/卖出，不计入行业占用
                 sec = (pos_info.get(sym, {}).get('sector') or 'Unknown')
                 sector_counts[sec] = sector_counts.get(sec, 0) + 1
 

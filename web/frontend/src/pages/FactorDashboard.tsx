@@ -6,8 +6,10 @@ import { getFactorRegistry, updateFactor, scanFactors, previewFactorSignals, che
 const BUY_CONDITION_TEMPLATES = [
   {
     icon: '📈', label: 'RS 跑赢 SPY', registryKey: 'rs_score',
-    buildDesc: (p: any) => `个股 ${p.period} 日收益率 - SPY ${p.period} 日收益率 > 0`,
-    buildParam: (p: any) => `period=${p.period}`,
+    buildDesc: (p: any) => p.weights
+      ? `多窗口加权（${p.weights}）跑赢 SPY > 0`
+      : `个股 ${p.period} 日收益率 - SPY ${p.period} 日收益率 > 0`,
+    buildParam: (p: any) => p.weights ? `weights=${p.weights}` : `period=${p.period}`,
   },
   {
     icon: '🚀', label: '价格突破高点', registryKey: 'breakout',
@@ -51,12 +53,22 @@ const SIGNAL_TYPE_LABELS: Record<string, { label: string; color: string }> = {
 const DISPLAY_ONLY_BADGE = { label: '仅展示 *', color: 'bg-slate-700/50 text-slate-400 border-slate-600' }
 
 // ── 因子卡片（注册表中的每个因子） ────────────────────────
-function FactorCard({ factor, onToggle }: { factor: any; onToggle: (key: string, enabled: boolean) => void }) {
+function FactorCard({
+  factor, onToggle, onSaveParams,
+}: {
+  factor: any
+  onToggle: (key: string, enabled: boolean) => void
+  onSaveParams: (key: string, params: Record<string, string>) => void
+}) {
   const sig = factor.display_only
     ? DISPLAY_ONLY_BADGE
     : (SIGNAL_TYPE_LABELS[factor.signal_type] ?? { label: factor.signal_type, color: 'bg-slate-700 text-slate-300 border-slate-600' })
 
   const paramEntries = Object.entries(factor.params ?? {}) as [string, any][]
+  const [edits, setEdits] = useState<Record<string, string>>({})
+  const dirty = Object.keys(edits).length > 0
+  const valFor = (pname: string, pmeta: any) =>
+    edits[pname] ?? String(pmeta.current ?? pmeta.default ?? '')
 
   return (
     <div className={`border rounded-lg transition-colors ${
@@ -92,15 +104,35 @@ function FactorCard({ factor, onToggle }: { factor: any; onToggle: (key: string,
           </div>
         </div>
 
-        {/* 参数（直接内联显示） */}
+        {/* 参数（可编辑） */}
         {paramEntries.length > 0 && (
-          <div className="flex items-center gap-3 flex-shrink-0">
-            {paramEntries.map(([pname, pmeta]) => (
-              <div key={pname} className="text-right">
-                <div className="text-xs text-slate-500">{pmeta.desc || pname}</div>
-                <div className="font-mono text-sm text-slate-300">{String(pmeta.default)}</div>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {paramEntries.map(([pname, pmeta]) => {
+              const isWide = pmeta.type === 'str'
+              return (
+                <div key={pname} className="text-right">
+                  <div className="text-xs text-slate-500" title={pmeta.desc}>{pname}</div>
+                  <input
+                    value={valFor(pname, pmeta)}
+                    onChange={e => setEdits(prev => ({ ...prev, [pname]: e.target.value }))}
+                    placeholder={String(pmeta.default ?? '')}
+                    className={`mt-0.5 px-1.5 py-0.5 bg-slate-900 border border-slate-600 rounded font-mono text-xs text-slate-200 focus:outline-none focus:border-blue-500 ${isWide ? 'w-56' : 'w-20'} text-right`}
+                  />
+                </div>
+              )
+            })}
+            {dirty && (
+              <div className="flex flex-col gap-1 ml-1">
+                <button
+                  onClick={() => { onSaveParams(factor.key, edits); setEdits({}) }}
+                  className="px-2 py-0.5 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded"
+                >保存</button>
+                <button
+                  onClick={() => setEdits({})}
+                  className="px-2 py-0.5 text-xs bg-slate-700 hover:bg-slate-600 text-slate-300 rounded"
+                >取消</button>
               </div>
-            ))}
+            )}
           </div>
         )}
       </div>
@@ -175,10 +207,10 @@ export default function FactorDashboard() {
     const factor = registryMap[t.registryKey]
     // 取注册表 params 的 default 值，加上 volume_surge 需要的 ma_period
     const params = factor
-      ? Object.fromEntries(Object.entries(factor.params).map(([k, v]: [string, any]) => [k, v.default]))
+      ? Object.fromEntries(Object.entries(factor.params).map(([k, v]: [string, any]) => [k, v.current ?? v.default]))
       : {}
     if (t.registryKey === 'volume_surge') {
-      params.ma_period = (volMaParams as any).period?.default ?? 20
+      params.ma_period = (volMaParams as any).period?.current ?? (volMaParams as any).period?.default ?? 20
     }
     return { icon: t.icon, label: t.label, registryKey: t.registryKey, desc: t.buildDesc(params), param: t.buildParam(params) }
   })
@@ -214,6 +246,17 @@ export default function FactorDashboard() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['factor-registry'] })
       setPreviewResult(null)   // 因子变化后清除上次预览
+    },
+  })
+
+  const { mutate: saveFactorParams } = useMutation({
+    mutationFn: ({ key, params }: { key: string; params: Record<string, string> }) =>
+      updateFactor(key, { params }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['factor-registry'] })
+      // 同时清除市场扫描缓存，让新参数立即生效
+      queryClient.invalidateQueries({ queryKey: ['factors-scan'] })
+      setPreviewResult(null)
     },
   })
 
@@ -398,6 +441,7 @@ export default function FactorDashboard() {
                       key={f.key}
                       factor={f}
                       onToggle={(key, enabled) => toggleFactor({ key, enabled })}
+                      onSaveParams={(key, params) => saveFactorParams({ key, params })}
                     />
                   ))}
                 </div>
@@ -414,6 +458,7 @@ export default function FactorDashboard() {
                       key={f.key}
                       factor={f}
                       onToggle={(key, enabled) => toggleFactor({ key, enabled })}
+                      onSaveParams={(key, params) => saveFactorParams({ key, params })}
                     />
                   ))}
                 </div>

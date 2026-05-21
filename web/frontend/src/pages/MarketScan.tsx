@@ -1,8 +1,37 @@
-import { useState } from 'react'
+import { useState, Component } from 'react'
+import type { ReactNode, ErrorInfo } from 'react'
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
 import { scanFactors, getStockDetail, getStockNews, getInsiderData, getFiveBaggerScreener, listNarrativeWatchlist, upsertNarrativeEntry, deleteNarrativeEntry } from '../api/client'
 import type { NarrativeEntryBody } from '../api/client'
 import ReactECharts from 'echarts-for-react'
+
+// ── 错误边界（捕获渲染崩溃，显示错误信息而不是白屏）────────────
+class ScanErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {
+  constructor(props: { children: ReactNode }) {
+    super(props)
+    this.state = { error: null }
+  }
+  static getDerivedStateFromError(error: Error) { return { error } }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error('[MarketScan render crash]', error, info)
+  }
+  render() {
+    if (this.state.error) {
+      return (
+        <div className="p-6 bg-red-900/30 border border-red-700 rounded-lg">
+          <div className="text-red-300 font-semibold mb-2">渲染错误（请截图报告）</div>
+          <pre className="text-red-400 text-xs whitespace-pre-wrap break-all">{String(this.state.error)}</pre>
+          <pre className="text-slate-500 text-xs mt-2 whitespace-pre-wrap break-all">{this.state.error.stack}</pre>
+          <button
+            onClick={() => this.setState({ error: null })}
+            className="mt-3 px-3 py-1 text-xs bg-red-800 hover:bg-red-700 text-white rounded"
+          >重试</button>
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
 
 // ── 基础组件 ──────────────────────────────────────────────
 
@@ -49,14 +78,16 @@ function CoverageBar({ label, valid, total }: { label: string; valid: number; to
 
 // 基本面数值格式化
 function FmtPct({ v, decimals = 1 }: { v: number | null | undefined; decimals?: number }) {
-  if (v == null) return <span className="text-slate-600">-</span>
-  const color = v > 0 ? 'text-green-400' : v < 0 ? 'text-red-400' : 'text-slate-400'
-  return <span className={`font-mono text-xs ${color}`}>{(v * 100).toFixed(decimals)}%</span>
+  const n = typeof v === 'number' ? v : (v != null ? Number(v) : NaN)
+  if (!Number.isFinite(n)) return <span className="text-slate-600">-</span>
+  const color = n > 0 ? 'text-green-400' : n < 0 ? 'text-red-400' : 'text-slate-400'
+  return <span className={`font-mono text-xs ${color}`}>{(n * 100).toFixed(decimals)}%</span>
 }
 
 function FmtNum({ v, decimals = 1, suffix = '' }: { v: number | null | undefined; decimals?: number; suffix?: string }) {
-  if (v == null) return <span className="text-slate-600">-</span>
-  return <span className="font-mono text-xs text-slate-300">{v.toFixed(decimals)}{suffix}</span>
+  const n = typeof v === 'number' ? v : (v != null ? Number(v) : NaN)
+  if (!Number.isFinite(n)) return <span className="text-slate-600">-</span>
+  return <span className="font-mono text-xs text-slate-300">{n.toFixed(decimals)}{suffix}</span>
 }
 
 function ScoreBar({ score, max = 19 }: { score: number; max?: number }) {
@@ -605,6 +636,7 @@ export default function MarketScan() {
   const coverageEntries = Object.entries(coverage).filter(([, v]: any) => v.total > 0)
 
   return (
+    <ScanErrorBoundary>
     <div className="space-y-4">
       {/* 标题栏 */}
       <div className="flex items-center justify-between">
@@ -748,9 +780,9 @@ export default function MarketScan() {
                   >
                     <td className="px-3 py-2 text-slate-500 text-xs">{i + 1}</td>
                     <td className="px-3 py-2 font-mono font-medium text-white">{r.symbol}</td>
-                    <td className="px-3 py-2 font-mono">${r.close.toFixed(2)}</td>
+                    <td className="px-3 py-2 font-mono">{r.close != null ? `$${r.close.toFixed(2)}` : '-'}</td>
                     <td className="px-3 py-2"><RsBar v={r.rs_score} /></td>
-                    <td className="px-3 py-2 font-mono text-xs">{r.vol_ratio.toFixed(1)}x</td>
+                    <td className="px-3 py-2 font-mono text-xs">{r.vol_ratio != null ? `${r.vol_ratio.toFixed(1)}x` : '-'}</td>
                     <td className="px-3 py-2"><BoolIcon v={r.breakout} /></td>
                     <td className="px-3 py-2"><BoolIcon v={r.vol_surge} /></td>
                     <td className="px-3 py-2"><BoolIcon v={r.uptrend} /></td>
@@ -1071,5 +1103,6 @@ export default function MarketScan() {
         <StockDetailPanel symbol={selected} onClose={() => setSelected(null)} />
       )}
     </div>
+    </ScanErrorBoundary>
   )
 }

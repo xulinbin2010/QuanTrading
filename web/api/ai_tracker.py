@@ -15,6 +15,24 @@ def scan(force: bool = Query(False)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get('/momentum')
+def momentum(force: bool = Query(False)):
+    """AI 篮子短期动能 + 资金流扫描（30 分钟缓存，force=true 强制刷新）
+
+    返回：
+      rows[]     个股动能 + 资金流复合分（按 composite 降序）
+      groups[]   子组热力（按 5 日中位 RS 降序）
+      basket{}   篮子层面 A/D 线 + 金额加权 OBV（最近 10 天序列）
+      top4[]     推荐持仓（默认 Top-4）
+      spy{}      SPY 3/5/10 日基准收益
+    """
+    try:
+        from web.services.ai_momentum_svc import scan_momentum
+        return scan_momentum(force=force)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get('/universe')
 def get_universe():
     from web.services.ai_tracker_svc import load_universe

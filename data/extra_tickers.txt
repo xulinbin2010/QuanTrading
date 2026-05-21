@@ -41,3 +41,5 @@ cpsh
 fcel
 iren
 FLNC
+te
+hive

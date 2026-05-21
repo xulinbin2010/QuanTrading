@@ -74,8 +74,9 @@ def precompute_all_factors(
 
                 # 构建调用参数（使用注册表默认值）
                 if key == 'rs_score':
-                    period = meta.params['period'][0]
-                    df = meta.compute_fn(df, spy_close, period=period)
+                    period  = meta.params['period'][0]
+                    weights = meta.params.get('weights', ('',))[0]
+                    df = meta.compute_fn(df, spy_close, period=period, weights=weights)
                 else:
                     kw = {p: v[0] for p, v in meta.params.items()}
                     df = meta.compute_fn(df, **kw)

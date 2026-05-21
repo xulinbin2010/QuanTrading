@@ -133,8 +133,8 @@ def _run(task_id: str, params: dict):
         else:
             from tests.backtest_rs import run_backtest
             # 过滤掉 momentum5d 专用字段，避免 run_backtest 收到意外参数
-            rs_params = {k: v for k, v in params.items()
-                         if k not in ('strategy', 'hard_stop', 'pos_pct', 'ema_stop')}
+            _exclude = {'strategy', 'hard_stop', 'pos_pct', 'ema_stop'}
+            rs_params = {k: v for k, v in params.items() if k not in _exclude}
             result = run_backtest(**{**rs_params, 'daily': True})
 
         # 把每日持仓明细写入 server.log

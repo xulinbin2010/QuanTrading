@@ -79,7 +79,13 @@ def run_scanner(
         )
 
     # ── 运行策略 ─────────────────────────────────────────────
-    strategy = RSMomentum(vol_shrink_ratio=config.VOL_SHRINK_RATIO)
+    from web.services.factor_svc import get_factor_params_from_db
+    rs_params = get_factor_params_from_db('rs_score')
+    strategy = RSMomentum(
+        rs_period=int(rs_params.get('period', 63)),
+        rs_weights=str(rs_params.get('weights', '') or ''),
+        vol_shrink_ratio=config.VOL_SHRINK_RATIO,
+    )
     strategy.set_spy(spy_close)
 
     buy_candidates  = []   # 今日出现买入信号

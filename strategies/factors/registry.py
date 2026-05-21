@@ -54,14 +54,20 @@ def _build_registry() -> dict[str, FactorMeta]:
             data_type="technical", compute_fn=compute_rs_score,
             output_columns=["rs_score"], signal_column="rs_score",
             signal_type="score",
-            params={"period": (63, int, "RS 计算窗口（交易日）")},
+            params={
+                "period":  (63, int, "RS 计算窗口（交易日，weights 为空时生效）"),
+                "weights": ("", str, "多窗口加权（如 '21:0.4,63:0.3,126:0.2,252:0.1'），留空=单窗口"),
+            },
         ),
         "breakout": FactorMeta(
             key="breakout", name="价格突破", category="momentum",
             data_type="technical", compute_fn=compute_breakout,
             output_columns=["prev_high", "breakout"], signal_column="breakout",
             signal_type="filter",
-            params={"period": (50, int, "突破判断窗口（交易日）")},
+            params={
+                "period":        (50,   int,   "突破判断窗口（交易日）"),
+                "proximity_pct": (0.0,  float, "宽松度：0=严格创新高，0.05=在高点95%内即视为突破"),
+            },
         ),
         # ── 成交量因子 ─────────────────────────────────────────
         "volume_ma": FactorMeta(

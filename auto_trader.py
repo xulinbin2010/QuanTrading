@@ -61,7 +61,7 @@ TIME_STOP_MIN_RETURN    = config.TIME_STOP_MIN_RETURN
 MAX_ENTRY_SLIPPAGE = config.MAX_ENTRY_SLIPPAGE
 
 # 仓位计算：5 × 15% = 75% 持仓 + 25% 现金保留
-SELL_ON_ALERT    = True   # 量价背离时是否自动卖出（False = 只报警）
+SELL_ON_ALERT    = False  # 量价背离时是否自动卖出（False = 只报警，出场由RS衰退/移动止损处理）
 
 
 def _entry_date(sym: str, db) -> date | None:
@@ -198,12 +198,19 @@ def scan_signals(
             print(f"  VIX={vix_close:.1f}（安全线 <{config.VIX_BRAKE_LEVEL:.0f}）")
 
     # ── 运行策略 ──────────────────────────────────────────────
-    strategy = RSMomentum(vol_shrink_ratio=config.VOL_SHRINK_RATIO)
+    from web.services.factor_svc import get_factor_params_from_db
+    rs_params = get_factor_params_from_db('rs_score')
+    strategy = RSMomentum(
+        rs_period=int(rs_params.get('period', 63)),
+        rs_weights=str(rs_params.get('weights', '') or ''),
+        vol_shrink_ratio=config.VOL_SHRINK_RATIO,
+    )
     strategy.set_spy(spy_close)
 
     buy_signals = []
     sell_alerts = []
     prices      = {}
+    rs_scores   = {}   # symbol → 当日 RS score（用于 RS 衰退止盈）
     atr_map     = {}   # symbol → ATR14 绝对值（用于自适应止损计算）
     signal_map  = {}   # symbol → signal 值，供 execute() 对真实 IB 持仓补充卖出报警
 
@@ -219,6 +226,7 @@ def scan_signals(
             rs        = latest['rs_score']
             vol_ratio = latest['volume'] / latest['vol_ma20'] if latest['vol_ma20'] > 0 else 0
             prices[symbol]     = latest['close']
+            rs_scores[symbol]  = float(rs)
             signal_map[symbol] = int(sig)
             # ATR14 用于自适应止损
             atr_df = compute_atr(df.tail(30).copy())
@@ -358,7 +366,7 @@ def scan_signals(
           f"[SPY趋势/市场宽度{'' if breadth_pct is None else f'={breadth_pct:.0%}'}/VIX{'' if vix_close is None else f'={vix_close:.1f}'}]")
 
     return {'buy': buy_signals, 'sell': sell_alerts, '_prices': prices, '_atr': atr_map,
-            '_signal_map': signal_map, 'spy_brake': spy_brake,
+            '_signal_map': signal_map, '_rs_scores': rs_scores, 'spy_brake': spy_brake,
             '_vix': vix_close, '_vix_brake': vix_brake,
             '_breadth': breadth_pct, '_breadth_cap': breadth_cap,
             '_mss': mss}
@@ -676,20 +684,29 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
         peak      = _peak_price(sym, avg_cost, held_data.get(sym), entry_date=ed)
         peak_ret  = (peak - avg_cost) / avg_cost
         trail_ret = (cur_price - peak) / peak
-        if peak_ret >= eff_trail_activate and trail_ret <= eff_trail_pct:
+        # 分级移动止损：浮盈越高触发线越紧
+        if peak_ret >= getattr(config, 'TRAIL_STOP_TIER2_THRESHOLD', 0.35):
+            trail_trigger = getattr(config, 'TRAIL_STOP_TIER2_PCT', -0.04)
+        elif peak_ret >= getattr(config, 'TRAIL_STOP_TIER1_THRESHOLD', 0.20):
+            trail_trigger = getattr(config, 'TRAIL_STOP_TIER1_PCT', -0.06)
+        else:
+            trail_trigger = eff_trail_pct
+        if peak_ret >= eff_trail_activate and trail_ret <= trail_trigger:
             trail_stop_list.append({
                 'symbol': sym, 'qty': qty,
                 'avg_cost': avg_cost, 'cur_price': cur_price,
                 'peak': peak, 'peak_ret': peak_ret, 'trail_ret': trail_ret,
+                'trail_trigger': trail_trigger,
             })
 
     print(f"\n{'='*54}")
     if trail_stop_list:
-        print(f"  移动止损触发（浮盈>{eff_trail_activate:.0%}后从峰值回撤>{abs(eff_trail_pct):.0%}）：{len(trail_stop_list)} 只")
+        print(f"  移动止损触发（分级止损）：{len(trail_stop_list)} 只")
         print(f"{'='*54}")
         for s in trail_stop_list:
             print(f"  [{s['symbol']}]  均价 ${s['avg_cost']:.2f}  峰值 ${s['peak']:.2f}"
-                  f"（+{s['peak_ret']:.1%}）→ 现价 ${s['cur_price']:.2f}  回撤 {s['trail_ret']:.1%}")
+                  f"（+{s['peak_ret']:.1%}）→ 现价 ${s['cur_price']:.2f}  "
+                  f"回撤 {s['trail_ret']:.1%}（触发线 {s['trail_trigger']:.0%}）")
             _place_sell(s['symbol'], s['qty'], s['cur_price'], '移动止损单', 0.95)
     else:
         print(f"  无移动止损触发")
@@ -761,6 +778,36 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
     else:
         print(f"  持仓无卖出报警")
         print(f"{'='*54}")
+
+    # ── RS 衰退止盈 ───────────────────────────────────────────
+    if getattr(config, 'RS_DECAY_ENABLED', True):
+        rs_decay_thr    = getattr(config, 'RS_DECAY_THRESHOLD',  -0.03)
+        rs_decay_min    = getattr(config, 'RS_DECAY_MIN_PROFIT',  0.10)
+        already_handled = ({o['symbol'] for o in exit_orders} |
+                           {s['symbol'] for s in sell_list})
+        rs_decay_list   = []
+        for sym, pos in stock_positions.items():
+            if sym in already_handled or sym in CASH_EQUIV:
+                continue
+            rs_val  = signals.get('_rs_scores', {}).get(sym)
+            cur_p   = signals.get('_prices', {}).get(sym)
+            if rs_val is None or cur_p is None:
+                continue
+            ret = (cur_p - pos.avgCost) / pos.avgCost if pos.avgCost > 0 else 0
+            if rs_val < rs_decay_thr and ret >= rs_decay_min:
+                rs_decay_list.append({'symbol': sym, 'close': cur_p,
+                                      'rs': rs_val, 'return': ret})
+        print(f"\n{'='*54}")
+        if rs_decay_list:
+            print(f"  RS 衰退止盈触发（浮盈≥{rs_decay_min:.0%} 且 RS<{rs_decay_thr:+.0%}）：{len(rs_decay_list)} 只")
+            print(f"{'='*54}")
+            for s in rs_decay_list:
+                print(f"  [{s['symbol']}]  RS={s['rs']:+.3f}  浮盈 {s['return']:+.1%}  收盘 ${s['close']:.2f}")
+                sell_list.append({'symbol': s['symbol'], 'close': s['close'],
+                                  'reason': f"RS衰退（RS={s['rs']:+.3f}，跑输SPY）"})
+        else:
+            print(f"  无 RS 衰退止盈触发")
+            print(f"{'='*54}")
 
     # ── 重新计算可用仓位和资金（含本次止损/卖出释放的仓位和回笼资金）──
     exiting_syms = (

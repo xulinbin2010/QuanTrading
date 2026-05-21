@@ -74,6 +74,22 @@ def run_backtest(
     preloaded_data: dict = None,        # {symbol: DataFrame}，由优化器预加载传入，跳过 IO
     preloaded_info: dict = None,        # {symbol: info_dict}，由优化器预加载传入，跳过 API 调用
     precomputed_cache=None,             # PrecomputedCache，跳过因子/ATR/breadth 计算
+    breakout_proximity_pct: float = 0.05,  # 突破宽松度（0=严格新高，0.05=在高点95%内即可）
+    # ── 可覆盖的止损参数（None = 使用 config 值，不写 DB）──────────
+    stop_loss_pct=None,
+    atr_stop_multiplier=None,
+    atr_stop_floor=None,
+    trail_stop_activate_pct=None,
+    trail_stop_pct=None,
+    trail_stop_tier1_threshold=None,
+    trail_stop_tier1_pct=None,
+    trail_stop_tier2_threshold=None,
+    trail_stop_tier2_pct=None,
+    rs_decay_enabled=None,
+    rs_decay_threshold=None,
+    rs_decay_min_profit=None,
+    time_stop_days=None,
+    time_stop_min_return=None,
 ) -> dict:
     """
     纯计算函数，返回回测结果 dict（不打印任何内容）。
@@ -88,18 +104,19 @@ def run_backtest(
         'daily_holdings': [...],
     }
     """
-    # 每次调用时从 config 实时读取，确保 Web UI 修改后立即生效
+    # 每次调用时从 config 实时读取；若调用方传入覆盖值（不为 None），则使用传入值
+    # 覆盖值只影响本次回测，不写 DB，不影响实盘 auto_trader.py
     MAX_POSITIONS           = top if top > 0 else config.MAX_POSITIONS
     POSITION_PCT            = config.POSITION_PCT
     CASH_RESERVE_PCT        = max(0.0, 1.0 - MAX_POSITIONS * POSITION_PCT)
-    STOP_LOSS_PCT           = config.STOP_LOSS_PCT
+    STOP_LOSS_PCT           = stop_loss_pct           if stop_loss_pct           is not None else config.STOP_LOSS_PCT
     INITIAL_CASH            = config.INITIAL_CASH
     MAX_PER_SECTOR          = config.MAX_PER_SECTOR
     VOL_SHRINK_RATIO        = config.VOL_SHRINK_RATIO
-    TRAIL_STOP_ACTIVATE_PCT = config.TRAIL_STOP_ACTIVATE_PCT
-    TRAIL_STOP_PCT          = config.TRAIL_STOP_PCT
-    ATR_STOP_MULTIPLIER     = config.ATR_STOP_MULTIPLIER
-    ATR_STOP_FLOOR          = config.ATR_STOP_FLOOR
+    TRAIL_STOP_ACTIVATE_PCT = trail_stop_activate_pct if trail_stop_activate_pct is not None else config.TRAIL_STOP_ACTIVATE_PCT
+    TRAIL_STOP_PCT          = trail_stop_pct          if trail_stop_pct          is not None else config.TRAIL_STOP_PCT
+    ATR_STOP_MULTIPLIER     = atr_stop_multiplier     if atr_stop_multiplier     is not None else config.ATR_STOP_MULTIPLIER
+    ATR_STOP_FLOOR          = atr_stop_floor          if atr_stop_floor          is not None else config.ATR_STOP_FLOOR
     TARGET_RISK_PER_POS     = config.TARGET_RISK_PER_POS
     SPY_BRAKE_PERIOD        = config.SPY_BRAKE_PERIOD
     SPY_BRAKE_PCT           = config.SPY_BRAKE_PCT
@@ -110,9 +127,16 @@ def run_backtest(
     FUND_MIN_ROE            = config.FUND_MIN_ROE
     FUND_MAX_DE             = config.FUND_MAX_DE
     FUND_MIN_REV_GROWTH     = config.FUND_MIN_REV_GROWTH
-    TIME_STOP_DAYS          = config.TIME_STOP_DAYS
-    TIME_STOP_MIN_RETURN    = config.TIME_STOP_MIN_RETURN
+    TIME_STOP_DAYS          = time_stop_days          if time_stop_days          is not None else config.TIME_STOP_DAYS
+    TIME_STOP_MIN_RETURN    = time_stop_min_return    if time_stop_min_return    is not None else config.TIME_STOP_MIN_RETURN
     MAX_ENTRY_SLIPPAGE      = config.MAX_ENTRY_SLIPPAGE
+    TRAIL_STOP_TIER1_THRESHOLD = trail_stop_tier1_threshold if trail_stop_tier1_threshold is not None else getattr(config, 'TRAIL_STOP_TIER1_THRESHOLD', 0.20)
+    TRAIL_STOP_TIER2_THRESHOLD = trail_stop_tier2_threshold if trail_stop_tier2_threshold is not None else getattr(config, 'TRAIL_STOP_TIER2_THRESHOLD', 0.35)
+    TRAIL_STOP_TIER1_PCT    = trail_stop_tier1_pct    if trail_stop_tier1_pct    is not None else getattr(config, 'TRAIL_STOP_TIER1_PCT',       -0.06)
+    TRAIL_STOP_TIER2_PCT    = trail_stop_tier2_pct    if trail_stop_tier2_pct    is not None else getattr(config, 'TRAIL_STOP_TIER2_PCT',       -0.04)
+    RS_DECAY_ENABLED        = rs_decay_enabled        if rs_decay_enabled        is not None else getattr(config, 'RS_DECAY_ENABLED',           True)
+    RS_DECAY_THRESHOLD      = rs_decay_threshold      if rs_decay_threshold      is not None else getattr(config, 'RS_DECAY_THRESHOLD',         -0.03)
+    RS_DECAY_MIN_PROFIT     = rs_decay_min_profit     if rs_decay_min_profit     is not None else getattr(config, 'RS_DECAY_MIN_PROFIT',        0.10)
 
     if min_cap_b is None:
         min_cap_b = config.MIN_CAP_B
@@ -180,7 +204,14 @@ def run_backtest(
             from strategies.dynamic_factor import DynamicFactorStrategy
             strategy = DynamicFactorStrategy(factors, factor_params)
         else:
-            strategy = RSMomentum(vol_shrink_ratio=VOL_SHRINK_RATIO)
+            from web.services.factor_svc import get_factor_params_from_db
+            _rs_p = get_factor_params_from_db('rs_score')
+            strategy = RSMomentum(
+                rs_period=int(_rs_p.get('period', 63)),
+                rs_weights=str(_rs_p.get('weights', '') or ''),
+                vol_shrink_ratio=VOL_SHRINK_RATIO,
+                breakout_proximity_pct=breakout_proximity_pct,
+            )
         strategy.set_spy(spy_close)
         signals = {}
         for sym, df in stock_data.items():
@@ -393,15 +424,27 @@ def run_backtest(
             else:
                 peak_ret  = (pos['peak_price'] - pos['entry_price']) / pos['entry_price']
                 trail_ret = (price - pos['peak_price']) / pos['peak_price']
-                if peak_ret >= eff_trail_activate and trail_ret <= eff_trail_pct:
+                # 分级移动止损：浮盈越高触发线越紧
+                if peak_ret >= TRAIL_STOP_TIER2_THRESHOLD:
+                    trail_trigger = TRAIL_STOP_TIER2_PCT
+                elif peak_ret >= TRAIL_STOP_TIER1_THRESHOLD:
+                    trail_trigger = TRAIL_STOP_TIER1_PCT
+                else:
+                    trail_trigger = eff_trail_pct
+                if peak_ret >= eff_trail_activate and trail_ret <= trail_trigger:
                     pending_sells[sym] = '移动止损'
                 elif (TIME_STOP_DAYS > 0
                       and days_held >= TIME_STOP_DAYS
                       and ret < TIME_STOP_MIN_RETURN):
                     pending_sells[sym] = '时间止损'
                 elif sym in signals and date in signals[sym].index:
-                    if signals[sym].loc[date, 'signal'] == -1:
+                    sig_row = signals[sym].loc[date]
+                    if sig_row['signal'] == -1:
                         pending_sells[sym] = '量价背离'
+                    elif (RS_DECAY_ENABLED
+                          and ret >= RS_DECAY_MIN_PROFIT
+                          and float(sig_row.get('rs_score', 0)) < RS_DECAY_THRESHOLD):
+                        pending_sells[sym] = 'RS衰退'
 
         # SPY 熔断
         spy_ret_20d = spy_rolling_ret.get(date)

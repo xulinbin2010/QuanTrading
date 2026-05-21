@@ -32,19 +32,23 @@ class RSMomentum(Strategy):
     def __init__(
         self,
         rs_period: int = 63,          # RS 计算窗口（3个月≈63交易日）
+        rs_weights: str = "",         # 多窗口加权（如 "21:0.4,63:0.3,126:0.2,252:0.1"），留空=单窗口
         breakout_period: int = 50,     # 突破判断窗口（近50日高点）
         vol_ma: int = 20,             # 成交量均线窗口
         vol_multiplier: float = 1.5,  # 放量倍数阈值
         max_drawdown_from_high: float = -0.30,  # 从52周最高跌超此比例不买入
         vol_shrink_ratio: float = 0.7,  # 量价背离判定：成交量需低于均量×此比例
+        breakout_proximity_pct: float = 0.05,  # 突破宽松度：0=必须创新高，0.05=在高点95%内即可
         extra_filters: list[str] | None = None,  # 额外注册表因子键（filter 类型）
     ):
         self.rs_period = rs_period
+        self.rs_weights = rs_weights
         self.breakout_period = breakout_period
         self.vol_ma = vol_ma
         self.vol_multiplier = vol_multiplier
         self.max_drawdown_from_high = max_drawdown_from_high
         self.vol_shrink_ratio = vol_shrink_ratio
+        self.breakout_proximity_pct = breakout_proximity_pct
         self.extra_filters = list(extra_filters) if extra_filters else []
         self._spy_close: pd.Series = None
 
@@ -63,9 +67,9 @@ class RSMomentum(Strategy):
         df = df.copy()
 
         # ── 计算各因子 ────────────────────────────────────────────
-        df = compute_rs_score(df, self._spy_close, self.rs_period)
+        df = compute_rs_score(df, self._spy_close, self.rs_period, weights=self.rs_weights)
         df = compute_volume_ma(df, self.vol_ma)
-        df = compute_breakout(df, self.breakout_period)
+        df = compute_breakout(df, self.breakout_period, self.breakout_proximity_pct)
         df = compute_volume_surge(df, self.vol_multiplier)
         df = compute_volume_divergence(df, self.breakout_period, self.vol_shrink_ratio)
         df = compute_drawdown_filter(df, self.max_drawdown_from_high)

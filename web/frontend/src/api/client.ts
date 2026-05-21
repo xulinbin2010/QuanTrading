@@ -70,6 +70,21 @@ export interface BacktestParams {
   hard_stop?: number
   pos_pct?: number
   ema_stop?: number
+  // 止损参数覆盖（undefined = 使用 config DB 值，不影响实盘）
+  stop_loss_pct?:              number
+  atr_stop_multiplier?:        number
+  atr_stop_floor?:             number
+  trail_stop_activate_pct?:    number
+  trail_stop_pct?:             number
+  trail_stop_tier1_threshold?: number
+  trail_stop_tier1_pct?:       number
+  trail_stop_tier2_threshold?: number
+  trail_stop_tier2_pct?:       number
+  rs_decay_enabled?:           boolean
+  rs_decay_threshold?:         number
+  rs_decay_min_profit?:        number
+  time_stop_days?:             number
+  time_stop_min_return?:       number
 }
 
 export const runBacktest      = (params: BacktestParams) =>
@@ -197,3 +212,5 @@ export const rejectAIPending   = (symbol: string) =>
   api.post('/ai/universe/pending/reject', { symbol }).then(r => r.data)
 export const updateAIRevenue   = (symbol: string, ai_pct: number, note: string) =>
   api.put(`/ai/revenue/${symbol}`, { ai_pct, note }).then(r => r.data)
+export const getAIMomentum     = (force = false) =>
+  api.get('/ai/momentum', { params: { force }, timeout: 120_000 }).then(r => r.data)

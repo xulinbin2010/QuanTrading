@@ -55,7 +55,7 @@ def invalidate_cache(universe: str = None):
 # ── 注册表 API ─────────────────────────────────────────────
 
 def get_factor_registry() -> list[dict]:
-    """返回所有已注册因子的元数据 + 当前启用状态"""
+    """返回所有已注册因子的元数据 + 当前启用状态 + 当前 DB 参数覆盖值"""
     from strategies.factors.registry import get_registry
     import config
 
@@ -66,9 +66,13 @@ def get_factor_registry() -> list[dict]:
         cfg_key = f'FACTOR_{key}_ENABLED'
         enabled = _parse_bool(config.get(cfg_key), meta.default_enabled)
 
+        # 当前 DB 中的参数覆盖（无覆盖时 = 注册表默认值）
+        db_params = get_factor_params_from_db(key) if meta.params else {}
+
         params_info = {
             pname: {
                 'default': pdefault,
+                'current': db_params.get(pname, pdefault),
                 'type':    ptype.__name__,
                 'desc':    pdesc,
             }
@@ -101,16 +105,36 @@ def _parse_bool(val, default=False) -> bool:
 def update_factor_config(key: str, enabled: bool | None = None, params: dict | None = None) -> bool:
     """更新因子开关或参数，写入 config_store"""
     import config
+    import sqlite3
     ok = True
     if enabled is not None:
         cfg_key = f'FACTOR_{key}_ENABLED'
         ok = config.set_param(cfg_key, enabled) and ok
-    # 因子参数更新（暂存到独立 key，供 DynamicFactorStrategy 读取）
+    # 因子参数更新：直接写入 config_store（不经过 config.set_param，因为这些 key 不在 _DEFAULTS 注册表里）
     if params:
-        for pname, pval in params.items():
-            cfg_key = f'FACTOR_{key}_PARAM_{pname}'
-            if not config.set_param(cfg_key, str(pval)):
-                ok = False
+        try:
+            conn = sqlite3.connect(config.DB_PATH, timeout=3)
+            conn.isolation_level = None  # autocommit
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS config_store (
+                    key         TEXT PRIMARY KEY,
+                    value       TEXT NOT NULL,
+                    type        TEXT DEFAULT 'str',
+                    category    TEXT,
+                    description TEXT,
+                    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            for pname, pval in params.items():
+                cfg_key = f'FACTOR_{key}_PARAM_{pname}'
+                conn.execute("""
+                    INSERT INTO config_store (key, value, type, category, description, updated_at)
+                    VALUES (?, ?, 'str', '因子', ?, CURRENT_TIMESTAMP)
+                    ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP
+                """, (cfg_key, str(pval), f'因子 {key} 参数 {pname}'))
+            conn.close()
+        except Exception:
+            ok = False
     return ok
 
 
@@ -274,7 +298,10 @@ def _do_scan(universe: str, top: int) -> dict:
             else:
                 sector_rs_pre[sym] = (0.0, round(stk_ret - spy_ret63, 4))
 
+    rs_params = get_factor_params_from_db('rs_score')
     strategy = RSMomentum(
+        rs_period=int(rs_params.get('period', 63)),
+        rs_weights=str(rs_params.get('weights', '') or ''),
         vol_shrink_ratio=float(config.get('VOL_SHRINK_RATIO') or 0.7),
     )
     if spy_close is not None:
@@ -519,7 +546,10 @@ def get_stock_factors(symbol: str, days: int = 120) -> dict:
     if df is None or len(df) < 20:
         raise ValueError(f"股票 {symbol} 数据不足")
 
+    rs_params = get_factor_params_from_db('rs_score')
     strategy = RSMomentum(
+        rs_period=int(rs_params.get('period', 63)),
+        rs_weights=str(rs_params.get('weights', '') or ''),
         vol_shrink_ratio=float(config.get('VOL_SHRINK_RATIO') or 0.7),
     )
     if spy_df is not None:

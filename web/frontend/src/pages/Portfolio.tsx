@@ -1,5 +1,5 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { getOrders, getBalance, getPositions, refreshPositions, getEarningsDates, getPerformance, getStockDetail, getStockNews, placeSellOrder } from '../api/client'
+import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
+import { getOrders, getBalance, getPositions, refreshPositions, getEarningsDates, getPerformance, getStockDetail, getStockNews, placeSellOrder, getConfig, updateConfig } from '../api/client'
 import ReactECharts from 'echarts-for-react'
 import { useState } from 'react'
 import { useAccount } from '../App'
@@ -930,6 +930,151 @@ function AllocationBar({ positions, balance }: { positions: any[]; balance: any 
   )
 }
 
+// ── 实盘参数面板 ───────────────────────────────────────────────
+const LIVE_PARAM_GROUPS = [
+  {
+    label: '仓位控制',
+    params: [
+      { key: 'MAX_POSITIONS',     label: '最多持仓数',     type: 'int',   unit: '只' },
+      { key: 'POSITION_PCT',      label: '单仓比例',       type: 'pct' },
+      { key: 'MAX_ENTRY_SLIPPAGE',label: 'OPG滑点上限',    type: 'pct' },
+    ],
+  },
+  {
+    label: '止损线',
+    params: [
+      { key: 'STOP_LOSS_PCT',           label: '硬止损',          type: 'pct' },
+      { key: 'ATR_STOP_MULTIPLIER',     label: 'ATR止损倍数',     type: 'float' },
+      { key: 'ATR_STOP_FLOOR',          label: 'ATR止损下限',     type: 'pct' },
+      { key: 'TRAIL_STOP_ACTIVATE_PCT', label: '移动止损激活',    type: 'pct' },
+      { key: 'TRAIL_STOP_PCT',          label: '移动止损触发',    type: 'pct' },
+      { key: 'TRAIL_STOP_TIER1_THRESHOLD', label: '第2档激活门槛', type: 'pct' },
+      { key: 'TRAIL_STOP_TIER1_PCT',    label: '第2档触发线',     type: 'pct' },
+      { key: 'TRAIL_STOP_TIER2_THRESHOLD', label: '第3档激活门槛', type: 'pct' },
+      { key: 'TRAIL_STOP_TIER2_PCT',    label: '第3档触发线',     type: 'pct' },
+    ],
+  },
+  {
+    label: '出场策略',
+    params: [
+      { key: 'RS_DECAY_ENABLED',   label: 'RS衰退出场',       type: 'bool' },
+      { key: 'RS_DECAY_THRESHOLD', label: 'RS衰退阈值',       type: 'pct' },
+      { key: 'RS_DECAY_MIN_PROFIT',label: 'RS衰退最低浮盈',   type: 'pct' },
+      { key: 'TIME_STOP_DAYS',     label: '时间止损天数',     type: 'int', unit: '天' },
+      { key: 'TIME_STOP_MIN_RETURN', label: '时间止损最低盈利', type: 'pct' },
+    ],
+  },
+]
+
+function TradingParamsPanel() {
+  const queryClient = useQueryClient()
+  const [open, setOpen] = useState(false)
+  const [edits, setEdits] = useState<Record<string, string>>({})
+
+  const { data: cfg } = useQuery({ queryKey: ['config'], queryFn: getConfig })
+  const { mutate: save, isPending: saving } = useMutation({
+    mutationFn: (params: { key: string; value: string }[]) => updateConfig(params),
+    onSuccess: () => {
+      setEdits({})
+      queryClient.invalidateQueries({ queryKey: ['config'] })
+    },
+  })
+
+  const cfgMap: Record<string, string> = {}
+  ;(cfg?.strategy ?? []).forEach((p: any) => { cfgMap[p.key] = p.value })
+
+  const val = (key: string) => edits[key] ?? cfgMap[key] ?? ''
+  const isDirty = Object.keys(edits).length > 0
+
+  function handleChange(key: string, v: string) {
+    setEdits(e => ({ ...e, [key]: v }))
+  }
+  function handleSave() {
+    const params = Object.entries(edits).map(([key, value]) => ({ key, value }))
+    save(params)
+  }
+  function renderInput(p: { key: string; label: string; type: string; unit?: string }) {
+    const v = val(p.key)
+    if (p.type === 'bool') {
+      return (
+        <label className="flex items-center gap-1.5 cursor-pointer">
+          <input
+            type="checkbox"
+            className="w-3.5 h-3.5 accent-blue-500"
+            checked={v === 'true' || v === 'True' || v === '1'}
+            onChange={e => handleChange(p.key, e.target.checked ? 'true' : 'false')}
+          />
+          <span className="text-xs text-slate-400">{v === 'true' || v === 'True' || v === '1' ? '开启' : '关闭'}</span>
+        </label>
+      )
+    }
+    const displayVal = (p.type === 'pct' && v) ? (parseFloat(v) * 100).toFixed(1) : v
+    return (
+      <div className="flex items-center gap-1">
+        <input
+          type="number"
+          step={p.type === 'int' ? '1' : '0.1'}
+          className="w-16 text-xs px-1.5 py-0.5 bg-slate-900 border border-slate-600 rounded text-slate-200 font-mono focus:outline-none focus:border-blue-500"
+          value={displayVal}
+          onChange={e => {
+            const raw = parseFloat(e.target.value)
+            handleChange(p.key, p.type === 'pct' ? String(raw / 100) : e.target.value)
+          }}
+        />
+        {p.unit && <span className="text-xs text-slate-500">{p.unit}</span>}
+        {p.type === 'pct' && <span className="text-xs text-slate-500">%</span>}
+      </div>
+    )
+  }
+
+  return (
+    <div className="bg-slate-800 rounded-lg border border-slate-700">
+      <button
+        className="w-full flex items-center justify-between px-4 py-2.5 text-sm font-medium text-slate-300 hover:text-white"
+        onClick={() => setOpen(o => !o)}
+      >
+        <span>实盘交易参数</span>
+        <span className="text-slate-500 text-xs">{open ? '▾' : '▸'} 止损 · 仓位 · 出场</span>
+      </button>
+      {open && (
+        <div className="border-t border-slate-700 px-4 pt-3 pb-4 space-y-4">
+          {LIVE_PARAM_GROUPS.map(group => (
+            <div key={group.label}>
+              <div className="text-xs font-medium text-slate-400 mb-2">{group.label}</div>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-2.5">
+                {group.params.map(p => (
+                  <div key={p.key} className="flex items-center justify-between gap-2 min-w-0">
+                    <span className="text-xs text-slate-400 truncate">{p.label}</span>
+                    {renderInput(p)}
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+          {isDirty && (
+            <div className="flex items-center gap-3 pt-1">
+              <button
+                onClick={handleSave}
+                disabled={saving}
+                className="px-3 py-1 text-xs bg-blue-600 hover:bg-blue-500 text-white rounded font-medium disabled:opacity-50"
+              >
+                {saving ? '保存中…' : '保存修改'}
+              </button>
+              <button
+                onClick={() => setEdits({})}
+                className="px-3 py-1 text-xs text-slate-400 hover:text-white"
+              >
+                撤销
+              </button>
+              <span className="text-xs text-amber-400">· 有未保存的修改</span>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Portfolio() {
   const [orderSymbol, setOrderSymbol] = useState('')
   const [refreshMsg, setRefreshMsg] = useState<'ok' | 'error' | null>(null)
@@ -999,6 +1144,9 @@ export default function Portfolio() {
         />
         <StatCard label="购买力" value={fmt(balance?.buying_power)} />
       </div>
+
+      {/* 实盘参数 */}
+      <TradingParamsPanel />
 
       {/* 业绩复盘 */}
       <PerformanceSection />

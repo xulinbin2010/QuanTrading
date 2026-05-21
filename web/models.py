@@ -117,6 +117,21 @@ class BacktestRequest(BaseModel):
     hard_stop: float = -0.08           # 硬止损（momentum5d）
     pos_pct: float = 0.22              # 每仓比例（momentum5d）
     ema_stop: int = 8                  # EMA 破位止损周期（0 = 禁用）
+    # RS动量策略止损参数覆盖（None = 使用 config DB 值，不影响实盘）
+    stop_loss_pct:              Optional[float] = None
+    atr_stop_multiplier:        Optional[float] = None
+    atr_stop_floor:             Optional[float] = None
+    trail_stop_activate_pct:    Optional[float] = None
+    trail_stop_pct:             Optional[float] = None
+    trail_stop_tier1_threshold: Optional[float] = None
+    trail_stop_tier1_pct:       Optional[float] = None
+    trail_stop_tier2_threshold: Optional[float] = None
+    trail_stop_tier2_pct:       Optional[float] = None
+    rs_decay_enabled:           Optional[bool]  = None
+    rs_decay_threshold:         Optional[float] = None
+    rs_decay_min_profit:        Optional[float] = None
+    time_stop_days:             Optional[int]   = None
+    time_stop_min_return:       Optional[float] = None
 
 
 class FactorComboSaveRequest(BaseModel):

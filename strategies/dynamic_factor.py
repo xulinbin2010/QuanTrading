@@ -83,8 +83,9 @@ class DynamicFactorStrategy(Strategy):
             params = dict(self.factor_params.get(key, {}))
             # rs_score 需要 spy_close 作为位置参数
             if key == 'rs_score':
-                period = params.get('period', meta.params['period'][0])
-                df = meta.compute_fn(df, self._spy_close, period=period)
+                period  = params.get('period',  meta.params['period'][0])
+                weights = params.get('weights', meta.params.get('weights', ('',))[0])
+                df = meta.compute_fn(df, self._spy_close, period=period, weights=weights)
             # sector_rs 需要 sector_etf_close + spy_close
             elif key == 'sector_rs':
                 period = params.get('period', meta.params['period'][0])

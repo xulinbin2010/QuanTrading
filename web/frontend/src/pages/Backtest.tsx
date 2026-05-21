@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { runBacktest, runWalkForward, getBacktestStatus, getBacktestResult, getBacktestHistory, getFactorRegistry, getVixAnalysis, listFactorCombos, saveFactorCombo, deleteFactorCombo } from '../api/client'
+import { runBacktest, runWalkForward, getBacktestStatus, getBacktestResult, getBacktestHistory, getFactorRegistry, getVixAnalysis, listFactorCombos, saveFactorCombo, deleteFactorCombo, getConfig } from '../api/client'
 import type { FactorCombo } from '../api/client'
 import ReactECharts from 'echarts-for-react'
 import DatePicker from '../components/DatePicker'
@@ -191,6 +191,21 @@ const DEFAULT_PARAMS = {
   hard_stop: -0.08,
   pos_pct: 0.22,
   ema_stop: 8,
+  // 止损参数覆盖（undefined = 使用 config DB 值，不影响实盘）
+  stop_loss_pct:              undefined as number | undefined,
+  atr_stop_multiplier:        undefined as number | undefined,
+  atr_stop_floor:             undefined as number | undefined,
+  trail_stop_activate_pct:    undefined as number | undefined,
+  trail_stop_pct:             undefined as number | undefined,
+  trail_stop_tier1_threshold: undefined as number | undefined,
+  trail_stop_tier1_pct:       undefined as number | undefined,
+  trail_stop_tier2_threshold: undefined as number | undefined,
+  trail_stop_tier2_pct:       undefined as number | undefined,
+  rs_decay_enabled:           undefined as boolean | undefined,
+  rs_decay_threshold:         undefined as number | undefined,
+  rs_decay_min_profit:        undefined as number | undefined,
+  time_stop_days:             undefined as number | undefined,
+  time_stop_min_return:       undefined as number | undefined,
 }
 
 function loadStored<T>(key: string, fallback: T): T {
@@ -666,6 +681,120 @@ function WalkForwardTab() {
   )
 }
 
+// ── 止损参数面板（回测专用，不写 DB）─────────────────────────
+const STOP_PARAM_DEFS = [
+  { key: 'stop_loss_pct',              cfgKey: 'STOP_LOSS_PCT',              label: '硬止损',             type: 'pct' },
+  { key: 'atr_stop_multiplier',        cfgKey: 'ATR_STOP_MULTIPLIER',        label: 'ATR止损倍数',        type: 'float' },
+  { key: 'atr_stop_floor',             cfgKey: 'ATR_STOP_FLOOR',             label: 'ATR止损下限',        type: 'pct' },
+  { key: 'trail_stop_activate_pct',    cfgKey: 'TRAIL_STOP_ACTIVATE_PCT',    label: '移动止损激活',       type: 'pct' },
+  { key: 'trail_stop_pct',             cfgKey: 'TRAIL_STOP_PCT',             label: '移动止损触发',       type: 'pct' },
+  { key: 'trail_stop_tier1_threshold', cfgKey: 'TRAIL_STOP_TIER1_THRESHOLD', label: '第2档激活门槛',      type: 'pct' },
+  { key: 'trail_stop_tier1_pct',       cfgKey: 'TRAIL_STOP_TIER1_PCT',       label: '第2档触发线',        type: 'pct' },
+  { key: 'trail_stop_tier2_threshold', cfgKey: 'TRAIL_STOP_TIER2_THRESHOLD', label: '第3档激活门槛',      type: 'pct' },
+  { key: 'trail_stop_tier2_pct',       cfgKey: 'TRAIL_STOP_TIER2_PCT',       label: '第3档触发线',        type: 'pct' },
+  { key: 'rs_decay_enabled',           cfgKey: 'RS_DECAY_ENABLED',           label: 'RS衰退出场',         type: 'bool' },
+  { key: 'rs_decay_threshold',         cfgKey: 'RS_DECAY_THRESHOLD',         label: 'RS衰退阈值',         type: 'pct' },
+  { key: 'rs_decay_min_profit',        cfgKey: 'RS_DECAY_MIN_PROFIT',        label: 'RS衰退最低浮盈',     type: 'pct' },
+  { key: 'time_stop_days',             cfgKey: 'TIME_STOP_DAYS',             label: '时间止损（天）',     type: 'int' },
+  { key: 'time_stop_min_return',       cfgKey: 'TIME_STOP_MIN_RETURN',       label: '时间止损最低盈利',   type: 'pct' },
+]
+
+function StopLossParamsPanel({ params, setParams, cfg }: { params: any; setParams: any; cfg: any }) {
+  const [open, setOpen] = useState(false)
+
+  const cfgMap: Record<string, string> = {}
+  ;(cfg?.strategy ?? []).forEach((p: any) => { cfgMap[p.key] = p.value })
+
+  function resetToConfig() {
+    const g = (k: string) => parseFloat(cfgMap[k] ?? 'NaN')
+    const gb = (k: string) => cfgMap[k] === 'true' ? true : cfgMap[k] === 'false' ? false : undefined
+    const gi = (k: string) => parseInt(cfgMap[k] ?? 'NaN')
+    setParams((p: any) => ({
+      ...p,
+      stop_loss_pct:              isNaN(g('STOP_LOSS_PCT'))              ? p.stop_loss_pct              : g('STOP_LOSS_PCT'),
+      atr_stop_multiplier:        isNaN(g('ATR_STOP_MULTIPLIER'))        ? p.atr_stop_multiplier        : g('ATR_STOP_MULTIPLIER'),
+      atr_stop_floor:             isNaN(g('ATR_STOP_FLOOR'))             ? p.atr_stop_floor             : g('ATR_STOP_FLOOR'),
+      trail_stop_activate_pct:    isNaN(g('TRAIL_STOP_ACTIVATE_PCT'))    ? p.trail_stop_activate_pct    : g('TRAIL_STOP_ACTIVATE_PCT'),
+      trail_stop_pct:             isNaN(g('TRAIL_STOP_PCT'))             ? p.trail_stop_pct             : g('TRAIL_STOP_PCT'),
+      trail_stop_tier1_threshold: isNaN(g('TRAIL_STOP_TIER1_THRESHOLD')) ? p.trail_stop_tier1_threshold : g('TRAIL_STOP_TIER1_THRESHOLD'),
+      trail_stop_tier1_pct:       isNaN(g('TRAIL_STOP_TIER1_PCT'))       ? p.trail_stop_tier1_pct       : g('TRAIL_STOP_TIER1_PCT'),
+      trail_stop_tier2_threshold: isNaN(g('TRAIL_STOP_TIER2_THRESHOLD')) ? p.trail_stop_tier2_threshold : g('TRAIL_STOP_TIER2_THRESHOLD'),
+      trail_stop_tier2_pct:       isNaN(g('TRAIL_STOP_TIER2_PCT'))       ? p.trail_stop_tier2_pct       : g('TRAIL_STOP_TIER2_PCT'),
+      rs_decay_enabled:           gb('RS_DECAY_ENABLED')                 ?? p.rs_decay_enabled,
+      rs_decay_threshold:         isNaN(g('RS_DECAY_THRESHOLD'))         ? p.rs_decay_threshold         : g('RS_DECAY_THRESHOLD'),
+      rs_decay_min_profit:        isNaN(g('RS_DECAY_MIN_PROFIT'))        ? p.rs_decay_min_profit        : g('RS_DECAY_MIN_PROFIT'),
+      time_stop_days:             isNaN(gi('TIME_STOP_DAYS'))            ? p.time_stop_days             : gi('TIME_STOP_DAYS'),
+      time_stop_min_return:       isNaN(g('TIME_STOP_MIN_RETURN'))       ? p.time_stop_min_return       : g('TIME_STOP_MIN_RETURN'),
+    }))
+  }
+
+  function renderField(def: typeof STOP_PARAM_DEFS[0]) {
+    const rawVal = params[def.key]
+    if (def.type === 'bool') {
+      return (
+        <label className="flex items-center gap-1.5 cursor-pointer">
+          <input
+            type="checkbox"
+            className="w-3.5 h-3.5 accent-blue-500"
+            checked={rawVal === true}
+            onChange={e => setParams((p: any) => ({ ...p, [def.key]: e.target.checked }))}
+          />
+          <span className="text-xs text-slate-400">{rawVal === true ? '开启' : '关闭'}</span>
+        </label>
+      )
+    }
+    const displayVal = def.type === 'pct' && rawVal != null ? (rawVal * 100).toFixed(1) : (rawVal ?? '')
+    return (
+      <div className="flex items-center gap-1">
+        <input
+          type="number"
+          step={def.type === 'int' ? '1' : '0.1'}
+          className="w-16 text-xs px-1.5 py-0.5 bg-slate-900 border border-slate-600 rounded text-slate-200 font-mono focus:outline-none focus:border-blue-500"
+          value={displayVal}
+          onChange={e => {
+            const raw = parseFloat(e.target.value)
+            setParams((p: any) => ({
+              ...p,
+              [def.key]: def.type === 'pct' ? raw / 100 : def.type === 'int' ? parseInt(e.target.value) : raw,
+            }))
+          }}
+        />
+        {def.type === 'pct' && <span className="text-xs text-slate-500">%</span>}
+      </div>
+    )
+  }
+
+  return (
+    <div className="mt-4 border border-slate-700 rounded-lg overflow-hidden">
+      <button
+        className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-slate-400 hover:text-slate-200 bg-slate-750"
+        onClick={() => setOpen(o => !o)}
+      >
+        <span>止损与出场参数 <span className="text-slate-600 font-normal">（回测独立调整，不影响实盘）</span></span>
+        <div className="flex items-center gap-2">
+          {open && (
+            <span
+              className="text-blue-400 hover:text-blue-300"
+              onClick={e => { e.stopPropagation(); resetToConfig() }}
+            >↺ 恢复实盘配置</span>
+          )}
+          <span>{open ? '▾' : '▸'}</span>
+        </div>
+      </button>
+      {open && (
+        <div className="px-3 pb-3 pt-2 bg-slate-800/50 grid grid-cols-2 md:grid-cols-3 gap-x-4 gap-y-2.5">
+          {STOP_PARAM_DEFS.map(def => (
+            <div key={def.key} className="flex items-center justify-between gap-2 min-w-0">
+              <span className="text-xs text-slate-400 truncate">{def.label}</span>
+              {renderField(def)}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function Backtest() {
   const [params, setParams] = useState(() => loadStored('bt_params', DEFAULT_PARAMS))
   const [activeTask, setActiveTask] = useState<string | null>(null)
@@ -677,6 +806,35 @@ export default function Backtest() {
   useEffect(() => { localStorage.setItem('bt_params', JSON.stringify(params)) }, [params])
   useEffect(() => { localStorage.setItem('bt_factors', JSON.stringify(selectedFactors)) }, [selectedFactors])  // 空 = 使用默认 RSMomentum
   const queryClient = useQueryClient()
+
+  // 从 config 初始化止损参数（仅在首次加载且 localStorage 里没有覆盖值时）
+  const { data: cfg } = useQuery({ queryKey: ['config'], queryFn: getConfig, staleTime: 60_000 })
+  useEffect(() => {
+    if (!cfg) return
+    setParams(prev => {
+      if (prev.stop_loss_pct !== undefined) return prev  // 用户已有本地覆盖，不重置
+      const g = (k: string) => parseFloat((cfg.strategy ?? []).find((p: any) => p.key === k)?.value ?? 'NaN')
+      const gb = (k: string) => { const v = (cfg.strategy ?? []).find((p: any) => p.key === k)?.value; return v === 'true' ? true : v === 'false' ? false : undefined }
+      const gi = (k: string) => parseInt((cfg.strategy ?? []).find((p: any) => p.key === k)?.value ?? 'NaN')
+      return {
+        ...prev,
+        stop_loss_pct:              isNaN(g('STOP_LOSS_PCT'))              ? prev.stop_loss_pct              : g('STOP_LOSS_PCT'),
+        atr_stop_multiplier:        isNaN(g('ATR_STOP_MULTIPLIER'))        ? prev.atr_stop_multiplier        : g('ATR_STOP_MULTIPLIER'),
+        atr_stop_floor:             isNaN(g('ATR_STOP_FLOOR'))             ? prev.atr_stop_floor             : g('ATR_STOP_FLOOR'),
+        trail_stop_activate_pct:    isNaN(g('TRAIL_STOP_ACTIVATE_PCT'))    ? prev.trail_stop_activate_pct    : g('TRAIL_STOP_ACTIVATE_PCT'),
+        trail_stop_pct:             isNaN(g('TRAIL_STOP_PCT'))             ? prev.trail_stop_pct             : g('TRAIL_STOP_PCT'),
+        trail_stop_tier1_threshold: isNaN(g('TRAIL_STOP_TIER1_THRESHOLD')) ? prev.trail_stop_tier1_threshold : g('TRAIL_STOP_TIER1_THRESHOLD'),
+        trail_stop_tier1_pct:       isNaN(g('TRAIL_STOP_TIER1_PCT'))       ? prev.trail_stop_tier1_pct       : g('TRAIL_STOP_TIER1_PCT'),
+        trail_stop_tier2_threshold: isNaN(g('TRAIL_STOP_TIER2_THRESHOLD')) ? prev.trail_stop_tier2_threshold : g('TRAIL_STOP_TIER2_THRESHOLD'),
+        trail_stop_tier2_pct:       isNaN(g('TRAIL_STOP_TIER2_PCT'))       ? prev.trail_stop_tier2_pct       : g('TRAIL_STOP_TIER2_PCT'),
+        rs_decay_enabled:           gb('RS_DECAY_ENABLED')                 ?? prev.rs_decay_enabled,
+        rs_decay_threshold:         isNaN(g('RS_DECAY_THRESHOLD'))         ? prev.rs_decay_threshold         : g('RS_DECAY_THRESHOLD'),
+        rs_decay_min_profit:        isNaN(g('RS_DECAY_MIN_PROFIT'))        ? prev.rs_decay_min_profit        : g('RS_DECAY_MIN_PROFIT'),
+        time_stop_days:             isNaN(gi('TIME_STOP_DAYS'))            ? prev.time_stop_days             : gi('TIME_STOP_DAYS'),
+        time_stop_min_return:       isNaN(g('TIME_STOP_MIN_RETURN'))       ? prev.time_stop_min_return       : g('TIME_STOP_MIN_RETURN'),
+      }
+    })
+  }, [cfg])
 
   // 拉取因子注册表
   const { data: registry = [] } = useQuery({
@@ -728,6 +886,21 @@ export default function Backtest() {
       hard_stop: params.hard_stop,
       pos_pct: params.pos_pct,
       ema_stop: params.ema_stop,
+      // 止损参数覆盖（undefined 值不传，后端使用 config）
+      stop_loss_pct:              params.stop_loss_pct,
+      atr_stop_multiplier:        params.atr_stop_multiplier,
+      atr_stop_floor:             params.atr_stop_floor,
+      trail_stop_activate_pct:    params.trail_stop_activate_pct,
+      trail_stop_pct:             params.trail_stop_pct,
+      trail_stop_tier1_threshold: params.trail_stop_tier1_threshold,
+      trail_stop_tier1_pct:       params.trail_stop_tier1_pct,
+      trail_stop_tier2_threshold: params.trail_stop_tier2_threshold,
+      trail_stop_tier2_pct:       params.trail_stop_tier2_pct,
+      rs_decay_enabled:           params.rs_decay_enabled,
+      rs_decay_threshold:         params.rs_decay_threshold,
+      rs_decay_min_profit:        params.rs_decay_min_profit,
+      time_stop_days:             params.time_stop_days,
+      time_stop_min_return:       params.time_stop_min_return,
     }),
     onSuccess: (data) => {
       setActiveTask(data.task_id)
@@ -897,6 +1070,11 @@ export default function Backtest() {
             </div>
           )}
         </div>
+
+        {/* 止损与出场参数（RS动量策略，折叠，独立于实盘 config）*/}
+        {params.strategy === 'rs_momentum' && (
+        <StopLossParamsPanel params={params} setParams={setParams} cfg={cfg} />
+        )}
 
         {/* 5日动量策略提示（不需要因子选择）*/}
         {params.strategy === 'momentum5d' && (

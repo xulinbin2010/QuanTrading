@@ -25,6 +25,21 @@ def run(req: BacktestRequest):
         'hard_stop':       req.hard_stop,
         'pos_pct':         req.pos_pct,
         'ema_stop':        req.ema_stop,
+        # 止损参数覆盖（None 表示使用 config 值）
+        'stop_loss_pct':              req.stop_loss_pct,
+        'atr_stop_multiplier':        req.atr_stop_multiplier,
+        'atr_stop_floor':             req.atr_stop_floor,
+        'trail_stop_activate_pct':    req.trail_stop_activate_pct,
+        'trail_stop_pct':             req.trail_stop_pct,
+        'trail_stop_tier1_threshold': req.trail_stop_tier1_threshold,
+        'trail_stop_tier1_pct':       req.trail_stop_tier1_pct,
+        'trail_stop_tier2_threshold': req.trail_stop_tier2_threshold,
+        'trail_stop_tier2_pct':       req.trail_stop_tier2_pct,
+        'rs_decay_enabled':           req.rs_decay_enabled,
+        'rs_decay_threshold':         req.rs_decay_threshold,
+        'rs_decay_min_profit':        req.rs_decay_min_profit,
+        'time_stop_days':             req.time_stop_days,
+        'time_stop_min_return':       req.time_stop_min_return,
     }
     task_id = backtest_svc.submit_backtest(params)
     return {'task_id': task_id}

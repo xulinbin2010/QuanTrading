@@ -305,25 +305,125 @@ start_web.sh         # 一键启动脚本
 
 ## RS 动量策略买入/卖出逻辑
 
-文件：`strategies/rs_momentum.py` + `strategies/factors/`
+文件：`auto_trader.py` → `scan_signals()` + `_execute_inner()` + `strategies/rs_momentum.py`
 
-**买入信号（5个条件同时满足）：**
+---
+
+### 第一步：策略信号生成（RSMomentum）
+
+**买入信号（5个条件同时满足，在 `strategies/rs_momentum.py` 中硬编码）：**
 
 | 条件 | 参数 | 说明 |
 |------|------|------|
 | RS 跑赢 SPY | `rs_period=63` | 个股63日收益率 - SPY 63日收益率 > 0 |
-| 价格突破 | `breakout_period=50` | 收盘价 > 前50日最高收盘价（shift(1) 排除当天） |
+| 价格接近高点 | `breakout_period=50`, `proximity_pct=5%` | 收盘价 ≥ 前50日最高收盘价 × 95%（允许在高点下方5%内买入，比严格破新高早进场） |
 | 放量确认 | `vol_multiplier=1.5` | 当日成交量 > 20日均量 × 1.5 |
 | 崩跌过滤 | `max_drawdown=-30%` | 距52周高点跌幅不超过30% |
 | 趋势向上 | MA10 > MA20 | 短期趋势过滤，避免买入短期下行股 |
 
-**卖出信号：** 价格创50日新高但成交量低于均量 × `VOL_SHRINK_RATIO`（量价背离，顶部信号）
+**卖出信号（量价背离）：** 价格创50日新高但成交量低于均量 × `VOL_SHRINK_RATIO`（顶部信号，`SELL_ON_ALERT=True` 时自动下卖单）
 
-**止损体系（多层）：**
-- 硬止损：跌破入场价 `STOP_LOSS_PCT`（默认 -15%）
-- ATR 自适应止损：入场价 - `ATR_STOP_MULTIPLIER` × ATR14，上限 `ATR_STOP_FLOOR`（默认 -20%）
-- 移动止损：浮盈超过 `TRAIL_STOP_ACTIVATE_PCT` 后启用，从峰值回撤 `TRAIL_STOP_PCT` 触发
-- 时间止损：持仓超过 `TIME_STOP_DAYS` 交易日且未达 `TIME_STOP_MIN_RETURN` 则卖出
+---
+
+### 第二步：市场环境熔断（scan_signals 阶段）
+
+以下任一条件触发时，**清空全部买入信号**（卖出报警照常输出）：
+
+| 熔断类型 | 触发条件 | 参数 |
+|----------|----------|------|
+| SPY 熔断 | SPY 近 N 日跌幅 ≤ `SPY_BRAKE_PCT` | `SPY_BRAKE_PERIOD=20`，`SPY_BRAKE_PCT=-8%` |
+| VIX 熔断 | VIX 收盘 ≥ `VIX_BRAKE_LEVEL` | `VIX_BRAKE_LEVEL=30` |
+
+市场宽度不足时**不清空**信号，但在执行阶段压缩仓位上限为 `BREADTH_MAX_POS`：
+
+| 条件 | 参数 | 说明 |
+|------|------|------|
+| 宽度压仓 | `BREADTH_MIN_PCT=35%` | S&P500 中站上 MA200 的比例低于此值时，最多只开 `BREADTH_MAX_POS=4` 仓 |
+
+---
+
+### 第三步：买入候选过滤链（scan_signals 阶段）
+
+信号通过策略后，在进入执行前按顺序过滤（**任一不满足则跳过该股**）：
+
+| 过滤项 | 条件 | 参数/说明 |
+|--------|------|-----------|
+| 市值下限 | `market_cap_b ≥ MIN_CAP_B` | 默认 10B，无市值数据时放行 |
+| 市值上限 | `market_cap_b ≤ MAX_CAP_B` | 默认 5000B（实际不过滤 mega-cap） |
+| 行业黑名单 | 行业名包含 `DENY_INDUSTRIES` 中任一关键词 | 默认 `['Software—Application']`，模糊匹配 |
+| ROE | `roe ≥ FUND_MIN_ROE`（`FUND_FILTER_ENABLED=True` 时生效） | 默认 0.0，排除亏损公司；无数据时放行 |
+| 负债权益比 | `debt_to_equity ≤ FUND_MAX_DE` | 默认 2.0，高杠杆行业（如中游能源）常在此被过滤 |
+| 营收增长 | `revenue_growth ≥ FUND_MIN_REV_GROWTH` | 默认 -20% |
+
+---
+
+### 第四步：入场得分排序
+
+通过过滤的候选按**复合入场得分**降序排列（得分高者优先获得仓位槽）：
+
+```
+entry_score = rs_score × (1 + vol_boost + proximity_boost + insider_boost + ai_boost)
+
+vol_boost       = min(vol_ratio / 3.0, 1.0) × 0.15      # 量比加成，最高 +15%（3x封顶）
+proximity_boost = max(0, (drawdown + 0.30) / 0.30) × 0.10  # 近高点加成，最高 +10%
+insider_boost   = min(insider_score / 10.0, 1.0) × 0.10  # 内幕买入加成，最高 +10%
+ai_boost        = 0.10（在AI池中）或 (score/15)×0.20（有AI评分时，最高 +20%）
+```
+
+---
+
+### 第五步：执行阶段过滤（execute 阶段，每只候选逐一检查）
+
+| 检查项 | 跳过条件 |
+|--------|----------|
+| 已持仓 | `symbol in stock_positions` |
+| 行业集中度 | 该 GICS 行业已持有 ≥ `MAX_PER_SECTOR`（默认3）只 |
+| 财报回避 | N 日历日内有财报，`EARNINGS_AVOID_DAYS=1` |
+| 仓位槽位 | `executed >= slots`（已满则停止） |
+| 资金不足 | `deployable < budget_per_pos × 0.5` |
+| VIX熔断 | `_vix_brake=True` 则清空买入列表 |
+| 单价超预算 | `qty <= 0`（按净值比例/ATR风险法计算后股数为零） |
+
+**仓位计算（取两者较小值）：**
+- 风险法：`qty = (net_liq × TARGET_RISK_PER_POS) / (ATR_STOP_MULTIPLIER × ATR14)`
+- 比例法：`qty = net_liq × POSITION_PCT / close_price`
+- 无 ATR 数据时退回：`qty = budget_per_pos / close_price`
+
+**OPG 限价保护：** 买入限价 = 昨收 × (1 + `MAX_ENTRY_SLIPPAGE`)，开盘跳空超阈值则自动放弃。部分成交时 9:32 ET 后补挂 DAY 限价单。
+
+---
+
+### 止损体系（多层，按优先级顺序检查，已触发的不重复计入）
+
+| 优先级 | 类型 | 触发条件 | 卖出方式 |
+|--------|------|----------|----------|
+| 1 | ATR 自适应止损 | 现价 ≤ 入场价 + max(ATR_STOP_FLOOR, -ATR_STOP_MULTIPLIER×ATR14/入场价) × 入场价 | OPG限价（入场价×0.95下限）|
+| 2 | EMA 破位止损 | 现价 < EMA`EMA_STOP_PERIOD`（默认8日），`EMA_STOP_PERIOD=0` 则禁用 | OPG限价（收盘×0.95下限）|
+| 3 | 移动止损 | 浮盈 ≥ `TRAIL_STOP_ACTIVATE_PCT` 后，从峰值（入场后最高收盘）回撤 ≥ `|TRAIL_STOP_PCT|` | OPG限价（收盘×0.95下限）|
+| 4 | 时间止损 | 持仓 ≥ `TIME_STOP_DAYS` 天 且 收益率 < `TIME_STOP_MIN_RETURN` | OPG限价（收盘×0.97下限）|
+| 5 | 卖出报警 | 量价背离（新高缩量，signal=-1），`SELL_ON_ALERT=True` | OPG限价（收盘×0.97下限）|
+
+> 峰值收盘价只取**入场日之后**的历史数据，防止买入前旧高点误触发移动止损。
+
+---
+
+### MSS 市场强度评分（Market Strength Score）
+
+`core/market_regime.py::compute_mss()` — 每次执行前计算，驱动仓位上限和移动止损参数的自适应切换。
+
+```
+MSS = SPY趋势分 + 市场宽度分 + VIX得分   ∈ [-1, +1]
+
+SPY趋势分  = (SPY > MA20)×0.2 + (SPY > MA50)×0.2   → [0, 0.4]
+市场宽度分  = breadth_pct × 0.4                       → [0, 0.4]
+VIX得分    = clip((30 - VIX) / 100, -0.2, +0.2)      → [-0.2, +0.2]
+```
+
+| MSS 区间 | 市场状态 | 生效参数 |
+|----------|----------|----------|
+| ≥ 0.5 | 强牛市 | `MSS_BULL_MAX_POS`、`MSS_BULL_TRAIL_ACTIVATE`、`MSS_BULL_TRAIL_PCT` |
+| 0.0 ~ 0.5 | 温和 | `MAX_POSITIONS`、`TRAIL_STOP_ACTIVATE_PCT`、`TRAIL_STOP_PCT`（默认值） |
+| < 0.0 | 弱势/熊市 | `MSS_BEAR_MAX_POS`（压缩仓位）、`MSS_BEAR_TRAIL_ACTIVATE`/`PCT`（收紧止损） |
 
 ---
 
@@ -348,6 +448,7 @@ start_web.sh         # 一键启动脚本
 | `STOP_LOSS_PCT` | -0.15 | 硬止损线（跌破入场价此幅度强制卖出） |
 | `ATR_STOP_MULTIPLIER` | 2.5 | ATR自适应止损倍数 |
 | `ATR_STOP_FLOOR` | -0.20 | ATR止损最大亏损下限（防止高波动股止损太宽） |
+| `EMA_STOP_PERIOD` | 8 | EMA 破位止损周期（收盘 < EMA-N 触发，0=禁用） |
 | `TRAIL_STOP_ACTIVATE_PCT` | 0.08 | 浮盈超过此值后启用移动止损 |
 | `TRAIL_STOP_PCT` | -0.07 | 从峰值回撤超过此值触发移动止损 |
 | `TIME_STOP_DAYS` | 20 | 时间止损观察期（交易日数，0=禁用） |
@@ -371,6 +472,19 @@ start_web.sh         # 一键启动脚本
 | `FUND_MIN_REV_GROWTH` | -0.20 | 营收增长最低门槛 |
 | `EARNINGS_AVOID_DAYS` | 2 | 财报前 N 日历日内不开新仓（0=禁用） |
 | `MAX_ENTRY_SLIPPAGE` | 0.01 | OPG 买入限价保护：最多接受昨收 +1% |
+
+**MSS 市场强度自适应参数：**
+
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `MSS_BULL_THRESHOLD` | 0.5 | MSS ≥ 此值视为强牛市 |
+| `MSS_BEAR_THRESHOLD` | 0.0 | MSS < 此值视为弱势/熊市 |
+| `MSS_BULL_MAX_POS` | 6 | 强牛市时最大仓位数（与默认 MAX_POSITIONS 相同，不额外加仓） |
+| `MSS_BULL_TRAIL_ACTIVATE` | 0.08 | 强牛市时移动止损激活门槛（与默认相同） |
+| `MSS_BULL_TRAIL_PCT` | -0.07 | 强牛市时移动止损触发幅度（与默认相同） |
+| `MSS_BEAR_MAX_POS` | 4 | 弱势市场时仓位上限（压缩至4仓） |
+| `MSS_BEAR_TRAIL_ACTIVATE` | 0.05 | 弱势市场时移动止损激活门槛（浮盈5%即激活） |
+| `MSS_BEAR_TRAIL_PCT` | -0.05 | 弱势市场时从峰值回撤5%即触发（更紧） |
 
 **内幕数据配置：**
 

@@ -3,6 +3,7 @@ import { getOrders, getBalance, getPositions, refreshPositions, getEarningsDates
 import ReactECharts from 'echarts-for-react'
 import { useState } from 'react'
 import { useAccount } from '../App'
+import SymbolLink from '../components/SymbolLink'
 
 // ── 复用辅助组件 ──────────────────────────────────────────────
 function RsBar({ v }: { v: number }) {
@@ -1235,7 +1236,7 @@ export default function Portfolio() {
                     className="border-b border-slate-700/50 hover:bg-slate-700/30 cursor-pointer"
                     onClick={() => setSelectedPos(p)}
                   >
-                    <td className="px-4 py-2 font-mono text-blue-300 hover:text-blue-200 underline decoration-dotted">{p.symbol}</td>
+                    <td className="px-4 py-2"><SymbolLink symbol={p.symbol} className="font-mono text-blue-300 hover:text-blue-200" /></td>
                     <td className="px-4 py-2 text-slate-400 text-xs max-w-[120px] truncate" title={p.industry ?? ''}>
                       {p.industry ?? '-'}
                     </td>
@@ -1310,7 +1311,7 @@ export default function Portfolio() {
                   return (
                   <tr key={o.id} className={`border-b border-slate-700/50 hover:bg-slate-700/30 text-xs ${dim}`}>
                     <td className="px-4 py-2 text-slate-400 font-mono">{o.created_at}</td>
-                    <td className={`px-4 py-2 font-mono ${filled ? 'text-white' : 'text-slate-400'}`}>{o.symbol}</td>
+                    <td className="px-4 py-2"><SymbolLink symbol={o.symbol} className={`font-mono ${filled ? 'text-white' : 'text-slate-400'}`} /></td>
                     <td className={`px-4 py-2 font-semibold ${filled ? (o.action === 'BUY' ? 'text-green-400' : 'text-red-400') : 'text-slate-500'}`}>
                       {o.action}
                     </td>

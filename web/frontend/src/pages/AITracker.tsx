@@ -1,11 +1,12 @@
 import { useState } from 'react'
+import SymbolLink from '../components/SymbolLink'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import ReactECharts from 'echarts-for-react'
 import {
   scanAITracker, getAIUniverse,
   addAISymbol, removeAISymbol,
   discoverAISymbols, approveAIPending, rejectAIPending,
-  updateAIRevenue, getAIMomentum,
+  getAIMomentum, analyzeAISymbol,
 } from '../api/client'
 
 // ── 工具函数 ──────────────────────────────────────────────────
@@ -20,7 +21,7 @@ function fmt(v: number | null | undefined) {
   return v >= 1000 ? `$${(v / 1000).toFixed(1)}T` : `$${v.toFixed(1)}B`
 }
 
-function ScoreBadge({ score, max = 15 }: { score: number; max?: number }) {
+function ScoreBadge({ score, max = 10 }: { score: number; max?: number }) {
   const pct = score / max
   const color = pct >= 0.7 ? 'bg-emerald-500' : pct >= 0.4 ? 'bg-amber-500' : 'bg-slate-600'
   return (
@@ -41,9 +42,7 @@ function GroupBadge({ label, color }: { label: string; color: string }) {
 
 function BreakdownBar({ bd }: { bd: Record<string, number> }) {
   const items = [
-    { key: 'ai_revenue', label: 'AI收入', max: 3 },
     { key: 'capex_growth', label: 'Capex', max: 2 },
-    { key: 'nvda_corr', label: '联动', max: 2 },
     { key: 'rs', label: 'RS', max: 2 },
     { key: 'rev_growth', label: '营收', max: 2 },
     { key: 'news', label: '新闻', max: 1 },
@@ -71,10 +70,15 @@ export default function AITracker() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<'tracker' | 'momentum' | 'pending' | 'manage'>('tracker')
   const [groupFilter, setGroupFilter] = useState<string>('all')
+  const [sortBy, setSortBy]     = useState<'score' | 'mom_1d' | 'mom_5d' | 'mom_20d'>('score')
   const [forcing, setForcing] = useState(false)
   const [addForm, setAddForm] = useState<{ symbol: string; group: string } | null>(null)
-  const [editRevenue, setEditRevenue] = useState<{ symbol: string; ai_pct: number; note: string } | null>(null)
   const [discovering, setDiscovering] = useState(false)
+  const [analyzeInput, setAnalyzeInput] = useState('')
+  const [analyzing, setAnalyzing] = useState(false)
+  const [analyzeResult, setAnalyzeResult] = useState<any | null>(null)
+  const [analyzeError, setAnalyzeError] = useState<string | null>(null)
+  const [analyzeGroupOverride, setAnalyzeGroupOverride] = useState<string>('')
 
   const { data: scanData, isLoading } = useQuery({
     queryKey: ['ai-tracker-scan'],
@@ -89,6 +93,14 @@ export default function AITracker() {
     staleTime: 60_000,
   })
 
+  // 动能 Top-4 列表（与 MomentumTab 共享缓存），manage tab 用来标记 🔥
+  const { data: momentumData } = useQuery({
+    queryKey: ['ai-momentum'],
+    queryFn: () => getAIMomentum(false),
+    staleTime: 30 * 60_000,
+    retry: false,
+  })
+
   const refresh = () => {
     setForcing(true)
     scanAITracker(true)
@@ -101,6 +113,34 @@ export default function AITracker() {
     discoverAISymbols(30)
       .then(() => { qc.invalidateQueries({ queryKey: ['ai-universe'] }); setDiscovering(false) })
       .catch(() => setDiscovering(false))
+  }
+
+  const runAnalyze = () => {
+    const sym = analyzeInput.trim().toUpperCase()
+    if (!sym) return
+    setAnalyzing(true)
+    setAnalyzeError(null)
+    setAnalyzeResult(null)
+    analyzeAISymbol(sym)
+      .then((d: any) => {
+        setAnalyzeResult(d)
+        setAnalyzeGroupOverride(d.suggest_group || '')
+        setAnalyzing(false)
+      })
+      .catch((e: any) => {
+        setAnalyzeError(e?.response?.data?.detail || e?.message || '分析失败')
+        setAnalyzing(false)
+      })
+  }
+
+  const confirmAddAnalyzed = () => {
+    if (!analyzeResult) return
+    const group = analyzeGroupOverride || analyzeResult.suggest_group
+    if (!group) return
+    addMutation.mutate(
+      { group, symbol: analyzeResult.symbol },
+      { onSuccess: () => { setAnalyzeResult(null); setAnalyzeInput(''); setAnalyzeGroupOverride('') } },
+    )
   }
 
   const removeMutation = useMutation({
@@ -130,15 +170,6 @@ export default function AITracker() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ai-universe'] }),
   })
 
-  const revenueMutation = useMutation({
-    mutationFn: ({ symbol, ai_pct, note }: { symbol: string; ai_pct: number; note: string }) =>
-      updateAIRevenue(symbol, ai_pct, note),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ['ai-tracker-scan'] })
-      setEditRevenue(null)
-    },
-  })
-
   const groups: Record<string, { label: string; color: string }> = scanData?.groups
     ? Object.fromEntries(
         Object.entries(scanData.groups as Record<string, string>).map(([k, label]) => [
@@ -148,10 +179,9 @@ export default function AITracker() {
     : {}
 
   const rows: any[] = scanData?.rows ?? []
-  const filteredRows = rows.filter(r => {
-    if (groupFilter !== 'all' && r.group !== groupFilter) return false
-    return true
-  })
+  const filteredRows = rows
+    .filter(r => groupFilter === 'all' || r.group === groupFilter)
+    .sort((a, b) => (b[sortBy] ?? -Infinity) - (a[sortBy] ?? -Infinity))
   const pending: any[] = universe?.pending_review ?? []
 
   return (
@@ -209,15 +239,33 @@ export default function AITracker() {
                 </button>
               ))}
             </div>
-            <div className="ml-auto text-xs text-slate-500">
-              共 {filteredRows.length} 只
+            <div className="ml-auto flex items-center gap-2 text-xs">
+              <span className="text-slate-500">排序：</span>
+              {(['score','mom_1d','mom_5d','mom_20d'] as const).map(k => (
+                <button key={k} onClick={() => setSortBy(k)}
+                  className={`px-2 py-1 rounded transition-colors ${
+                    sortBy === k ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-slate-200'}`}>
+                  {k === 'score' ? '评分' : k === 'mom_1d' ? '日涨' : k === 'mom_5d' ? '5日' : '20日'}
+                </button>
+              ))}
+              <span className="text-slate-500 ml-2">共 {filteredRows.length} 只</span>
             </div>
           </div>
 
-          {/* 评分说明 */}
-          <div className="text-xs text-slate-600 flex gap-3">
-            <span>评分 /15：</span>
-            <span>AI收入(3) Capex增速(2) NVDA联动(2) RS动量(2) 营收增速(2) AI新闻(1) 技术信号(3：突破+量能+趋势)</span>
+          {/* 评分说明 + 行高亮图例（CSS 变量驱动，浅/深主题自动对比） */}
+          <div className="text-xs text-slate-400 flex gap-4 flex-wrap items-center">
+            <span><span className="text-slate-500">评分 /10：</span> Capex增速(2) RS动量(2) 营收增速(2) AI新闻(1) 技术信号(3：突破+量能+趋势)</span>
+            <span className="flex items-center gap-2">
+              <span className="text-slate-500">行底色：</span>
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block w-3 h-3 rounded" style={{ background: 'rgba(245,158,11,0.35)' }} />
+                日涨 ≥ +5%
+              </span>
+              <span className="inline-flex items-center gap-1">
+                <span className="inline-block w-3 h-3 rounded" style={{ background: 'rgba(239,68,68,0.25)' }} />
+                日跌 ≥ -5%
+              </span>
+            </span>
           </div>
 
           {isLoading ? (
@@ -228,22 +276,33 @@ export default function AITracker() {
                 <thead>
                   <tr className="text-xs text-slate-400 border-b border-slate-700">
                     <th className="text-left px-4 py-2.5 font-medium">标的</th>
-                    <th className="text-center px-3 py-2.5 font-medium">评分/15</th>
+                    <th className="text-center px-3 py-2.5 font-medium">评分/10</th>
                     <th className="text-left px-3 py-2.5 font-medium">维度</th>
                     <th className="text-center px-3 py-2.5 font-medium">信号</th>
-                    <th className="text-right px-3 py-2.5 font-medium">AI营收</th>
+                    <th className="text-right px-3 py-2.5 font-medium">现价</th>
+                    <th className="text-right px-3 py-2.5 font-medium" title="最后一根日线 vs 前一根">日涨</th>
+                    <th className="text-right px-3 py-2.5 font-medium">5日</th>
+                    <th className="text-right px-3 py-2.5 font-medium">20日</th>
                     <th className="text-right px-3 py-2.5 font-medium">Capex增速</th>
-                    <th className="text-right px-3 py-2.5 font-medium">NVDA相关</th>
                     <th className="text-right px-3 py-2.5 font-medium">RS vs SPY</th>
                     <th className="text-right px-3 py-2.5 font-medium">营收增速</th>
                     <th className="text-right px-3 py-2.5 font-medium">市值</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {filteredRows.map((r: any) => (
-                    <tr key={r.symbol} className="border-b border-slate-700/50 hover:bg-slate-750 transition-colors">
+                  {filteredRows.map((r: any) => {
+                    const m1 = r.mom_1d ?? null
+                    // 直接 rgba，深/浅主题下对比度都足够
+                    const rowBg = m1 != null && m1 >= 0.05
+                      ? 'rgba(245,158,11,0.18)'   // 淡橙：日涨 ≥ +5%
+                      : m1 != null && m1 <= -0.05
+                        ? 'rgba(239,68,68,0.12)' // 淡红：日跌 ≥ -5%
+                        : undefined
+                    return (
+                    <tr key={r.symbol} style={{ background: rowBg }}
+                        className="border-b border-slate-700/50 hover:bg-slate-750 transition-colors">
                       <td className="px-4 py-2">
-                        <div className="font-medium text-white">{r.symbol}</div>
+                        <SymbolLink symbol={r.symbol} className="font-medium text-white" />
                         <GroupBadge label={r.group_label} color={r.group_color} />
                       </td>
                       <td className="px-3 py-2 text-center">
@@ -252,9 +311,12 @@ export default function AITracker() {
                       <td className="px-3 py-2">
                         <BreakdownBar bd={r.breakdown ?? {}} />
                       </td>
-                      {/* 技术信号列 */}
+                      {/* 技术信号列 + 🔥 异动 badge */}
                       <td className="px-3 py-2 text-center">
                         <div className="flex items-center justify-center gap-1">
+                          {m1 != null && m1 >= 0.10 && <span title={`今日大涨 ${(m1*100).toFixed(1)}%`} className="text-sm">🔥🔥</span>}
+                          {m1 != null && m1 >= 0.05 && m1 < 0.10 && <span title={`今日上涨 ${(m1*100).toFixed(1)}%`} className="text-sm">🔥</span>}
+                          {m1 != null && m1 <= -0.05 && <span title={`今日下跌 ${(m1*100).toFixed(1)}%`} className="text-sm">💧</span>}
                           {r.signal === 1 && (
                             <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-700 text-emerald-200 font-semibold">买</span>
                           )}
@@ -266,19 +328,21 @@ export default function AITracker() {
                           {r.uptrend  && <span title="趋势向上"   className="text-emerald-400 text-xs">↑</span>}
                         </div>
                       </td>
-                      <td className="px-3 py-2 text-right">
-                        <button
-                          title="点击编辑 AI 营收占比"
-                          onClick={() => setEditRevenue({ symbol: r.symbol, ai_pct: r.ai_revenue_pct ?? 0, note: r.ai_revenue_note ?? '' })}
-                          className={`font-mono text-xs hover:underline ${r.ai_revenue_pct ? 'text-emerald-400' : 'text-slate-500'}`}>
-                          {r.ai_revenue_pct != null ? pct(r.ai_revenue_pct, 0) : '待录入'}
-                        </button>
+                      {/* 现价 + 短期动量 */}
+                      <td className="px-3 py-2 text-right font-mono text-xs text-slate-300">
+                        {r.price != null ? r.price.toFixed(2) : '—'}
+                      </td>
+                      <td className={`px-3 py-2 text-right font-mono text-xs ${m1 == null ? 'text-slate-500' : m1 >= 0 ? 'text-emerald-400' : 'text-red-400'} ${m1 != null && Math.abs(m1) >= 0.05 ? 'font-bold' : ''}`}>
+                        {m1 != null ? pct(m1, 1) : '—'}
+                      </td>
+                      <td className={`px-3 py-2 text-right font-mono text-xs ${(r.mom_5d ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {r.mom_5d != null ? pct(r.mom_5d, 1) : '—'}
+                      </td>
+                      <td className={`px-3 py-2 text-right font-mono text-xs ${(r.mom_20d ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                        {r.mom_20d != null ? pct(r.mom_20d, 1) : '—'}
                       </td>
                       <td className={`px-3 py-2 text-right font-mono text-xs ${(r.capex_growth ?? 0) > 0 ? 'text-emerald-400' : 'text-slate-400'}`}>
                         {r.capex_growth != null ? pct(r.capex_growth, 0) : '—'}
-                      </td>
-                      <td className={`px-3 py-2 text-right font-mono text-xs ${(r.nvda_corr ?? 0) > 0.6 ? 'text-blue-400' : 'text-slate-400'}`}>
-                        {r.nvda_corr != null ? r.nvda_corr.toFixed(2) : '—'}
                       </td>
                       <td className={`px-3 py-2 text-right font-mono text-xs ${(r.rs_score ?? 0) > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
                         {r.rs_score != null ? pct(r.rs_score, 1) : '—'}
@@ -290,9 +354,10 @@ export default function AITracker() {
                         {fmt(r.market_cap_b)}
                       </td>
                     </tr>
-                  ))}
+                    )
+                  })}
                   {filteredRows.length === 0 && (
-                    <tr><td colSpan={9} className="text-center py-8 text-slate-500 text-sm">暂无数据，点击刷新获取</td></tr>
+                    <tr><td colSpan={12} className="text-center py-8 text-slate-500 text-sm">暂无数据，点击刷新获取</td></tr>
                   )}
                 </tbody>
               </table>
@@ -333,7 +398,9 @@ export default function AITracker() {
                 <tbody>
                   {pending.map((p: any) => (
                     <tr key={p.symbol} className="border-b border-slate-700/50">
-                      <td className="px-4 py-2 font-medium text-white">{p.symbol}</td>
+                      <td className="px-4 py-2">
+                        <SymbolLink symbol={p.symbol} className="font-medium text-white" />
+                      </td>
                       <td className="px-3 py-2 text-xs text-slate-400">{p.industry || p.sector || '—'}</td>
                       <td className="px-3 py-2 text-right font-mono text-xs text-slate-400">{fmt(p.market_cap_b)}</td>
                       <td className="px-3 py-2 text-right font-mono text-xs text-slate-400">
@@ -376,30 +443,111 @@ export default function AITracker() {
       )}
 
       {/* ── Tab: 管理股票池 ────────────────────────────────────── */}
-      {tab === 'manage' && (
+      {tab === 'manage' && (() => {
+        const rowsBySymbol = Object.fromEntries((rows as any[]).map(r => [r.symbol, r]))
+        const momentumBySymbol = Object.fromEntries(((momentumData as any)?.rows ?? []).map((r: any) => [r.symbol, r]))
+        const topSet = new Set<string>(((momentumData as any)?.top4 ?? []) as string[])
+        const ar = analyzeResult
+        const canAdd = ar && !ar.already_in_group && (analyzeGroupOverride || ar.suggest_group)
+        return (
         <div className="space-y-4">
+          {/* 手动分析 + 加入 */}
+          <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
+            <div className="flex items-center gap-2 mb-2">
+              <span className="text-sm font-medium text-white">手动加入</span>
+              <span className="text-xs text-slate-500">输入代码，自动识别行业并推荐分组</span>
+            </div>
+            <div className="flex gap-2">
+              <input value={analyzeInput} autoFocus
+                onChange={e => setAnalyzeInput(e.target.value.toUpperCase())}
+                onKeyDown={e => { if (e.key === 'Enter') runAnalyze() }}
+                placeholder="例如 NVTS"
+                className="flex-1 max-w-[200px] bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-sm text-white font-mono focus:outline-none focus:border-blue-500" />
+              <button onClick={runAnalyze} disabled={analyzing || !analyzeInput.trim()}
+                className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded text-white transition-colors">
+                {analyzing ? '分析中…' : '分析'}
+              </button>
+            </div>
+            {analyzeError && (
+              <div className="mt-2 text-xs text-red-400">{analyzeError}</div>
+            )}
+            {ar && (
+              <div className="mt-3 bg-slate-700/40 border border-slate-600 rounded p-3 space-y-2">
+                <div className="flex items-baseline gap-3 flex-wrap">
+                  <span className="text-base font-semibold text-white">{ar.symbol}</span>
+                  <span className="text-xs text-slate-400">{ar.industry || '—'}</span>
+                  <span className="text-xs text-slate-500">{ar.sector || '—'}</span>
+                  <span className="text-xs text-slate-300 font-mono">市值 {fmt(ar.market_cap_b)}</span>
+                  <span className="text-xs text-slate-300 font-mono">营收增速 {ar.revenue_growth != null ? pct(ar.revenue_growth, 0) : '—'}</span>
+                </div>
+                <div className="text-xs text-slate-300">{ar.reason}</div>
+                {!ar.already_in_group && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400">加入分组：</span>
+                    <select value={analyzeGroupOverride}
+                      onChange={e => setAnalyzeGroupOverride(e.target.value)}
+                      className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none">
+                      <option value="">— 选择分组 —</option>
+                      {Object.entries(groups).map(([gk, gv]) => (
+                        <option key={gk} value={gk}>
+                          {gv.label}{gk === ar.suggest_group ? '（推荐）' : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <button onClick={confirmAddAnalyzed} disabled={!canAdd || addMutation.isPending}
+                      className="px-3 py-1 text-xs bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 rounded text-white transition-colors">
+                      加入
+                    </button>
+                    <button onClick={() => { setAnalyzeResult(null); setAnalyzeError(null) }}
+                      className="px-2 py-1 text-xs text-slate-400 hover:text-slate-200">取消</button>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
           {Object.entries(groups).map(([gk, gv]) => {
             const syms: string[] = universe?.groups?.[gk]?.symbols ?? []
             return (
               <div key={gk} className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-                <div className="flex items-center justify-between mb-3">
-                  <div className="flex items-center gap-2">
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: gv.color }} />
-                    <span className="text-sm font-medium text-white">{gv.label}</span>
-                    <span className="text-xs text-slate-500">({syms.length} 只)</span>
-                  </div>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: gv.color }} />
+                  <span className="text-sm font-medium text-white">{gv.label}</span>
+                  <span className="text-xs text-slate-500">({syms.length} 只)</span>
                 </div>
-                <div className="flex flex-wrap gap-2">
-                  {syms.map(sym => (
-                    <span key={sym} className="inline-flex items-center gap-1 px-2 py-1 bg-slate-700 rounded text-xs text-slate-200">
-                      {sym}
-                      <button onClick={() => removeMutation.mutate(sym)}
-                        className="text-slate-500 hover:text-red-400 transition-colors ml-1">✕</button>
-                    </span>
-                  ))}
-                  {/* 添加按钮 */}
+                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
+                  {syms.map(sym => {
+                    const row = rowsBySymbol[sym] || {}
+                    const mom = momentumBySymbol[sym]
+                    const isTop = topSet.has(sym)
+                    return (
+                      <div key={sym}
+                        className="relative bg-slate-700/50 border border-slate-600/60 rounded-md p-2 hover:border-slate-500 transition-colors group">
+                        <button onClick={() => removeMutation.mutate(sym)}
+                          title="从池中移除"
+                          className="absolute top-1 right-1 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity text-xs leading-none">✕</button>
+                        <div className="flex items-baseline gap-1.5">
+                          <SymbolLink symbol={sym} className="font-semibold text-white text-sm" />
+                          {isTop && <span title="当前在动能 Top-4" className="text-xs">🔥</span>}
+                        </div>
+                        <div className="text-[10px] text-slate-400 mt-0.5 truncate" title={row.industry || ''}>
+                          {row.industry || row.sector || '—'}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 text-[10px]">
+                          <span className="text-slate-300 font-mono">{fmt(row.market_cap_b)}</span>
+                          {mom?.composite != null && (
+                            <span className={`font-mono ${mom.composite >= 7 ? 'text-emerald-400' : mom.composite >= 5 ? 'text-amber-400' : 'text-slate-500'}`}
+                              title="动能复合分">
+                              ⚡{mom.composite.toFixed(1)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                  {/* 添加按钮卡片 */}
                   {addForm?.group === gk ? (
-                    <span className="inline-flex items-center gap-1">
+                    <div className="bg-slate-700/30 border border-blue-500 rounded-md p-2 flex flex-col gap-1">
                       <input autoFocus value={addForm.symbol}
                         onChange={e => setAddForm({ ...addForm, symbol: e.target.value.toUpperCase() })}
                         onKeyDown={e => {
@@ -407,14 +555,17 @@ export default function AITracker() {
                           if (e.key === 'Escape') setAddForm(null)
                         }}
                         placeholder="TICKER"
-                        className="w-20 bg-slate-700 border border-blue-500 rounded px-2 py-1 text-xs text-white focus:outline-none" />
-                      <button onClick={() => addForm.symbol && addMutation.mutate({ group: gk, symbol: addForm.symbol })}
-                        className="text-xs px-1.5 py-1 bg-blue-600 hover:bg-blue-500 rounded text-white">+</button>
-                      <button onClick={() => setAddForm(null)} className="text-xs text-slate-500 hover:text-slate-300">✕</button>
-                    </span>
+                        className="bg-slate-700 border border-slate-600 rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-blue-500 font-mono" />
+                      <div className="flex gap-1">
+                        <button onClick={() => addForm.symbol && addMutation.mutate({ group: gk, symbol: addForm.symbol })}
+                          className="flex-1 text-xs py-0.5 bg-blue-600 hover:bg-blue-500 rounded text-white">添加</button>
+                        <button onClick={() => setAddForm(null)}
+                          className="text-xs px-2 text-slate-500 hover:text-slate-300">取消</button>
+                      </div>
+                    </div>
                   ) : (
                     <button onClick={() => setAddForm({ group: gk, symbol: '' })}
-                      className="px-2 py-1 text-xs rounded border border-dashed border-slate-600 text-slate-500 hover:border-blue-500 hover:text-blue-400 transition-colors">
+                      className="bg-slate-800 border border-dashed border-slate-600 hover:border-blue-500 hover:bg-slate-700/50 rounded-md p-2 text-xs text-slate-500 hover:text-blue-400 transition-colors flex items-center justify-center min-h-[68px]">
                       + 添加
                     </button>
                   )}
@@ -423,49 +574,12 @@ export default function AITracker() {
             )
           })}
         </div>
-      )}
-
-      {/* ── AI 营收占比编辑弹窗 ────────────────────────────────── */}
-      {editRevenue && (
-        <>
-          <div className="fixed inset-0 z-40 bg-black/50" onClick={() => setEditRevenue(null)} />
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <div className="bg-slate-800 border border-slate-600 rounded-xl shadow-2xl p-5 w-72 space-y-3">
-              <div className="text-sm font-medium text-white">{editRevenue.symbol} — AI 营收占比</div>
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">AI 营收占比 %</label>
-                <input type="number" min={0} max={100} step={1}
-                  value={Math.round(editRevenue.ai_pct * 100)}
-                  onChange={e => setEditRevenue({ ...editRevenue, ai_pct: Number(e.target.value) / 100 })}
-                  className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500" />
-              </div>
-              <div>
-                <label className="text-xs text-slate-400 block mb-1">备注（数据来源）</label>
-                <input value={editRevenue.note}
-                  onChange={e => setEditRevenue({ ...editRevenue, note: e.target.value })}
-                  placeholder="如：Data Center ~87% FY2025"
-                  className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500" />
-              </div>
-              <div className="flex gap-2 pt-1">
-                <button
-                  onClick={() => revenueMutation.mutate(editRevenue)}
-                  className="flex-1 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-white text-sm transition-colors">
-                  保存
-                </button>
-                <button onClick={() => setEditRevenue(null)}
-                  className="px-4 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-slate-300 text-sm transition-colors">
-                  取消
-                </button>
-              </div>
-            </div>
-          </div>
-        </>
-      )}
+        )
+      })()}
 
       {/* 说明 */}
       <div className="text-xs text-slate-600 space-y-0.5">
-        <div>· AI营收占比需手动维护（点击数值编辑），数据来源：公司财报/业绩会</div>
-        <div>· Capex增速/NVDA相关性/RS动量为实时计算，首次加载约需 1-2 分钟</div>
+        <div>· Capex增速/RS动量/新闻命中为实时计算，首次加载约需 1-2 分钟</div>
         <div>· 技术信号（⚡突破 ▲量能 ↑趋势）来自 RSMomentum，"买"=满足5个条件，"警"=量价背离</div>
         <div>· 市场扫描器 "AI产业链" 模式只跑 $10B–$500B（本追踪器含超大市值全覆盖）</div>
         <div>· 自动发现扫描 S&P500+NDX+Russell2000，过滤 $10B–$500B AI 相关标的</div>
@@ -616,16 +730,25 @@ function MomentumTab() {
           <div className="text-xs text-slate-400">Top-4 推荐</div>
           <div className="flex flex-wrap gap-1.5">
             {top4.map(s => (
-              <span key={s} className={`px-2 py-0.5 text-xs rounded font-mono ${
-                holdingsSet.has(s) ? 'bg-emerald-700 text-emerald-100' : 'bg-blue-700 text-blue-100'}`}>
+              <SymbolLink key={s} symbol={s}
+                className={`px-2 py-0.5 text-xs rounded font-mono ${
+                  holdingsSet.has(s) ? 'bg-emerald-700 text-emerald-100' : 'bg-blue-700 text-blue-100'}`}>
                 {s}{holdingsSet.has(s) && ' ✓'}
-              </span>
+              </SymbolLink>
             ))}
           </div>
           {(sellSuggest.length > 0 || buySuggest.length > 0) && holdingsSet.size > 0 && (
             <div className="text-[11px] text-slate-400 space-y-0.5 pt-1 border-t border-slate-700">
-              {sellSuggest.length > 0 && <div>卖出：<span className="text-red-400 font-mono">{sellSuggest.join(', ')}</span></div>}
-              {buySuggest.length > 0  && <div>换入：<span className="text-emerald-400 font-mono">{buySuggest.join(', ')}</span></div>}
+              {sellSuggest.length > 0 && (
+                <div>卖出：<span className="text-red-400 font-mono inline-flex gap-1">
+                  {sellSuggest.map(s => <SymbolLink key={s} symbol={s} className="text-red-400" />)}
+                </span></div>
+              )}
+              {buySuggest.length > 0 && (
+                <div>换入：<span className="text-emerald-400 font-mono inline-flex gap-1">
+                  {buySuggest.map(s => <SymbolLink key={s} symbol={s} className="text-emerald-400" />)}
+                </span></div>
+              )}
             </div>
           )}
         </div>
@@ -665,7 +788,7 @@ function MomentumTab() {
                 <tr key={r.symbol} className={`border-b border-slate-700/50 hover:bg-slate-750 ${isHold ? 'bg-slate-750/40' : ''}`}>
                   <td className="px-3 py-1.5 text-slate-500 text-xs">{idx + 1}</td>
                   <td className="px-3 py-1.5">
-                    <div className="font-medium text-white">{r.symbol}</div>
+                    <SymbolLink symbol={r.symbol} className="font-medium text-white" />
                     <GroupBadge label={r.group_label} color={r.group_color} />
                   </td>
                   <td className="px-2 py-1.5 text-center">
@@ -753,29 +876,34 @@ function GroupCard({ g, window, active, onClick }: { g: GroupSummary; window: '3
   const bg = intensity > 0
     ? `rgba(16, 185, 129, ${0.15 + Math.abs(intensity) * 0.35})`
     : `rgba(239, 68, 68, ${0.15 + Math.abs(intensity) * 0.35})`
+  const tone = rs5 >= 0 ? 'pos' : 'neg'
   return (
     <button onClick={onClick}
-      className={`text-left rounded-lg border p-2.5 transition-colors ${
+      className={`group-card group-card-${tone} text-left rounded-lg border p-2.5 transition-colors ${
         active ? 'border-blue-500' : 'border-slate-700 hover:border-slate-500'}`}
       style={{ background: bg }}>
       <div className="flex items-center gap-1.5 mb-1">
         <span className="w-2 h-2 rounded-full" style={{ background: g.color }} />
-        <span className="text-[11px] text-slate-200 font-medium truncate">{g.label}</span>
+        <span className="gc-label text-[11px] text-slate-200 font-medium truncate">{g.label}</span>
       </div>
-      <div className={`font-mono text-sm font-bold ${rs5 >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+      <div className={`gc-rs font-mono text-sm font-bold ${rs5 >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
         {pctFmt(g.median_rs_5d)}
       </div>
-      <div className="text-[10px] text-slate-400 mt-0.5">
-        涨 <span className="text-emerald-300">{g.advance}</span> / 跌 <span className="text-red-300">{g.decline}</span>
+      <div className="gc-ad text-[10px] text-slate-400 mt-0.5">
+        涨 <span className="gc-up text-emerald-300">{g.advance}</span> / 跌 <span className="gc-dn text-red-300">{g.decline}</span>
       </div>
       <div className="flex items-center gap-1 mt-1">
-        <span className={`text-[10px] px-1 rounded ${
+        <span className={`gc-flow text-[10px] px-1 rounded ${
           g.flow_signal === 'inflow' ? 'bg-emerald-900/60 text-emerald-300'
           : g.flow_signal === 'outflow' ? 'bg-red-900/60 text-red-300'
           : 'bg-slate-700 text-slate-400'}`}>
           {g.flow_signal === 'inflow' ? '净流入' : g.flow_signal === 'outflow' ? '净流出' : '中性'}
         </span>
-        <span className="text-[10px] text-slate-400 truncate">{g.leaders.slice(0, 2).map(l => l.symbol).join(' ')}</span>
+        <span className="gc-leaders text-[10px] text-slate-400 truncate inline-flex gap-1">
+          {g.leaders.slice(0, 2).map(l => (
+            <SymbolLink key={l.symbol} symbol={l.symbol} className="text-slate-400" />
+          ))}
+        </span>
         {/* 抑制 unused 警告 */}
         {window === '5d' && null}
       </div>

@@ -53,6 +53,7 @@ from web.api.watchlist  import router as watchlist_router
 from web.api.screener   import router as screener_router
 from web.api.comparison  import router as comparison_router
 from web.api.ai_tracker  import router as ai_tracker_router
+from web.api.single_backtest import router as single_backtest_router
 
 
 @asynccontextmanager
@@ -104,6 +105,7 @@ app.include_router(watchlist_router)
 app.include_router(screener_router)
 app.include_router(comparison_router)
 app.include_router(ai_tracker_router)
+app.include_router(single_backtest_router)
 
 
 @app.get('/api/health')

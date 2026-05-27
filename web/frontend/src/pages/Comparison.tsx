@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { getComparison } from '../api/client'
 import DatePicker, { dateToStr } from '../components/DatePicker'
+import SymbolLink from '../components/SymbolLink'
 
 // ── 预设对比组合（内置，不可删除）─────────────────────────
 const BUILTIN_PRESETS = [
@@ -427,7 +428,7 @@ export default function Comparison() {
                       <tr key={m.symbol} className="border-b border-slate-700/50">
                         <td className="py-2 pr-6">
                           <span className="inline-block w-2.5 h-2.5 rounded-full mr-2" style={{ background: color }} />
-                          <span className="font-medium text-white">{m.symbol}</span>
+                          <SymbolLink symbol={m.symbol} className="font-medium text-white" />
                         </td>
                         <td className="text-right py-2 px-4 text-slate-500 text-xs font-mono">
                           {m.base_date}<br />${m.base_price}

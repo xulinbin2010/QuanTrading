@@ -39,6 +39,23 @@ def get_universe():
     return load_universe()
 
 
+# NOTE: pending 字面路由必须在 /universe/{group}/{symbol} 之前注册，
+# 否则会被误匹配为 group="pending"。
+@router.post('/universe/pending/approve')
+def approve(symbol: str = Body(..., embed=True), group: str = Body(..., embed=True)):
+    try:
+        from web.services.ai_tracker_svc import approve_pending
+        return approve_pending(symbol, group)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post('/universe/pending/reject')
+def reject(symbol: str = Body(..., embed=True)):
+    from web.services.ai_tracker_svc import reject_pending
+    return reject_pending(symbol)
+
+
 @router.post('/universe/{group}/{symbol}')
 def add_symbol(group: str, symbol: str):
     try:
@@ -56,19 +73,14 @@ def remove_symbol(symbol: str):
     return remove_symbol_from_universe(symbol)
 
 
-@router.post('/universe/pending/approve')
-def approve(symbol: str = Body(..., embed=True), group: str = Body(..., embed=True)):
+@router.get('/analyze')
+def analyze(symbol: str = Query(...)):
+    """分析单只股票，返回推荐分组 + 决策依据（供管理股票池手动加入用）"""
     try:
-        from web.services.ai_tracker_svc import approve_pending
-        return approve_pending(symbol, group)
+        from web.services.ai_tracker_svc import analyze_symbol
+        return analyze_symbol(symbol)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post('/universe/pending/reject')
-def reject(symbol: str = Body(..., embed=True)):
-    from web.services.ai_tracker_svc import reject_pending
-    return reject_pending(symbol)
 
 
 @router.post('/discover')
@@ -81,15 +93,3 @@ def discover(limit: int = Query(20)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.put('/revenue/{symbol}')
-def update_revenue(
-    symbol: str,
-    ai_pct: float = Body(..., embed=True),
-    note: str = Body('', embed=True),
-):
-    """更新某只股票的 AI 营收占比（手动维护）"""
-    try:
-        from web.services.ai_tracker_svc import update_ai_revenue
-        return update_ai_revenue(symbol, ai_pct, note)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))

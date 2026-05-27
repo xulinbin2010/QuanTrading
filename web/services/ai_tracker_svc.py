@@ -2,13 +2,12 @@
 
 三大子主题：GPU/算力芯片 | 数据中心/网络 | 电力/冷却/能源
 
-核心指标（6 维，满分 12）：
-  1. AI 营收占比   (3pt)  >50%=3, >25%=2, >10%=1
-  2. Capex YoY 增速 (2pt) >50%=2, >20%=1
-  3. NVDA 价格相关性 (2pt) >0.8=2, >0.6=1
-  4. RS vs SPY 60日 (2pt) >10%=2, >0%=1
-  5. 营收增速 YoY  (2pt)  >30%=2, >10%=1
-  6. 新闻/叙事评分  (1pt) 近30天 AI 关键词命中 ≥3 条
+核心指标（4 维 + 技术信号，满分 10）：
+  1. Capex YoY 增速 (2pt) >50%=2, >20%=1
+  2. RS vs SPY 60日 (2pt) >10%=2, >0%=1
+  3. 营收增速 YoY  (2pt)  >30%=2, >10%=1
+  4. 新闻/叙事评分  (1pt) 近30天 AI 关键词命中 ≥3 条
+  5. 技术信号       (3pt) 突破(1) + 量能(1) + 趋势(1)
 """
 from __future__ import annotations
 import os
@@ -22,6 +21,8 @@ import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 from pathlib import Path
+
+import pandas as pd
 
 
 def _clean_floats(obj):
@@ -46,11 +47,12 @@ _logger = logging.getLogger(__name__)
 ROOT = Path(__file__).resolve().parents[2]
 
 _AI_UNIVERSE_FILE    = ROOT / 'data' / 'ai_universe.json'
-_AI_REVENUE_FILE     = ROOT / 'data' / 'ai_revenue_share.json'
 _AI_CACHE_FILE       = ROOT / 'data' / 'ai_tracker_cache.json'
 _AI_CAPEX_CACHE      = ROOT / 'data' / '.ai_capex_cache.pkl'
-_AI_CACHE_TTL_HOURS  = 4   # 4 小时缓存
+_AI_NEWS_CACHE       = ROOT / 'data' / '.ai_news_cache.pkl'
+_AI_CACHE_TTL_HOURS  = 1   # 1 小时缓存（短期动量列要求更新及时）
 _AI_CAPEX_TTL_DAYS   = 7   # capex 缓存 7 天（财报数据，更新慢）
+_AI_NEWS_TTL_HOURS   = 12  # news 缓存 12 小时（新闻日更，半天足够）
 
 # 后台扫描状态
 _ai_scan_running: dict[str, bool] = {}
@@ -72,24 +74,6 @@ def save_universe(data: dict):
     _AI_UNIVERSE_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(_AI_UNIVERSE_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
-
-
-def load_ai_revenue() -> dict:
-    if not _AI_REVENUE_FILE.exists():
-        return {}
-    with open(_AI_REVENUE_FILE, encoding='utf-8') as f:
-        return json.load(f).get('data', {})
-
-
-def save_ai_revenue(data: dict):
-    raw = {}
-    if _AI_REVENUE_FILE.exists():
-        with open(_AI_REVENUE_FILE, encoding='utf-8') as f:
-            raw = json.load(f)
-    raw['data'] = data
-    raw['_updated'] = datetime.now().strftime('%Y-%m-%d')
-    with open(_AI_REVENUE_FILE, 'w', encoding='utf-8') as f:
-        json.dump(raw, f, ensure_ascii=False, indent=2)
 
 
 # ── 数据计算 ──────────────────────────────────────────────────
@@ -152,34 +136,6 @@ def _batch_capex_growth(symbols: list[str]) -> dict[str, float | None]:
     return {s: cache.get(s) for s in symbols}
 
 
-def _calc_nvda_correlation(sym: str, days: int = 60, price_map: dict | None = None) -> float | None:
-    """计算与 NVDA 的价格相关性（日收益率）。
-    price_map 为预加载的 {sym: df}，避免逐股调 DataStore。
-    """
-    if sym == 'NVDA':
-        return 1.0
-    try:
-        if price_map is None:
-            from core.data_store import DataStore
-            from datetime import date, timedelta
-            store = DataStore()
-            start = str(date.today() - timedelta(days=days + 10))
-            price_map = store.get([sym, 'NVDA'], start=start, auto_update=False)
-
-        if sym not in price_map or 'NVDA' not in price_map:
-            return None
-        s_close = price_map[sym]['close'].pct_change().dropna()
-        n_close = price_map['NVDA']['close'].pct_change().dropna()
-        common = s_close.index.intersection(n_close.index)
-        if len(common) < 20:
-            return None
-        # 限制窗口
-        common = common[-days:]
-        corr = float(s_close.loc[common].corr(n_close.loc[common]))
-        return round(corr, 3)
-    except Exception:
-        return None
-
 
 def _calc_rs(sym: str) -> float | None:
     """63 日 RS vs SPY"""
@@ -196,30 +152,81 @@ def _calc_rs(sym: str) -> float | None:
         return None
 
 
-def _news_score(sym: str) -> int:
-    """近 30 天 AI 关键词新闻命中数（用现有 stock_news_cache）"""
+def _load_news_cache() -> dict:
+    """加载 AI 新闻命中数缓存，12 小时 TTL。"""
+    if not _AI_NEWS_CACHE.exists():
+        return {}
     try:
-        cache_path = ROOT / '.stock_news_cache.pkl'
-        if not cache_path.exists():
-            return 0
-        with open(cache_path, 'rb') as f:
-            cache = pickle.load(f)
-        news_list = cache.get('data', {}).get(sym, [])
+        with open(_AI_NEWS_CACHE, 'rb') as f:
+            stored = pickle.load(f)
+        if datetime.now() - stored.get('_time', datetime.min) < timedelta(hours=_AI_NEWS_TTL_HOURS):
+            return stored.get('data', {})
+    except Exception:
+        pass
+    return {}
+
+
+def _save_news_cache(data: dict):
+    _AI_NEWS_CACHE.parent.mkdir(parents=True, exist_ok=True)
+    with open(_AI_NEWS_CACHE, 'wb') as f:
+        pickle.dump({'_time': datetime.now(), 'data': data}, f)
+
+
+def _fetch_news_count_one(sym: str) -> tuple[str, int]:
+    """单只股票：从 yfinance 拉近期新闻，统计 30 天内 AI 关键词命中数（上限 5）。"""
+    try:
+        import yfinance as yf
+        news_list = yf.Ticker(sym).news or []
         cutoff = datetime.now() - timedelta(days=30)
         count = 0
         for item in news_list:
             try:
-                pub = item.get('providerPublishTime', 0)
-                if pub and datetime.fromtimestamp(pub) < cutoff:
+                # yfinance v0.2+ 返回 {'content': {...}}，旧版直接平铺
+                content = item.get('content', item)
+                pub_ts  = content.get('pubDate') or item.get('providerPublishTime')
+                if isinstance(pub_ts, str):
+                    pub_dt = datetime.fromisoformat(pub_ts.replace('Z', '+00:00')).replace(tzinfo=None)
+                elif isinstance(pub_ts, (int, float)) and pub_ts > 0:
+                    pub_dt = datetime.fromtimestamp(pub_ts)
+                else:
                     continue
-                title = (item.get('title', '') + ' ' + item.get('summary', '')).lower()
-                if any(kw in title for kw in _AI_KEYWORDS):
+                if pub_dt < cutoff:
+                    continue
+                title   = (content.get('title') or item.get('title') or '').lower()
+                summary = (content.get('summary') or item.get('summary') or '').lower()
+                if any(kw in (title + ' ' + summary) for kw in _AI_KEYWORDS):
                     count += 1
             except Exception:
                 pass
-        return min(count, 5)
+        return sym, min(count, 5)
     except Exception:
-        return 0
+        return sym, 0
+
+
+def _batch_news_scores(symbols: list[str]) -> dict[str, int]:
+    """并发拉新闻命中数，带 12 小时缓存。"""
+    cache = _load_news_cache()
+    need  = [s for s in symbols if s not in cache]
+    if need:
+        _logger.info(f'[AITracker] 拉新闻 {len(need)} 只（缓存命中 {len(symbols)-len(need)}）...')
+        with ThreadPoolExecutor(max_workers=10) as ex:
+            futs = [ex.submit(_fetch_news_count_one, s) for s in need]
+            for fut in as_completed(futs):
+                try:
+                    sym, count = fut.result()
+                    cache[sym] = count
+                except Exception:
+                    pass
+        _save_news_cache(cache)
+    return {s: cache.get(s, 0) for s in symbols}
+
+
+def _news_score(sym: str) -> int:
+    """兼容接口：单股新闻分（不走缓存，仅作为 fallback）。
+    生产路径优先用 _batch_news_scores 在扫描前预拉一次。
+    """
+    _, count = _fetch_news_count_one(sym)
+    return count
 
 
 def _calc_tech_signals(sym: str, price_map: dict | None = None) -> dict:
@@ -246,39 +253,30 @@ def _calc_tech_signals(sym: str, price_map: dict | None = None) -> dict:
         return {}
 
 
-def _score_ai(ai_pct: float | None, capex_growth: float | None,
-              nvda_corr: float | None, rs: float | None,
+def _score_ai(capex_growth: float | None,
+              rs: float | None,
               rev_growth: float | None, news: int,
               tech: dict | None = None) -> tuple[int, dict]:
     score = 0
     bd = {}
 
-    # 1. AI 营收占比
-    s = 3 if (ai_pct or 0) > 0.50 else (2 if (ai_pct or 0) > 0.25 else (1 if (ai_pct or 0) > 0.10 else 0))
-    score += s; bd['ai_revenue'] = s
-
-    # 2. Capex 增速
+    # 1. Capex 增速
     s = 2 if (capex_growth or 0) > 0.50 else (1 if (capex_growth or 0) > 0.20 else 0)
     score += s; bd['capex_growth'] = s
 
-    # 3. NVDA 相关性
-    c = nvda_corr or 0
-    s = 2 if c > 0.80 else (1 if c > 0.60 else 0)
-    score += s; bd['nvda_corr'] = s
-
-    # 4. RS vs SPY
+    # 2. RS vs SPY
     s = 2 if (rs or 0) > 0.10 else (1 if (rs or 0) > 0 else 0)
     score += s; bd['rs'] = s
 
-    # 5. 营收增速
+    # 3. 营收增速
     s = 2 if (rev_growth or 0) > 0.30 else (1 if (rev_growth or 0) > 0.10 else 0)
     score += s; bd['rev_growth'] = s
 
-    # 6. 新闻评分
+    # 4. 新闻评分
     s = 1 if news >= 3 else 0
     score += s; bd['news'] = s
 
-    # 7. 技术信号（满分 3）：突破 + 量能 + 趋势
+    # 5. 技术信号（满分 3）：突破 + 量能 + 趋势
     if tech:
         s = (1 if tech.get('breakout') else 0) + \
             (1 if tech.get('vol_surge') else 0) + \
@@ -360,7 +358,6 @@ def _do_ai_scan() -> dict:
     from datetime import date, timedelta as _td
 
     universe   = load_universe()
-    ai_revenue = load_ai_revenue()
     groups     = universe.get('groups', {})
 
     all_syms: list[str] = []
@@ -378,11 +375,23 @@ def _do_ai_scan() -> dict:
     insider_map = get_insider_buys(days=90, min_value_k=50)
     rs_map      = _batch_rs(all_syms)
     capex_map   = _batch_capex_growth(all_syms)
+    news_map    = _batch_news_scores(all_syms)
 
-    # 批量价格预加载（130 天，覆盖 NVDA 相关性 + RSMomentum 信号）
+    # 批量价格预加载（130 天，覆盖 RSMomentum 信号 + 短期动量计算）
+    # auto_update=True：确保拉到最新收盘（解决"指标延迟"问题）
     store     = DataStore()
     start_d   = str(date.today() - _td(days=130))
-    price_map = store.get(list(set(all_syms + ['NVDA'])), start=start_d, auto_update=False)
+    price_map = store.get(all_syms, start=start_d, auto_update=True)
+
+    def _mom(closes, lookback: int):
+        """计算 close[-1] vs close[-1-lookback] 的涨跌幅；样本不足返回 None。"""
+        if closes is None or len(closes) <= lookback:
+            return None
+        cur = closes.iloc[-1]
+        ref = closes.iloc[-1 - lookback]
+        if ref == 0 or pd.isna(ref) or pd.isna(cur):
+            return None
+        return float(cur / ref - 1.0)
 
     rows = []
     for sym in all_syms:
@@ -390,17 +399,22 @@ def _do_ai_scan() -> dict:
         ins      = insider_map.get(sym, {})
         gk       = sym_to_group[sym]
         gv       = groups[gk]
-        ai_data  = ai_revenue.get(sym, {})
-        ai_pct   = ai_data.get('ai_pct')
 
         capex_g  = capex_map.get(sym)
-        nvda_c   = _calc_nvda_correlation(sym, price_map=price_map)
         rs       = rs_map.get(sym)
-        news     = _news_score(sym)
+        news     = news_map.get(sym, 0)
         rev_g    = info.get('revenue_growth')
         tech     = _calc_tech_signals(sym, price_map=price_map)
 
-        total, bd = _score_ai(ai_pct, capex_g, nvda_c, rs, rev_g, news, tech)
+        # 价格 / 短期动量（解决"看不到 MU 单日 19% 异动"问题）
+        df_sym   = price_map.get(sym)
+        closes   = df_sym['close'] if df_sym is not None and not df_sym.empty else None
+        price    = float(closes.iloc[-1]) if closes is not None and len(closes) else None
+        mom_1d   = _mom(closes, 1)
+        mom_5d   = _mom(closes, 5)
+        mom_20d  = _mom(closes, 20)
+
+        total, bd = _score_ai(capex_g, rs, rev_g, news, tech)
 
         rows.append({
             'symbol':          sym,
@@ -409,10 +423,11 @@ def _do_ai_scan() -> dict:
             'group_color':     gv.get('color', '#94a3b8'),
             'score':           total,
             'breakdown':       bd,
-            'ai_revenue_pct':  ai_pct,
-            'ai_revenue_note': ai_data.get('note', ''),
+            'price':           price,
+            'mom_1d':          mom_1d,
+            'mom_5d':          mom_5d,
+            'mom_20d':         mom_20d,
             'capex_growth':    round(capex_g, 3) if capex_g is not None else None,
-            'nvda_corr':       nvda_c,
             'rs_score':        rs,
             'news_score':      news,
             'revenue_growth':  rev_g,
@@ -480,6 +495,9 @@ def add_symbol_to_universe(symbol: str, group: str) -> dict:
     sym = symbol.upper().strip()
     if sym not in syms:
         syms.append(sym)
+    # 用户显式加入 → 从 rejected 黑名单移除（恢复其候选资格）
+    if 'rejected' in u and sym in u['rejected']:
+        u['rejected'] = [s for s in u['rejected'] if s != sym]
     save_universe(u)
     # 使下次扫描强制刷新
     if _AI_CACHE_FILE.exists():
@@ -488,6 +506,9 @@ def add_symbol_to_universe(symbol: str, group: str) -> dict:
 
 
 def remove_symbol_from_universe(symbol: str) -> dict:
+    """从池中移除某只，并自动加入 rejected 黑名单
+    （下次 auto_discover 不会再推荐它；如需恢复，用 add_symbol_to_universe）。
+    """
     u = load_universe()
     sym = symbol.upper().strip()
     for gv in u['groups'].values():
@@ -495,6 +516,10 @@ def remove_symbol_from_universe(symbol: str) -> dict:
             gv['symbols'].remove(sym)
     # 从待审核移除
     u['pending_review'] = [p for p in u.get('pending_review', []) if p.get('symbol') != sym]
+    # 加入黑名单
+    rejected = u.setdefault('rejected', [])
+    if sym not in rejected:
+        rejected.append(sym)
     save_universe(u)
     if _AI_CACHE_FILE.exists():
         _AI_CACHE_FILE.unlink()
@@ -510,30 +535,145 @@ def approve_pending(symbol: str, group: str) -> dict:
 
 
 def reject_pending(symbol: str) -> dict:
+    """忽略待审核 → 从 pending_review 移除并加入 rejected 黑名单"""
     u = load_universe()
-    u['pending_review'] = [p for p in u.get('pending_review', []) if p.get('symbol') != symbol.upper()]
+    sym = symbol.upper().strip()
+    u['pending_review'] = [p for p in u.get('pending_review', []) if p.get('symbol') != sym]
+    rejected = u.setdefault('rejected', [])
+    if sym not in rejected:
+        rejected.append(sym)
     save_universe(u)
     return u
 
 
 # ── 自动发现 ──────────────────────────────────────────────────
 
+# 候选发现关键词（用户已剔除软件股，所以 software / IT services / 通信运营商 等不纳入）
 _AI_SECTOR_KEYWORDS = {
-    'semiconductors', 'semiconductor equipment', 'information technology',
-    'electronic equipment', 'data center', 'it services', 'cloud', 'software',
-    'utilities', 'electrical', 'diversified utilities',
+    'semiconductors', 'semiconductor equipment',
+    'electronic equipment',
 }
 
 _AI_INDUSTRY_KEYWORDS = {
-    'semiconductor', 'data center', 'computer hardware', 'cloud computing',
-    'application software', 'information technology services', 'electronic components',
-    'electrical equipment', 'independent power', 'renewable electricity',
+    'semiconductor', 'semiconductor equipment', 'semiconductor materials',
+    'computer hardware', 'electronic components', 'communication equipment',
+    'electrical equipment', 'independent power', 'renewable electricity', 'uranium',
 }
 
-_AI_COMPANY_KEYWORDS = {
-    'ai', 'artificial intelligence', 'gpu', 'data center', 'accelerat',
-    'machine learning', 'inference', 'cloud', 'hyperscale', 'nvidia',
+# 明确排除的行业（即使前述关键词命中，命中这些也直接跳过）
+_DENY_INDUSTRY_KEYWORDS = {
+    'software', 'information technology services', 'telecom',
+    'entertainment', 'advertising', 'internet retail',
+    'utilities - regulated',  # 通用电网/水/气，与 AI 用电关联弱
+    'oil & gas', 'gas distribution',
+    'capital markets',        # 投行/券商
 }
+
+
+def _suggest_group(industry: str, sector: str) -> str | None:
+    """根据 industry/sector 推测最匹配的子组 key（对齐当前 universe 的 8 个子组）。
+
+    返回 None 表示该公司不适合任何 AI 子组（auto_discover 应跳过）。
+    """
+    ind = (industry or '').lower()
+    sec = (sector or '').lower()
+
+    # 1. 半导体设备/材料/封测 — 优先级最高，避免被 semiconductor 抢走
+    if 'semiconductor equipment' in ind or 'semiconductor materials' in ind:
+        return 'semicon_equip'
+
+    # 2. 半导体/芯片 — 默认归 gpu_compute，DRAM/NAND 需要用户手动调到 memory_storage
+    if 'semiconductor' in ind:
+        return 'gpu_compute'
+
+    # 3. 通信设备 / 电子组件 — 归 ai_networking
+    if 'communication equipment' in ind or 'electronic components' in ind:
+        return 'ai_networking'
+
+    # 4. 计算机硬件 — 归 datacenter_infra
+    if 'computer hardware' in ind:
+        return 'datacenter_infra'
+
+    # 5. 数据中心 REIT
+    if 'reit' in ind and ('specialty' in ind or 'industrial' in ind or 'data' in ind):
+        return 'datacenter_infra'
+
+    # 6. 互联网平台 / 云服务（用户保留 AMZN/GOOGL 这类）
+    if 'internet content' in ind or 'internet retail' in ind:
+        return 'hyperscalers'
+
+    # 7. 电力 / 能源 / 数据中心承包商
+    if any(kw in ind for kw in [
+        'independent power', 'utilities - renewable', 'renewable',
+        'electrical equipment', 'fuel cell', 'uranium',
+    ]):
+        return 'power_cooling'
+    if any(kw in ind for kw in [
+        'specialty industrial', 'engineering & construction',
+    ]):
+        return 'power_cooling'
+
+    return None
+
+
+def analyze_symbol(symbol: str) -> dict:
+    """分析单只股票，返回推荐分组及决策依据。供「管理股票池」手动加入时使用。
+
+    返回字段：
+      symbol / sector / industry / market_cap_b / revenue_growth
+      suggest_group     推荐分组 key（None 表示不适合任何子组）
+      suggest_label     推荐分组中文名
+      already_in_group  若已存在于某分组，返回 group key，否则 None
+      denied            命中 DENY 行业关键词时为 True
+      reason            人类可读的决策说明
+    """
+    from core.universe import get_stock_info
+
+    sym = symbol.upper().strip()
+    info_map = get_stock_info([sym])
+    info = info_map.get(sym, {})
+
+    sector   = (info.get('sector') or '').strip()
+    industry = (info.get('industry') or '').strip()
+    cap      = info.get('market_cap_b')
+    rev_g    = info.get('revenue_growth')
+
+    u = load_universe()
+    already_in = None
+    for gk, gv in u['groups'].items():
+        if sym in [s.upper() for s in gv['symbols']]:
+            already_in = gk
+            break
+
+    ind_lc = industry.lower()
+    sec_lc = sector.lower()
+    denied = any(kw in ind_lc for kw in _DENY_INDUSTRY_KEYWORDS)
+    suggest_group = None if denied else _suggest_group(ind_lc, sec_lc)
+    suggest_label = u['groups'][suggest_group]['label'] if suggest_group and suggest_group in u['groups'] else None
+
+    if not info or (not industry and not sector):
+        reason = f'未获取到 {sym} 的行业信息（yfinance 可能查不到，可能是新股/退市/拼写错误）'
+    elif already_in:
+        reason = f'{sym} 已在分组「{u["groups"][already_in]["label"]}」'
+    elif denied:
+        reason = f'行业 "{industry}" 命中排除关键词（软件/通信运营/油气/投行/通用公用事业等），不建议纳入'
+    elif suggest_group is None:
+        reason = f'行业 "{industry}" 与 8 个 AI 子组都不匹配，可手动选择或不加入'
+    else:
+        reason = f'根据行业 "{industry}" 推荐分组「{suggest_label}」'
+
+    return {
+        'symbol':           sym,
+        'sector':           sector or None,
+        'industry':         industry or None,
+        'market_cap_b':     cap,
+        'revenue_growth':   rev_g,
+        'suggest_group':    suggest_group,
+        'suggest_label':    suggest_label,
+        'already_in_group': already_in,
+        'denied':           denied,
+        'reason':           reason,
+    }
 
 
 def auto_discover(limit: int = 20) -> list[dict]:
@@ -546,6 +686,8 @@ def auto_discover(limit: int = 20) -> list[dict]:
     for gv in u['groups'].values():
         existing.update(s.upper() for s in gv['symbols'])
     existing.update(p['symbol'] for p in u.get('pending_review', []))
+    # 用户已 reject / remove 过的，不再纳入候选
+    existing.update(s.upper() for s in u.get('rejected', []))
 
     sp500   = set(get_sp500_tickers())
     ndx     = set(get_nasdaq100_tickers())
@@ -565,6 +707,10 @@ def auto_discover(limit: int = 20) -> list[dict]:
         sector   = (info.get('sector') or '').lower()
         industry = (info.get('industry') or '').lower()
 
+        # Deny 优先：明确排除软件/IT 服务/通用电力/油气/投行等
+        if any(kw in industry for kw in _DENY_INDUSTRY_KEYWORDS):
+            continue
+
         hit_industry = any(kw in industry for kw in _AI_INDUSTRY_KEYWORDS)
         hit_sector   = any(kw in sector for kw in _AI_SECTOR_KEYWORDS)
         if not (hit_industry or hit_sector):
@@ -575,15 +721,9 @@ def auto_discover(limit: int = 20) -> list[dict]:
         if cap < 10.0 or cap > 500.0:
             continue
 
-        # 推测子主题
-        if any(kw in industry for kw in ('semiconductor', 'electronic component')):
-            suggest_group = 'gpu_chips'
-        elif any(kw in industry for kw in ('data center', 'cloud', 'computer hardware', 'application software', 'information technology')):
-            suggest_group = 'datacenter_network'
-        elif any(kw in industry for kw in ('power', 'utilities', 'electrical', 'renewable')):
-            suggest_group = 'power_cooling'
-        else:
-            suggest_group = 'datacenter_network'
+        suggest_group = _suggest_group(industry, sector)
+        if suggest_group is None:
+            continue   # 无法归到 8 个子组任何一个，跳过
 
         suggestions.append({
             'symbol':         sym,
@@ -609,15 +749,3 @@ def auto_discover(limit: int = 20) -> list[dict]:
     return suggestions
 
 
-def update_ai_revenue(symbol: str, ai_pct: float, note: str = '') -> dict:
-    """更新单只股票的 AI 营收占比"""
-    data = load_ai_revenue()
-    data[symbol.upper()] = {
-        'ai_pct': ai_pct,
-        'note': note,
-        'updated': datetime.now().strftime('%Y-%m'),
-    }
-    save_ai_revenue(data)
-    if _AI_CACHE_FILE.exists():
-        _AI_CACHE_FILE.unlink()
-    return data

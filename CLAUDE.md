@@ -34,6 +34,14 @@ Always respond in Chinese (中文). Do not mix Korean or other languages into re
   - 用法：`import DatePicker from '../components/DatePicker'`，props：`value: string`、`onChange: (v: string) => void`、`label?: string`
   - 工具函数 `dateToStr(d: Date): string` 和 `strToDate(s: string): Date | undefined` 也从该文件导出，可按需导入
 
+- **股票代码显示（弹 K 线 modal）**：所有页面任何显示股票代码的位置都必须用 `<SymbolLink symbol="NVDA" />`，**不要**直接渲染 `{symbol}` 纯文本。
+  - 用法：`import SymbolLink from '../components/SymbolLink'`
+  - Props：`symbol: string`（必填）、`className?: string`（覆盖默认样式）、`children?: ReactNode`（自定义显示内容）、`title?: string`
+  - 默认行为：点击 stopPropagation + 调用 `useStockChart().openChart(symbol)`，弹出全局共享 K 线 modal（含 MA10/20 + 成交量 + 因子 + 基本面 + 分析师 tab）
+  - 与行级点击共存示例：表格行 `onClick` 仍可触发其他动作（如持仓详情），symbol 单独点会因 stopPropagation 只弹 K 线
+  - 全局 modal 由 `<StockChartProvider>` 在 `App.tsx` 注入，无需在子组件再包一层
+  - 不要再写本地 StockDetailPanel / K 线弹窗组件，统一复用 `components/StockChartModal.tsx`
+
 ---
 
 ## UI/Theme Conventions

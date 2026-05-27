@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getFactorRegistry, updateFactor, scanFactors, previewFactorSignals, checkTrailStops, getPositions } from '../api/client'
+import SymbolLink from '../components/SymbolLink'
 
 // ── RSMomentum 策略买入条件模板（desc/param 由注册表参数动态填充） ──
 const BUY_CONDITION_TEMPLATES = [
@@ -149,12 +150,13 @@ function SignalTags({ signals, color }: { signals: any[]; color: 'green' | 'red'
   return (
     <div className="flex flex-wrap gap-1.5">
       {signals.map((r: any) => (
-        <span key={r.symbol} className={`px-2 py-0.5 rounded text-xs border font-mono ${cls}`}>
+        <SymbolLink key={r.symbol} symbol={r.symbol}
+          className={`px-2 py-0.5 rounded text-xs border font-mono ${cls}`}>
           {r.symbol}
           {r.rs_score != null && (
             <span className="ml-1 opacity-60">{(r.rs_score * 100).toFixed(0)}%</span>
           )}
-        </span>
+        </SymbolLink>
       ))}
     </div>
   )
@@ -387,7 +389,7 @@ export default function FactorDashboard() {
                   }`}
                 >
                   <div className="flex items-center justify-between mb-1">
-                    <span className="font-mono font-medium text-white">{r.symbol}</span>
+                    <SymbolLink symbol={r.symbol} className="font-mono font-medium text-white" />
                     <span className={`px-2 py-0.5 rounded text-xs font-medium ${
                       triggered ? 'bg-red-700 text-red-100'
                       : watching ? 'bg-yellow-700 text-yellow-100'

@@ -4,6 +4,7 @@ import { runBacktest, runWalkForward, getBacktestStatus, getBacktestResult, getB
 import type { FactorCombo } from '../api/client'
 import ReactECharts from 'echarts-for-react'
 import DatePicker from '../components/DatePicker'
+import SymbolLink from '../components/SymbolLink'
 
 const PERIODS = ['1mo', '3mo', '6mo', '1y']
 
@@ -124,7 +125,7 @@ function BacktestResult({ taskId }: { taskId: string }) {
             <tbody>
               {trades.map((t: any, i: number) => (
                 <tr key={i} className="border-b border-slate-700/50 hover:bg-slate-700/30">
-                  <td className="px-3 py-1.5 font-mono text-white">{t.symbol}</td>
+                  <td className="px-3 py-1.5"><SymbolLink symbol={t.symbol} className="font-mono text-white" /></td>
                   <td className="px-3 py-1.5 text-slate-400">{t.entry_date}</td>
                   <td className="px-3 py-1.5 text-slate-400">{t.exit_date}</td>
                   <td className="px-3 py-1.5 text-slate-400">{t.days_held != null ? `${t.days_held}天` : '-'}</td>
@@ -158,7 +159,7 @@ function BacktestResult({ taskId }: { taskId: string }) {
               <tbody>
                 {result.open_positions.map((p: any) => (
                   <tr key={p.symbol} className="border-b border-slate-700/50">
-                    <td className="px-3 py-1.5 font-mono text-white">{p.symbol}</td>
+                    <td className="px-3 py-1.5"><SymbolLink symbol={p.symbol} className="font-mono text-white" /></td>
                     <td className="px-3 py-1.5 text-slate-400">{p.entry_date}</td>
                     <td className="px-3 py-1.5 font-mono">${p.entry_price.toFixed(2)}</td>
                     <td className="px-3 py-1.5 font-mono">${p.cur_price.toFixed(2)}</td>

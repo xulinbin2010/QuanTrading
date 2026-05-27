@@ -206,11 +206,30 @@ export const removeAISymbol    = (symbol: string) =>
   api.delete(`/ai/universe/${symbol}`).then(r => r.data)
 export const discoverAISymbols = (limit = 20) =>
   api.post('/ai/discover', null, { params: { limit }, timeout: 120_000 }).then(r => r.data)
+export const analyzeAISymbol   = (symbol: string) =>
+  api.get('/ai/analyze', { params: { symbol }, timeout: 30_000 }).then(r => r.data)
 export const approveAIPending  = (symbol: string, group: string) =>
   api.post('/ai/universe/pending/approve', { symbol, group }).then(r => r.data)
 export const rejectAIPending   = (symbol: string) =>
   api.post('/ai/universe/pending/reject', { symbol }).then(r => r.data)
-export const updateAIRevenue   = (symbol: string, ai_pct: number, note: string) =>
-  api.put(`/ai/revenue/${symbol}`, { ai_pct, note }).then(r => r.data)
 export const getAIMomentum     = (force = false) =>
   api.get('/ai/momentum', { params: { force }, timeout: 120_000 }).then(r => r.data)
+
+// 单股回测（EMA21 补仓）
+export type SingleBacktestParams = {
+  symbol: string; start: string; end: string
+  initial_cash?: number; base_pct?: number
+  add_size_mult?: number; max_adds?: number
+  touch_tol?: number; sell_atr_mult?: number
+  stop_ema_period?: number; ema_fast?: number
+  entry_mode?: 'rs_momentum' | 'ema_relaxed'
+  allow_margin?: boolean; max_leverage?: number; margin_rate?: number
+}
+export const runSingleBacktest    = (params: SingleBacktestParams) =>
+  api.post('/single-bt/run', params).then(r => r.data as { task_id: string })
+export const getSingleBtStatus    = (task_id: string) =>
+  api.get(`/single-bt/status/${task_id}`).then(r => r.data)
+export const getSingleBtResult    = (task_id: string) =>
+  api.get(`/single-bt/result/${task_id}`).then(r => r.data)
+export const getSingleBtHistory   = (limit = 30) =>
+  api.get('/single-bt/history', { params: { limit } }).then(r => r.data as { items: any[] })

@@ -3,6 +3,7 @@ import type { KeyboardEvent } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getWatchlist, addToWatchlist, removeFromWatchlist, getStockDetail } from '../api/client'
 import ReactECharts from 'echarts-for-react'
+import SymbolLink from '../components/SymbolLink'
 
 // ── 辅助组件（与 MarketScan 保持一致） ────────────────────
 
@@ -156,7 +157,7 @@ function StockCard({ symbol, onRemove }: { symbol: string; onRemove: () => void 
     <div className="bg-slate-800 rounded-xl border border-slate-700 overflow-hidden">
       {/* 卡片头部 */}
       <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-700">
-        <span className="font-mono font-bold text-white text-base">{symbol}</span>
+        <SymbolLink symbol={symbol} className="font-mono font-bold text-white text-base" />
 
         {/* 信号徽标 */}
         {isLoading ? (

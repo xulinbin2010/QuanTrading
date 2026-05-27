@@ -269,6 +269,58 @@ html.day .factor-tag-selected .factor-tag-key,
 html.night .factor-tag-selected .factor-tag-key {
   color: #1d4ed8;                             /* blue-700 */
 }
+html.day .group-card,
+html.night .group-card {
+  /* 浅色背景叠加深色文字，提高对比度 */
+}
+/* 正向（绿）卡片在浅色下：标签 / 数值 / 涨家数 / 流入标签 用深绿 */
+html.day .group-card-pos .gc-label,
+html.night .group-card-pos .gc-label {
+  color: #064e3b;                              /* emerald-900 */
+}
+html.day .group-card-pos .gc-rs,
+html.night .group-card-pos .gc-rs {
+  color: #047857;                              /* emerald-700 */
+}
+html.day .group-card-pos .gc-up,
+html.night .group-card-pos .gc-up {
+  color: #047857;
+}
+/* 负向（红）卡片在浅色下：用深红 */
+html.day .group-card-neg .gc-label,
+html.night .group-card-neg .gc-label {
+  color: #7f1d1d;                              /* red-900 */
+}
+html.day .group-card-neg .gc-rs,
+html.night .group-card-neg .gc-rs {
+  color: #b91c1c;                              /* red-700 */
+}
+html.day .group-card-neg .gc-dn,
+html.night .group-card-neg .gc-dn {
+  color: #b91c1c;
+}
+/* 跌家数（绿卡内的红字）/ 涨家数（红卡内的绿字） */
+html.day .group-card .gc-dn,
+html.night .group-card .gc-dn {
+  color: #b91c1c;
+}
+html.day .group-card .gc-up,
+html.night .group-card .gc-up {
+  color: #047857;
+}
+html.day .group-card .gc-ad,
+html.night .group-card .gc-ad,
+html.day .group-card .gc-leaders,
+html.night .group-card .gc-leaders {
+  color: #334155;                              /* slate-700 */
+}
+/* flow 标签：浅色下提升对比 */
+html.day .group-card .gc-flow,
+html.night .group-card .gc-flow {
+  background: rgba(255, 255, 255, 0.55);
+  color: #1f2937;                              /* slate-800 */
+}
+
 html.day .factor-tag-selected .factor-tag-signal,
 html.night .factor-tag-selected .factor-tag-signal {
   color: #1d4ed8;

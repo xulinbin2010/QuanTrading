@@ -69,7 +69,15 @@ DEFAULT_TASKS = [
         'command':  f'{PYTHON} -m web.services.astock_momentum_svc --mode theme',
         'cron_expr': '30 16 * * 1-5',  # 北京 周一至五 16:30（A股收盘后约 1.5 小时，数据已结算稳定）
         'enabled':  False,
-        'description': 'A股交易日收盘后增量更新主题板块行情（sina源，约120只）并重建主题扫描缓存',
+        'description': 'A股交易日收盘后用实时快照补当日 bar 并重建主题扫描缓存',
+    },
+    {
+        'task_id':  'astock_refresh',
+        'name':     'A股次日复核（正式日线覆盖）',
+        'command':  f'{PYTHON} -m web.services.astock_momentum_svc --mode theme --refresh',
+        'cron_expr': '30 7 * * 2-6',   # 北京 周二至六 07:30，复核前一交易日数据
+        'enabled':  False,
+        'description': '次日早重拉 sina 正式前复权日线，覆盖前一日盘后快照补的原始价 bar，保证数据最终准确',
     },
 ]
 

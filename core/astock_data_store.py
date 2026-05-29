@@ -321,6 +321,39 @@ class AStockDataStore:
         except Exception:
             return False
 
+    def refresh_recent(self, codes: list[str], days: int = 15) -> int:
+        """重拉最近 N 天正式前复权日线并覆盖本地（次日复核用：把前一日的快照原始价 bar
+        换成 sina 正式 qfq 数据）。返回处理只数。"""
+        start = (date.today() - timedelta(days=days)).strftime('%Y-%m-%d')
+        n = 0
+        for code in dict.fromkeys(str(c).zfill(6) for c in codes if c not in INDEX_SYMBOLS):
+            fresh = self._download(code, start)
+            if fresh.empty:
+                continue
+            local = self._load_local(code)
+            if local is None or local.empty or 'volume' not in local.columns:
+                fresh.to_parquet(self._path(code))
+            else:
+                merged = pd.concat([local, fresh])
+                merged = merged[~merged.index.duplicated(keep='last')].sort_index()  # fresh 覆盖重叠
+                merged.to_parquet(self._path(code))
+            n += 1
+        return n
+
+    def refresh_index(self, key: str) -> bool:
+        """重拉指数日线覆盖缓存（次日复核基准）。"""
+        if key not in INDEX_SYMBOLS:
+            return False
+        try:
+            raw = ak.stock_zh_index_daily(symbol=INDEX_SYMBOLS[key])
+            raw['date'] = pd.to_datetime(raw['date'])
+            df = raw.set_index('date').sort_index()[['open', 'high', 'low', 'close', 'volume']]
+            df.to_parquet(self.stocks_dir / f'_idx_{key}.parquet')
+            return True
+        except Exception as e:
+            _logger.warning(f'[AStock] 指数 {key} 复核重拉失败：{e}')
+            return False
+
     # ── 主入口 ──
     def get(self, symbols: list[str], start: str = '2023-01-01',
             end: str | None = None, auto_update: bool = True,

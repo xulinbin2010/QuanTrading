@@ -184,20 +184,29 @@ def _trend_quality(close: pd.Series, ema7_s: pd.Series, n: int = 20) -> dict:
     return {'trend_score': round(score, 2), 'ema7_hold': round(hold, 2), 'trend_r2': round(r2_eff, 2)}
 
 
-def _do_scan(mode: str) -> dict:
+def _do_scan(mode: str, refresh: bool = False) -> dict:
     groups_cfg, sym_to_group, code_names = _build_groups(mode)
     all_syms = list(sym_to_group.keys())
     _logger.info(f'[AStockMomentum/{mode}] 扫描 {len(all_syms)} 只...')
 
     store = AStockDataStore()
-    # 当日补齐：sina 历史日K对当天有延迟，盘后先用实时快照把当天 bar 补进本地
-    try:
-        n = store.topup_today_from_spot(all_syms)
-        store.topup_index_today(_BENCHMARK)
-        if n:
-            _logger.info(f'[AStockMomentum/{mode}] 实时快照补当日 {n} 只')
-    except Exception as e:
-        _logger.warning(f'[AStockMomentum/{mode}] 当日补齐失败：{e}')
+    if refresh:
+        # 次日复核：重拉最近正式前复权日线，覆盖前一日快照补的原始价 bar
+        try:
+            m = store.refresh_recent(all_syms, days=15)
+            store.refresh_index(_BENCHMARK)
+            _logger.info(f'[AStockMomentum/{mode}] 次日复核重拉 {m} 只')
+        except Exception as e:
+            _logger.warning(f'[AStockMomentum/{mode}] 次日复核失败：{e}')
+    else:
+        # 当日补齐：sina 历史日K对当天有延迟，盘后先用实时快照把当天 bar 补进本地
+        try:
+            n = store.topup_today_from_spot(all_syms)
+            store.topup_index_today(_BENCHMARK)
+            if n:
+                _logger.info(f'[AStockMomentum/{mode}] 实时快照补当日 {n} 只')
+        except Exception as e:
+            _logger.warning(f'[AStockMomentum/{mode}] 当日补齐失败：{e}')
     start_d = str(date.today() - timedelta(days=90))
     price_map = store.get(all_syms + [_BENCHMARK], start=start_d, auto_update=True)
 
@@ -430,12 +439,15 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='A 股盘后数据更新 + 扫描缓存重建')
     parser.add_argument('--mode', choices=['sw', 'theme', 'all'], default='all',
                         help='更新哪种模式的缓存（默认全部）')
+    parser.add_argument('--refresh', action='store_true',
+                        help='次日复核：重拉正式前复权日线覆盖前一日快照 bar（次日早任务用）')
     args = parser.parse_args()
     modes = ['theme', 'sw'] if args.mode == 'all' else [args.mode]
+    tag = '次日复核' if args.refresh else '盘后更新'
     for _m in modes:
-        _logger.info(f'[AStockUpdate] 开始更新 {_m} ...')
+        _logger.info(f'[AStockUpdate/{tag}] 开始 {_m} ...')
         try:
-            _r = _do_scan(_m)
-            _logger.info(f'[AStockUpdate] {_m} 完成：rows={len(_r.get("rows", []))} groups={len(_r.get("groups", []))}')
+            _r = _do_scan(_m, refresh=args.refresh)
+            _logger.info(f'[AStockUpdate/{tag}] {_m} 完成：rows={len(_r.get("rows", []))} groups={len(_r.get("groups", []))}')
         except Exception as _e:
-            _logger.error(f'[AStockUpdate] {_m} 失败：{_e}', exc_info=True)
+            _logger.error(f'[AStockUpdate/{tag}] {_m} 失败：{_e}', exc_info=True)

@@ -191,12 +191,15 @@ def _do_scan(mode: str) -> dict:
         above_ema7 = last_close >= ema7
         above_ema21 = last_close >= ema21
         ema_state = 'strong' if above_ema7 and above_ema21 else ('weak' if above_ema21 else 'broken')
+        # 流通市值（亿元）= 收盘价 × 流通股本；无股本数据时为 None
+        shares = df['shares'].iloc[-1] if 'shares' in df.columns else None
+        market_cap = (last_close * float(shares) / 1e8) if (shares is not None and not pd.isna(shares)) else None
         gk = sym_to_group[sym]
         raw_rows.append({
             'symbol': sym, 'name': code_names.get(sym, sym),
             'group': gk, 'group_label': groups_cfg[gk]['label'],
             'group_color': groups_cfg[gk].get('color', '#94a3b8'),
-            'close': last_close,
+            'close': last_close, 'market_cap': market_cap,
             'mom_3d': mom_3d, 'mom_5d': mom_5d, 'mom_10d': mom_10d,
             'rs_3d': rs_3d, 'rs_5d': rs_5d, 'rs_10d': rs_10d,
             'vol_ratio': vr, 'obv_slope': flow['obv_slope'],
@@ -348,4 +351,31 @@ def get_astock_detail(code: str, days: int = 120) -> dict:
             'ma_slow': float(ma20.iloc[i]) if not pd.isna(ma20.iloc[i]) else None,
             'rs_score': float(rs_series.iloc[i]) if (rs_series is not None and not pd.isna(rs_series.iloc[i])) else None,
         })
-    return _clean_floats({'ohlcv': ohlcv[-days:], 'factors': factors[-days:], 'fundamental': {}})
+
+    # 个股信息条：名称 + 所属板块 + 申万行业 + 最新动能/均线状态（替代 A 股无效的突破/放量因子）
+    from core import astock_universe as _au
+    close = df['close']
+    last_close = float(close.iloc[-1])
+    ema7v = float(close.ewm(span=7, adjust=False).mean().iloc[-1])
+    ema21v = float(close.ewm(span=21, adjust=False).mean().iloc[-1])
+    ema_state = 'strong' if (last_close >= ema7v and last_close >= ema21v) else ('weak' if last_close >= ema21v else 'broken')
+    mom_5d, mom_20d = _pct_change(close, 5), _pct_change(close, 20)
+    rs_5d = None
+    if bench is not None and not bench.empty:
+        b5 = _pct_change(bench['close'], 5)
+        if mom_5d is not None and b5 is not None:
+            rs_5d = mom_5d - b5
+    _, group_label = _au.theme_group_of(code)
+    shares = df['shares'].iloc[-1] if 'shares' in df.columns else None
+    market_cap = (last_close * float(shares) / 1e8) if (shares is not None and not pd.isna(shares)) else None
+    info = {
+        'name': _au.get_astock_names([code]).get(code, code),
+        'group_label': group_label,
+        'sw_industry': _au.sw3_industry_of(code),
+        'ema_state': ema_state,
+        'mom_5d': mom_5d, 'mom_20d': mom_20d,
+        'vol_ratio': _vol_ratio(df, short=3, long=20),
+        'rs_5d': rs_5d, 'close': last_close, 'market_cap': market_cap,
+    }
+    return _clean_floats({'ohlcv': ohlcv[-days:], 'factors': factors[-days:],
+                          'fundamental': {}, 'info': info})

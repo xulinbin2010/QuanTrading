@@ -163,9 +163,13 @@ type Mode = 'sw' | 'theme'
 export default function AStockTracker() {
   const qc = useQueryClient()
   const [mode, setMode] = useState<Mode>('theme')
-  const [window, setWindow] = useState<'3d' | '5d' | '10d'>('5d')
+  const [window, setWindow] = useState<'composite' | '3d' | '5d' | '10d'>('composite')
   const [groupFilter, setGroupFilter] = useState<string>('all')
   const [emaFilter, setEmaFilter] = useState<'all' | 'ema7' | 'ema21'>('ema21')
+  const [priceMin, setPriceMin] = useState('')
+  const [priceMax, setPriceMax] = useState('')
+  const [capMin, setCapMin] = useState('')
+  const [capMax, setCapMax] = useState('')
   const [forcing, setForcing] = useState(false)
   // 添加股票面板
   const [addCode, setAddCode] = useState('')
@@ -234,13 +238,26 @@ export default function AStockTracker() {
       .finally(() => setBusy(false))
   }
 
-  const filteredRows = rows.filter(r =>
-    (groupFilter === 'all' || r.group === groupFilter) &&
-    (emaFilter === 'all' || (emaFilter === 'ema7' ? r.above_ema7 : r.above_ema21))
-  )
+  const numOr = (s: string, d: number) => { const n = parseFloat(s); return Number.isFinite(n) ? n : d }
+  const pMin = numOr(priceMin, -Infinity), pMax = numOr(priceMax, Infinity)
+  const cMin = numOr(capMin, -Infinity), cMax = numOr(capMax, Infinity)
+  const filteredRows = rows.filter(r => {
+    if (!(groupFilter === 'all' || r.group === groupFilter)) return false
+    if (!(emaFilter === 'all' || (emaFilter === 'ema7' ? r.above_ema7 : r.above_ema21))) return false
+    if (r.close != null && (r.close < pMin || r.close > pMax)) return false
+    // 市值缺失（如申万模式部分股票）不参与过滤，避免误删
+    if ((capMin !== '' || capMax !== '') && r.market_cap != null && (r.market_cap < cMin || r.market_cap > cMax)) return false
+    return true
+  })
   const hiddenByEma = emaFilter === 'all' ? 0
-    : rows.filter(r => groupFilter === 'all' || r.group === groupFilter).length - filteredRows.length
+    : rows.filter(r => groupFilter === 'all' || r.group === groupFilter).length
+      - rows.filter(r => (groupFilter === 'all' || r.group === groupFilter) && (emaFilter === 'ema7' ? r.above_ema7 : r.above_ema21)).length
+  const filtersActive = priceMin !== '' || priceMax !== '' || capMin !== '' || capMax !== ''
+  const fmtCap = (v: number | null | undefined) =>
+    v == null ? '—' : v >= 10000 ? (v / 10000).toFixed(2) + '万亿' : Math.round(v) + '亿'
   const rsField = window === '3d' ? 'rs_3d' : window === '10d' ? 'rs_10d' : 'rs_5d'
+  const sortField = window === '3d' ? 'mom_3d' : window === '5d' ? 'mom_5d' : window === '10d' ? 'mom_10d' : 'composite'
+  const sortedRows = [...filteredRows].sort((a, b) => (b[sortField] ?? -Infinity) - (a[sortField] ?? -Infinity))
 
   return (
     <div className="space-y-4">
@@ -252,7 +269,7 @@ export default function AStockTracker() {
             akshare 数据 · 沪深300 基准 · 申万行业轮动 + 主题板块
             {benchmark && (
               <span className="ml-2 text-slate-600">
-                沪深300 3日{pctFmt(benchmark.mom_3d)} / 5日{pctFmt(benchmark.mom_5d)} / 20日{pctFmt(benchmark.mom_10d)}
+                沪深300 3日{pctFmt(benchmark.mom_3d)} / 5日{pctFmt(benchmark.mom_5d)} / 10日{pctFmt(benchmark.mom_10d)}
               </span>
             )}
           </p>
@@ -347,17 +364,55 @@ export default function AStockTracker() {
                   {l}
                 </button>
               ))}
-              <span className="text-xs text-slate-500 ml-2">窗口：</span>
-              {(['3d','5d','10d'] as const).map(w => (
+              <span className="text-xs text-slate-500 ml-2">排序：</span>
+              {([['composite','综合分'],['3d','3日'],['5d','5日'],['10d','10日']] as const).map(([w, l]) => (
                 <button key={w} onClick={() => setWindow(w)}
                   className={`px-2 py-1 text-xs rounded ${window === w ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-slate-200'}`}>
-                  {w}
+                  {l}
                 </button>
               ))}
               <span className="text-slate-500 ml-1 text-xs">
                 共 {filteredRows.length} 只{hiddenByEma > 0 && <span className="text-slate-600">（破位隐藏 {hiddenByEma}）</span>}
               </span>
             </div>
+          </div>
+
+          {/* 价格 / 市值 过滤 */}
+          <div className="flex items-center gap-x-5 gap-y-2 flex-wrap bg-slate-800/40 rounded-lg border border-slate-700/60 px-3 py-2">
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-slate-400 w-12">价格</span>
+              <input value={priceMin} onChange={e => setPriceMin(e.target.value.replace(/[^\d.]/g, ''))}
+                placeholder="不限" inputMode="decimal"
+                className="w-16 px-1.5 py-1 text-xs text-right bg-slate-900 border border-slate-600 rounded text-slate-200 outline-none focus:border-blue-500" />
+              <span className="text-slate-500 text-xs">–</span>
+              <input value={priceMax} onChange={e => setPriceMax(e.target.value.replace(/[^\d.]/g, ''))}
+                placeholder="不限" inputMode="decimal"
+                className="w-16 px-1.5 py-1 text-xs text-right bg-slate-900 border border-slate-600 rounded text-slate-200 outline-none focus:border-blue-500" />
+              <span className="text-[11px] text-slate-500">元</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-slate-400 w-12">市值</span>
+              <input value={capMin} onChange={e => setCapMin(e.target.value.replace(/[^\d.]/g, ''))}
+                placeholder="不限" inputMode="decimal"
+                className="w-16 px-1.5 py-1 text-xs text-right bg-slate-900 border border-slate-600 rounded text-slate-200 outline-none focus:border-blue-500" />
+              <span className="text-slate-500 text-xs">–</span>
+              <input value={capMax} onChange={e => setCapMax(e.target.value.replace(/[^\d.]/g, ''))}
+                placeholder="不限" inputMode="decimal"
+                className="w-16 px-1.5 py-1 text-xs text-right bg-slate-900 border border-slate-600 rounded text-slate-200 outline-none focus:border-blue-500" />
+              <span className="text-[11px] text-slate-500">亿（流通）</span>
+              <div className="flex gap-1 ml-1">
+                {([['全部', '', ''], ['小盘≤300', '', '300'], ['中盘300-1500', '300', '1500'], ['大盘≥1500', '1500', '']] as const).map(([l, a, b]) => (
+                  <button key={l} onClick={() => { setCapMin(a); setCapMax(b) }}
+                    className={`px-1.5 py-0.5 text-[11px] rounded ${capMin === a && capMax === b ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-slate-200'}`}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {filtersActive && (
+              <button onClick={() => { setPriceMin(''); setPriceMax(''); setCapMin(''); setCapMax('') }}
+                className="text-xs text-slate-400 hover:text-slate-200 underline ml-auto">重置筛选</button>
+            )}
           </div>
 
           {/* 个股动能表格 */}
@@ -367,10 +422,12 @@ export default function AStockTracker() {
                 <tr className="text-xs text-slate-400 border-b border-slate-700">
                   <th className="text-left px-3 py-2.5 font-medium">代码</th>
                   <th className="text-left px-3 py-2.5 font-medium">名称</th>
+                  <th className="text-right px-2 py-2.5 font-medium">现价</th>
+                  <th className="text-right px-2 py-2.5 font-medium">市值</th>
                   <th className="text-center px-2 py-2.5 font-medium">综合分</th>
                   <th className="text-right px-2 py-2.5 font-medium">3日</th>
                   <th className="text-right px-2 py-2.5 font-medium">5日</th>
-                  <th className="text-right px-2 py-2.5 font-medium">20日</th>
+                  <th className="text-right px-2 py-2.5 font-medium">10日</th>
                   <th className="text-right px-2 py-2.5 font-medium">vs300</th>
                   <th className="text-right px-2 py-2.5 font-medium">组内</th>
                   <th className="text-right px-2 py-2.5 font-medium">量比</th>
@@ -381,13 +438,15 @@ export default function AStockTracker() {
                 </tr>
               </thead>
               <tbody>
-                {filteredRows.map((r: any, idx: number) => (
+                {sortedRows.map((r: any, idx: number) => (
                   <tr key={r.symbol} className="border-b border-slate-700/50 hover:bg-slate-750 transition-colors">
                     <td className="px-3 py-1.5 text-slate-500 text-xs">{idx + 1}
                       <SymbolLink symbol={r.symbol} market="a"
                         className="ml-1.5 font-mono font-medium text-white text-sm" />
                     </td>
                     <td className="px-3 py-1.5 text-xs text-slate-400 max-w-[80px] truncate">{r.name}</td>
+                    <td className="px-2 py-1.5 text-right font-mono text-xs text-slate-300">{r.close != null ? r.close.toFixed(2) : '—'}</td>
+                    <td className="px-2 py-1.5 text-right font-mono text-xs text-slate-400">{fmtCap(r.market_cap)}</td>
                     <td className="px-2 py-1.5 text-center"><CompositeBadge score={r.composite} /></td>
                     <td className={`px-2 py-1.5 text-right font-mono text-xs ${pctColor(r.mom_3d)} ${window === '3d' ? 'bg-blue-900/20' : ''}`}>{pctFmt(r.mom_3d)}</td>
                     <td className={`px-2 py-1.5 text-right font-mono text-xs ${pctColor(r.mom_5d)} ${window === '5d' ? 'bg-blue-900/20' : ''}`}>{pctFmt(r.mom_5d)}</td>
@@ -414,7 +473,7 @@ export default function AStockTracker() {
                   </tr>
                 ))}
                 {filteredRows.length === 0 && !isLoading && (
-                  <tr><td colSpan={mode === 'theme' ? 13 : 12} className="text-center py-8 text-slate-500 text-sm">暂无数据，点击刷新扫描</td></tr>
+                  <tr><td colSpan={mode === 'theme' ? 15 : 14} className="text-center py-8 text-slate-500 text-sm">暂无数据，点击刷新扫描</td></tr>
                 )}
               </tbody>
             </table>

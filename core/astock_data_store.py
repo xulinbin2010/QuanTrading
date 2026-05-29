@@ -117,21 +117,23 @@ def _normalize_hist_tx(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _normalize_hist_sina(df: pd.DataFrame) -> pd.DataFrame:
-    """sina 源 stock_zh_a_daily 列（date/open/high/low/close/volume/amount/...）→ 标准 OHLCV。"""
+    """sina 源 stock_zh_a_daily 列（date/open/high/low/close/volume/amount/outstanding_share/...）
+    → 标准 OHLCV + shares（流通股本，用于算流通市值）。"""
     if df is None or df.empty:
         return pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
     out = df.copy()
     out.columns = [str(c).lower() for c in out.columns]
     if 'date' not in out.columns:
         return pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
-    keep = ['date', 'open', 'high', 'low', 'close', 'volume']
+    keep = ['date', 'open', 'high', 'low', 'close', 'volume', 'outstanding_share']
     out = out[[c for c in keep if c in out.columns]].copy()
     out['date'] = pd.to_datetime(out['date'])
     out = out.set_index('date').sort_index()
-    for c in ['open', 'high', 'low', 'close', 'volume']:
+    for c in ['open', 'high', 'low', 'close', 'volume', 'outstanding_share']:
         if c in out.columns:
             out[c] = pd.to_numeric(out[c], errors='coerce')
-    return out.dropna()
+    out = out.rename(columns={'outstanding_share': 'shares'})
+    return out.dropna(subset=['open', 'high', 'low', 'close', 'volume'])
 
 
 class AStockDataStore:

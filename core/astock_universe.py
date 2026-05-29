@@ -290,3 +290,26 @@ def remove_theme_stock(code: str) -> dict:
     if removed:
         save_themes(data)
     return {'ok': removed, 'code': code}
+
+
+def theme_group_of(code: str) -> tuple[str | None, str | None]:
+    """该股所属主题板块 (key, label)；不在任何板块返回 (None, None)。"""
+    code = str(code).zfill(6)
+    for gk, gv in load_themes().get('groups', {}).items():
+        if code in [str(s).zfill(6) for s in gv.get('symbols', [])]:
+            return gk, gv.get('label')
+    return None, None
+
+
+def sw3_industry_of(code: str) -> str | None:
+    """从已构建的申万三级反查缓存取该股的申万三级行业名（只读缓存，不触发网络构建）。"""
+    code = str(code).zfill(6)
+    if not _SW3_CACHE.exists():
+        return None
+    try:
+        with open(_SW3_CACHE, 'rb') as f:
+            st = pickle.load(f)
+        info = st.get('data', {}).get(code)
+        return SW3_NAMES.get(info['sw3']) if info else None
+    except Exception:
+        return None

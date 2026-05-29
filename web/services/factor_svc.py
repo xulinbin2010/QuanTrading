@@ -616,6 +616,8 @@ def get_stock_factors(symbol: str, days: int = 120) -> dict:
 
     return {
         "symbol": symbol,
+        "industry": info.get('industry'),
+        "sector": info.get('sector'),
         "ohlcv": ohlcv,
         "factors": factors_list,
         "fundamental": fundamental,

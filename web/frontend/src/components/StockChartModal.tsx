@@ -13,6 +13,14 @@ function BoolIcon({ v }: { v: boolean }) {
   return v ? <span className="text-green-400">✓</span> : <span className="text-slate-600">✗</span>
 }
 
+function EmaStateBadge({ state }: { state?: string }) {
+  const cfg = state === 'strong' ? { t: '强 · 站上EMA7/21', c: 'text-emerald-400' }
+    : state === 'weak' ? { t: '破EMA7', c: 'text-amber-400' }
+    : state === 'broken' ? { t: '破EMA21', c: 'text-red-400' }
+    : { t: '-', c: 'text-slate-500' }
+  return <span className={`text-sm font-semibold ${cfg.c}`}>{cfg.t}</span>
+}
+
 function RsBar({ v }: { v: number }) {
   const pct = Math.min(Math.max((v + 0.5) / 1 * 100, 0), 100)
   const color = v > 0.1 ? '#22c55e' : v > 0 ? '#86efac' : v > -0.1 ? '#fca5a5' : '#ef4444'
@@ -128,7 +136,10 @@ export default function StockChartModal({ symbol, market = 'us', onClose }: {
 
         {/* 标题栏 */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700 shrink-0">
-          <div className="text-white font-semibold">{symbol} {isAStock ? '🇨🇳' : ''} — 个股详情</div>
+          <div className="text-white font-semibold">
+            {data?.info?.name && <span>{data.info.name} </span>}
+            <span className="font-mono text-sm text-slate-400">{symbol}</span> {isAStock ? '🇨🇳' : ''} — 个股详情
+          </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white text-lg leading-none">✕</button>
         </div>
 
@@ -159,16 +170,40 @@ export default function StockChartModal({ symbol, market = 'us', onClose }: {
               {isError   && <div className="text-red-400 text-sm py-8 text-center">加载失败</div>}
               {data && (() => {
                 const last = data.factors[data.factors.length - 1]
+                const info = data.info ?? {}
+                const showIndustry = isAStock ? (info.group_label || info.sw_industry) : (data.sector || data.industry)
                 return (
                   <>
-                    {/* 技术因子状态 */}
+                    {/* 所属板块 / 行业 */}
+                    {showIndustry && (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        {isAStock ? (
+                          <>
+                            {info.group_label && <span className="px-2 py-0.5 rounded text-xs bg-blue-900/50 text-blue-300 font-medium">{info.group_label}</span>}
+                            {info.sw_industry && <span className="text-xs text-slate-400">申万行业：{info.sw_industry}</span>}
+                          </>
+                        ) : (
+                          <>
+                            {data.sector && <span className="px-2 py-0.5 rounded text-xs bg-blue-900/50 text-blue-300 font-medium">{data.sector}</span>}
+                            {data.industry && <span className="text-xs text-slate-400">{data.industry}</span>}
+                          </>
+                        )}
+                      </div>
+                    )}
+
+                    {/* 技术指标状态 */}
                     <div className="grid grid-cols-4 gap-3">
-                      {[
+                      {(isAStock ? [
+                        { label: 'RS（沪深300·5日）', value: <FmtPct v={info.rs_5d} /> },
+                        { label: '均线状态',          value: <EmaStateBadge state={info.ema_state} /> },
+                        { label: '5日涨跌',           value: <FmtPct v={info.mom_5d} /> },
+                        { label: '20日涨跌',          value: <FmtPct v={info.mom_20d} /> },
+                      ] : [
                         { label: 'RS 分数',  value: <RsBar v={last.rs_score ?? 0} /> },
                         { label: '趋势向上', value: <BoolIcon v={last.uptrend} /> },
                         { label: '价格突破', value: <BoolIcon v={last.breakout} /> },
                         { label: '放量',     value: <BoolIcon v={last.vol_surge} /> },
-                      ].map(({ label, value }) => (
+                      ]).map(({ label, value }) => (
                         <div key={label} className="bg-slate-700/50 rounded p-2">
                           <div className="text-xs text-slate-400 mb-1">{label}</div>
                           <div>{value}</div>

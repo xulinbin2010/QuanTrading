@@ -65,11 +65,11 @@ DEFAULT_TASKS = [
     },
     {
         'task_id':  'astock_update',
-        'name':     'A股盘后数据更新 + 扫描',
-        'command':  f'{PYTHON} -m web.services.astock_momentum_svc',
+        'name':     'A股盘后数据更新 + 扫描（主题板块）',
+        'command':  f'{PYTHON} -m web.services.astock_momentum_svc --mode theme',
         'cron_expr': '30 16 * * 1-5',  # 北京 周一至五 16:30（A股收盘后约 1.5 小时，数据已结算稳定）
         'enabled':  False,
-        'description': 'A股交易日收盘后增量更新行情（sina源）并重建主题/申万扫描缓存，次日早上打开即最新',
+        'description': 'A股交易日收盘后增量更新主题板块行情（sina源，约120只）并重建主题扫描缓存',
     },
 ]
 

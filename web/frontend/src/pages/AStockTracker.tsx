@@ -163,13 +163,14 @@ type Mode = 'sw' | 'theme'
 export default function AStockTracker() {
   const qc = useQueryClient()
   const [mode, setMode] = useState<Mode>('theme')
-  const [window, setWindow] = useState<'composite' | '3d' | '5d' | '10d'>('composite')
+  const [window, setWindow] = useState<'composite' | 'trend' | '3d' | '5d' | '10d'>('composite')
   const [groupFilter, setGroupFilter] = useState<string>('all')
   const [emaFilter, setEmaFilter] = useState<'all' | 'ema7' | 'ema21'>('ema21')
   const [priceMin, setPriceMin] = useState('')
   const [priceMax, setPriceMax] = useState('')
   const [capMin, setCapMin] = useState('')
   const [capMax, setCapMax] = useState('')
+  const [minTrend, setMinTrend] = useState('')
   const [forcing, setForcing] = useState(false)
   // 添加股票面板
   const [addCode, setAddCode] = useState('')
@@ -241,22 +242,24 @@ export default function AStockTracker() {
   const numOr = (s: string, d: number) => { const n = parseFloat(s); return Number.isFinite(n) ? n : d }
   const pMin = numOr(priceMin, -Infinity), pMax = numOr(priceMax, Infinity)
   const cMin = numOr(capMin, -Infinity), cMax = numOr(capMax, Infinity)
+  const tMin = numOr(minTrend, -Infinity)
   const filteredRows = rows.filter(r => {
     if (!(groupFilter === 'all' || r.group === groupFilter)) return false
     if (!(emaFilter === 'all' || (emaFilter === 'ema7' ? r.above_ema7 : r.above_ema21))) return false
     if (r.close != null && (r.close < pMin || r.close > pMax)) return false
     // 市值缺失（如申万模式部分股票）不参与过滤，避免误删
     if ((capMin !== '' || capMax !== '') && r.market_cap != null && (r.market_cap < cMin || r.market_cap > cMax)) return false
+    if (minTrend !== '' && (r.trend_score == null || r.trend_score < tMin)) return false
     return true
   })
   const hiddenByEma = emaFilter === 'all' ? 0
     : rows.filter(r => groupFilter === 'all' || r.group === groupFilter).length
       - rows.filter(r => (groupFilter === 'all' || r.group === groupFilter) && (emaFilter === 'ema7' ? r.above_ema7 : r.above_ema21)).length
-  const filtersActive = priceMin !== '' || priceMax !== '' || capMin !== '' || capMax !== ''
+  const filtersActive = priceMin !== '' || priceMax !== '' || capMin !== '' || capMax !== '' || minTrend !== ''
   const fmtCap = (v: number | null | undefined) =>
     v == null ? '—' : v >= 10000 ? (v / 10000).toFixed(2) + '万亿' : Math.round(v) + '亿'
   const rsField = window === '3d' ? 'rs_3d' : window === '10d' ? 'rs_10d' : 'rs_5d'
-  const sortField = window === '3d' ? 'mom_3d' : window === '5d' ? 'mom_5d' : window === '10d' ? 'mom_10d' : 'composite'
+  const sortField = window === '3d' ? 'mom_3d' : window === '5d' ? 'mom_5d' : window === '10d' ? 'mom_10d' : window === 'trend' ? 'trend_score' : 'composite'
   const sortedRows = [...filteredRows].sort((a, b) => (b[sortField] ?? -Infinity) - (a[sortField] ?? -Infinity))
 
   return (
@@ -365,7 +368,7 @@ export default function AStockTracker() {
                 </button>
               ))}
               <span className="text-xs text-slate-500 ml-2">排序：</span>
-              {([['composite','综合分'],['3d','3日'],['5d','5日'],['10d','10日']] as const).map(([w, l]) => (
+              {([['composite','综合分'],['trend','趋势分'],['3d','3日'],['5d','5日'],['10d','10日']] as const).map(([w, l]) => (
                 <button key={w} onClick={() => setWindow(w)}
                   className={`px-2 py-1 text-xs rounded ${window === w ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-slate-200'}`}>
                   {l}
@@ -409,8 +412,22 @@ export default function AStockTracker() {
                 ))}
               </div>
             </div>
+            <div className="flex items-center gap-1.5">
+              <span className="text-xs text-slate-400">趋势分 ≥</span>
+              <input value={minTrend} onChange={e => setMinTrend(e.target.value.replace(/[^\d.]/g, ''))}
+                placeholder="不限" inputMode="decimal"
+                className="w-14 px-1.5 py-1 text-xs text-right bg-slate-900 border border-slate-600 rounded text-slate-200 outline-none focus:border-blue-500" />
+              <div className="flex gap-1">
+                {([['趋势股6', '6'], ['强趋势8', '8']] as const).map(([l, v]) => (
+                  <button key={v} onClick={() => setMinTrend(minTrend === v ? '' : v)}
+                    className={`px-1.5 py-0.5 text-[11px] rounded ${minTrend === v ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-slate-200'}`}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
             {filtersActive && (
-              <button onClick={() => { setPriceMin(''); setPriceMax(''); setCapMin(''); setCapMax('') }}
+              <button onClick={() => { setPriceMin(''); setPriceMax(''); setCapMin(''); setCapMax(''); setMinTrend('') }}
                 className="text-xs text-slate-400 hover:text-slate-200 underline ml-auto">重置筛选</button>
             )}
           </div>
@@ -425,6 +442,7 @@ export default function AStockTracker() {
                   <th className="text-right px-2 py-2.5 font-medium">现价</th>
                   <th className="text-right px-2 py-2.5 font-medium">市值</th>
                   <th className="text-center px-2 py-2.5 font-medium">综合分</th>
+                  <th className="text-center px-2 py-2.5 font-medium">趋势</th>
                   <th className="text-right px-2 py-2.5 font-medium">3日</th>
                   <th className="text-right px-2 py-2.5 font-medium">5日</th>
                   <th className="text-right px-2 py-2.5 font-medium">10日</th>
@@ -448,6 +466,13 @@ export default function AStockTracker() {
                     <td className="px-2 py-1.5 text-right font-mono text-xs text-slate-300">{r.close != null ? r.close.toFixed(2) : '—'}</td>
                     <td className="px-2 py-1.5 text-right font-mono text-xs text-slate-400">{fmtCap(r.market_cap)}</td>
                     <td className="px-2 py-1.5 text-center"><CompositeBadge score={r.composite} /></td>
+                    <td className="px-2 py-1.5 text-center">
+                      {r.trend_score != null ? (
+                        <span title={r.ema7_hold != null ? `EMA7站稳 ${Math.round(r.ema7_hold * 100)}%` : ''}>
+                          <CompositeBadge score={r.trend_score} />
+                        </span>
+                      ) : <span className="text-slate-700">—</span>}
+                    </td>
                     <td className={`px-2 py-1.5 text-right font-mono text-xs ${pctColor(r.mom_3d)} ${window === '3d' ? 'bg-blue-900/20' : ''}`}>{pctFmt(r.mom_3d)}</td>
                     <td className={`px-2 py-1.5 text-right font-mono text-xs ${pctColor(r.mom_5d)} ${window === '5d' ? 'bg-blue-900/20' : ''}`}>{pctFmt(r.mom_5d)}</td>
                     <td className={`px-2 py-1.5 text-right font-mono text-xs ${pctColor(r.mom_10d)} ${window === '10d' ? 'bg-blue-900/20' : ''}`}>{pctFmt(r.mom_10d)}</td>
@@ -473,7 +498,7 @@ export default function AStockTracker() {
                   </tr>
                 ))}
                 {filteredRows.length === 0 && !isLoading && (
-                  <tr><td colSpan={mode === 'theme' ? 15 : 14} className="text-center py-8 text-slate-500 text-sm">暂无数据，点击刷新扫描</td></tr>
+                  <tr><td colSpan={mode === 'theme' ? 16 : 15} className="text-center py-8 text-slate-500 text-sm">暂无数据，点击刷新扫描</td></tr>
                 )}
               </tbody>
             </table>
@@ -489,6 +514,7 @@ export default function AStockTracker() {
         <div>· 综合分 = 0.35×5日相对沪深300 + 0.20×3日相对沪深300 + 0.20×组内排名 + 0.15×量比 + 0.10×资金流（z-score 归一 0-10）</div>
         <div>· 加速 ▲：3日日均收益 &gt; 5日日均收益</div>
         <div>· 均线：<span className="text-emerald-300">强</span>=站上EMA7+EMA21 / <span className="text-amber-300">破7</span>=跌破EMA7仍站上EMA21 / <span className="text-red-300">破21</span>=跌破EMA21中期走弱；默认隐藏破EMA21，可切「全部」查看</div>
+        <div>· 趋势分（0-10）：近20日站上EMA7占比 + log价格回归R²（平滑爬升·仅上升有效），暴涨（单日&gt;9.5%/区间&gt;50%）扣分。找<span className="text-emerald-300">稳步爬升不暴涨</span>的票就按趋势分排序或筛「趋势股」</div>
         <div>· 资金流：OBV 5日斜率（标准化）+ 上涨日量/下跌日量比；A/D 线按 Parquet 本地数据计算</div>
         <div>· <span className="text-amber-400">申万行业</span>：每行业取权重最高 40 只；首次扫描较慢（下载行业成分），缓存 30 分钟</div>
       </div>

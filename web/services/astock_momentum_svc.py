@@ -378,6 +378,8 @@ def get_astock_detail(code: str, days: int = 120) -> dict:
     # K 线图均线统一用 EMA7/EMA21（与美股一致）
     ma10 = df['close'].ewm(span=7, adjust=False).mean()
     ma20 = df['close'].ewm(span=21, adjust=False).mean()
+    # 换手率（%）= 成交量 / 流通股本 × 100
+    turn = (df['volume'] / df['shares'].replace(0, np.nan) * 100) if 'shares' in df.columns else None
     bench = pm.get(_BENCHMARK)
     # RS：个股累计收益 - 沪深300 累计收益（对齐日期）
     rs_series = None
@@ -399,6 +401,7 @@ def get_astock_detail(code: str, days: int = 120) -> dict:
             'ma_fast': float(ma10.iloc[i]) if not pd.isna(ma10.iloc[i]) else None,
             'ma_slow': float(ma20.iloc[i]) if not pd.isna(ma20.iloc[i]) else None,
             'rs_score': float(rs_series.iloc[i]) if (rs_series is not None and not pd.isna(rs_series.iloc[i])) else None,
+            'turnover': float(turn.iloc[i]) if (turn is not None and not pd.isna(turn.iloc[i])) else None,
         })
 
     # 个股信息条：名称 + 所属板块 + 申万行业 + 最新动能/均线状态（替代 A 股无效的突破/放量因子）
@@ -427,6 +430,8 @@ def get_astock_detail(code: str, days: int = 120) -> dict:
         'vol_ratio': _vol_ratio(df, short=3, long=20),
         'rs_5d': rs_5d, 'close': last_close, 'market_cap': market_cap,
         'trend_score': tq['trend_score'], 'ema7_hold': tq['ema7_hold'],
+        'turnover': float(turn.iloc[-1]) if (turn is not None and not pd.isna(turn.iloc[-1])) else None,
+        'turnover_5d': float(turn.tail(5).mean()) if (turn is not None and turn.tail(5).notna().any()) else None,
     }
     return _clean_floats({'ohlcv': ohlcv[-days:], 'factors': factors[-days:],
                           'fundamental': {}, 'info': info})

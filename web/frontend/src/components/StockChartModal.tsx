@@ -69,7 +69,20 @@ export default function StockChartModal({ symbol, market = 'us', onClose }: {
 
   const klineOption = data ? {
     backgroundColor: 'transparent',
-    tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
+    tooltip: {
+      trigger: 'axis', axisPointer: { type: 'cross' },
+      formatter: (ps: any) => {
+        const i = Array.isArray(ps) ? ps[0]?.dataIndex : ps?.dataIndex
+        if (i == null) return ''
+        const o = data.ohlcv[i]; const f = data.factors[i] || {}
+        if (!o) return ''
+        let h = `${o.date}<br/>开 ${o.open}　收 ${o.close}<br/>高 ${o.high}　低 ${o.low}<br/>`
+        if (f.ma_fast != null) h += `EMA7 ${f.ma_fast.toFixed(2)}　EMA21 ${f.ma_slow != null ? f.ma_slow.toFixed(2) : '-'}<br/>`
+        h += `量 ${(o.volume / 1e4).toFixed(0)}万`
+        if (f.turnover != null) h += `　换手 ${f.turnover.toFixed(2)}%`
+        return h
+      },
+    },
     legend: { data: ['K线', 'EMA7', 'EMA21'], textStyle: { color: '#94a3b8' }, top: 0 },
     grid: [
       { left: 60, right: 20, top: 30, bottom: 120 },
@@ -192,10 +205,11 @@ export default function StockChartModal({ symbol, market = 'us', onClose }: {
                     )}
 
                     {/* 技术指标状态 */}
-                    <div className="grid grid-cols-4 gap-3">
+                    <div className={`grid ${isAStock ? 'grid-cols-5' : 'grid-cols-4'} gap-3`}>
                       {(isAStock ? [
                         { label: 'RS（沪深300·5日）', value: <FmtPct v={info.rs_5d} /> },
                         { label: '均线状态',          value: <EmaStateBadge state={info.ema_state} /> },
+                        { label: '换手率',            value: <FmtNum v={info.turnover} decimals={1} suffix="%" /> },
                         { label: '5日涨跌',           value: <FmtPct v={info.mom_5d} /> },
                         { label: '20日涨跌',          value: <FmtPct v={info.mom_20d} /> },
                       ] : [

@@ -413,3 +413,21 @@ def get_astock_detail(code: str, days: int = 120) -> dict:
     }
     return _clean_floats({'ohlcv': ohlcv[-days:], 'factors': factors[-days:],
                           'fundamental': {}, 'info': info})
+
+
+# ── 命令行入口：盘后增量更新 + 重建扫描缓存（供调度器调用）──────────
+if __name__ == '__main__':
+    import argparse
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%H:%M:%S')
+    parser = argparse.ArgumentParser(description='A 股盘后数据更新 + 扫描缓存重建')
+    parser.add_argument('--mode', choices=['sw', 'theme', 'all'], default='all',
+                        help='更新哪种模式的缓存（默认全部）')
+    args = parser.parse_args()
+    modes = ['theme', 'sw'] if args.mode == 'all' else [args.mode]
+    for _m in modes:
+        _logger.info(f'[AStockUpdate] 开始更新 {_m} ...')
+        try:
+            _r = _do_scan(_m)
+            _logger.info(f'[AStockUpdate] {_m} 完成：rows={len(_r.get("rows", []))} groups={len(_r.get("groups", []))}')
+        except Exception as _e:
+            _logger.error(f'[AStockUpdate] {_m} 失败：{_e}', exc_info=True)

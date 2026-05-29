@@ -63,6 +63,14 @@ DEFAULT_TASKS = [
         'enabled':  False,
         'description': '扫描所有缓存数据，自动修复历史缺失/价格偏移/退市等问题',
     },
+    {
+        'task_id':  'astock_update',
+        'name':     'A股盘后数据更新 + 扫描',
+        'command':  f'{PYTHON} -m web.services.astock_momentum_svc',
+        'cron_expr': '30 16 * * 1-5',  # 北京 周一至五 16:30（A股收盘后约 1.5 小时，数据已结算稳定）
+        'enabled':  False,
+        'description': 'A股交易日收盘后增量更新行情（sina源）并重建主题/申万扫描缓存，次日早上打开即最新',
+    },
 ]
 
 # 旧 UTC cron → 新北京时间 cron（自动迁移）

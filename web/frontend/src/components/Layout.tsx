@@ -11,6 +11,7 @@ const NAV = [
   { to: '/optimizer', label: '因子优化', icon: '⚗️'  },
   { to: '/backtest',  label: '回测',     icon: '📈' },
   { to: '/ai',         label: 'AI 追踪', icon: '🤖'  },
+  { to: '/astock',     label: 'A股扫描',  icon: '🇨🇳' },
   { to: '/scheduler', label: '任务调度', icon: '⏰' },
   { to: '/config',    label: '系统配置', icon: '⚙️'  },
 ]

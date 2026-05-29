@@ -556,6 +556,10 @@ def get_stock_factors(symbol: str, days: int = 120) -> dict:
         strategy.set_spy(spy_df['close'])
 
     sig_df = strategy.generate_signals(df)
+    # K 线图均线统一用 EMA7/EMA21（在 tail 前算，保留预热数据）；
+    # 复用 ma_fast/ma_slow 输出字段，值改为 EMA。策略内部的 MA10>MA20 趋势过滤不受影响。
+    sig_df['ema7'] = sig_df['close'].ewm(span=7, adjust=False).mean()
+    sig_df['ema21'] = sig_df['close'].ewm(span=21, adjust=False).mean()
     sig_df = sig_df.tail(days)
 
     # 基本面快照
@@ -604,8 +608,8 @@ def get_stock_factors(symbol: str, days: int = 120) -> dict:
             "uptrend": bool(row.get('uptrend', False)),
             "not_crashed": bool(row.get('not_crashed', True)),
             "vol_ratio": vol_ratio,
-            "ma_fast": _fmt(row.get('ma_fast')),
-            "ma_slow": _fmt(row.get('ma_slow')),
+            "ma_fast": _fmt(row.get('ema7')),
+            "ma_slow": _fmt(row.get('ema21')),
             "atr14": _fmt(row.get('atr14')),
             "signal": int(row.get('signal', 0)),
         })

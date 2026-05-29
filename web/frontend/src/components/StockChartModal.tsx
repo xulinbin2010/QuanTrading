@@ -5,7 +5,7 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import ReactECharts from 'echarts-for-react'
-import { getStockDetail, getStockNews } from '../api/client'
+import { getStockDetail, getStockNews, getAStockDetail } from '../api/client'
 
 // ── 内嵌辅助组件（与 MarketScan 同源）────────────────────────
 
@@ -41,25 +41,28 @@ function FmtNum({ v, decimals = 1, suffix = '' }: { v: number | null | undefined
 
 // ── 主组件 ──────────────────────────────────────────────────
 
-export default function StockChartModal({ symbol, onClose }: { symbol: string; onClose: () => void }) {
+export default function StockChartModal({ symbol, market = 'us', onClose }: {
+  symbol: string; market?: 'us' | 'a'; onClose: () => void
+}) {
   const [activeTab, setActiveTab] = useState<'tech' | 'analyst'>('tech')
+  const isAStock = market === 'a'
 
   const { data, isLoading, isError } = useQuery({
-    queryKey: ['stock-detail', symbol],
-    queryFn: () => getStockDetail(symbol, 120),
+    queryKey: ['stock-detail', market, symbol],
+    queryFn: () => isAStock ? getAStockDetail(symbol, 120) : getStockDetail(symbol, 120),
   })
 
   const { data: newsData, isLoading: newsLoading } = useQuery({
     queryKey: ['stock-news', symbol],
     queryFn: () => getStockNews(symbol),
-    enabled: activeTab === 'analyst',
+    enabled: activeTab === 'analyst' && !isAStock,
     staleTime: 2 * 60 * 60 * 1000,
   })
 
   const klineOption = data ? {
     backgroundColor: 'transparent',
     tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-    legend: { data: ['K线', 'MA10', 'MA20'], textStyle: { color: '#94a3b8' }, top: 0 },
+    legend: { data: ['K线', 'EMA7', 'EMA21'], textStyle: { color: '#94a3b8' }, top: 0 },
     grid: [
       { left: 60, right: 20, top: 30, bottom: 120 },
       { left: 60, right: 20, top: '70%', bottom: 40 },
@@ -79,12 +82,12 @@ export default function StockChartModal({ symbol, onClose }: { symbol: string; o
         itemStyle: { color: '#22c55e', color0: '#ef4444', borderColor: '#22c55e', borderColor0: '#ef4444' },
       },
       {
-        name: 'MA10', type: 'line', xAxisIndex: 0, yAxisIndex: 0, smooth: true, symbol: 'none',
+        name: 'EMA7', type: 'line', xAxisIndex: 0, yAxisIndex: 0, smooth: true, symbol: 'none',
         data: data.factors.map((f: any) => f.ma_fast),
         lineStyle: { color: '#f59e0b', width: 1 },
       },
       {
-        name: 'MA20', type: 'line', xAxisIndex: 0, yAxisIndex: 0, smooth: true, symbol: 'none',
+        name: 'EMA21', type: 'line', xAxisIndex: 0, yAxisIndex: 0, smooth: true, symbol: 'none',
         data: data.factors.map((f: any) => f.ma_slow),
         lineStyle: { color: '#8b5cf6', width: 1 },
       },
@@ -116,7 +119,7 @@ export default function StockChartModal({ symbol, onClose }: { symbol: string; o
 
   const TABS = [
     { key: 'tech',    label: '技术分析' },
-    { key: 'analyst', label: '分析师 & 公告' },
+    ...(!isAStock ? [{ key: 'analyst' as const, label: '分析师 & 公告' }] : []),
   ] as const
 
   return (
@@ -125,7 +128,7 @@ export default function StockChartModal({ symbol, onClose }: { symbol: string; o
 
         {/* 标题栏 */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700 shrink-0">
-          <div className="text-white font-semibold">{symbol} — 个股详情</div>
+          <div className="text-white font-semibold">{symbol} {isAStock ? '🇨🇳' : ''} — 个股详情</div>
           <button onClick={onClose} className="text-slate-400 hover:text-white text-lg leading-none">✕</button>
         </div>
 
@@ -198,7 +201,7 @@ export default function StockChartModal({ symbol, onClose }: { symbol: string; o
 
                     {/* K 线 */}
                     <div>
-                      <div className="mb-2 text-xs text-slate-400">K 线（含 MA10 / MA20）</div>
+                      <div className="mb-2 text-xs text-slate-400">K 线（含 EMA7 / EMA21）</div>
                       <ReactECharts option={klineOption} style={{ height: 320 }} notMerge />
                     </div>
 

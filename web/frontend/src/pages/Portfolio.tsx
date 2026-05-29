@@ -221,7 +221,7 @@ function PositionDetailModal({ position, onClose }: { position: any; onClose: ()
   const klineOption = data ? {
     backgroundColor: 'transparent',
     tooltip: { trigger: 'axis', axisPointer: { type: 'cross' } },
-    legend: { data: ['K线', 'MA10', 'MA20'], textStyle: { color: '#94a3b8' }, top: 0 },
+    legend: { data: ['K线', 'EMA7', 'EMA21'], textStyle: { color: '#94a3b8' }, top: 0 },
     grid: [
       { left: 60, right: 20, top: 30, bottom: 120 },
       { left: 60, right: 20, top: '70%', bottom: 40 },
@@ -246,12 +246,12 @@ function PositionDetailModal({ position, onClose }: { position: any; onClose: ()
         },
       },
       {
-        name: 'MA10', type: 'line', xAxisIndex: 0, yAxisIndex: 0, smooth: true, symbol: 'none',
+        name: 'EMA7', type: 'line', xAxisIndex: 0, yAxisIndex: 0, smooth: true, symbol: 'none',
         data: data.factors.map((f: any) => f.ma_fast),
         lineStyle: { color: '#f59e0b', width: 1 },
       },
       {
-        name: 'MA20', type: 'line', xAxisIndex: 0, yAxisIndex: 0, smooth: true, symbol: 'none',
+        name: 'EMA21', type: 'line', xAxisIndex: 0, yAxisIndex: 0, smooth: true, symbol: 'none',
         data: data.factors.map((f: any) => f.ma_slow),
         lineStyle: { color: '#8b5cf6', width: 1 },
       },
@@ -386,7 +386,7 @@ function PositionDetailModal({ position, onClose }: { position: any; onClose: ()
                   )}
 
                   <div>
-                    <div className="mb-2 text-xs text-slate-400">K 线（含均价线 / ATR止损线 / MA10 / MA20）</div>
+                    <div className="mb-2 text-xs text-slate-400">K 线（含均价线 / ATR止损线 / EMA7 / EMA21）</div>
                     <ReactECharts option={klineOption} style={{ height: 340 }} />
                   </div>
 

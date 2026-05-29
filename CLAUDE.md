@@ -42,6 +42,11 @@ Always respond in Chinese (中文). Do not mix Korean or other languages into re
   - 全局 modal 由 `<StockChartProvider>` 在 `App.tsx` 注入，无需在子组件再包一层
   - 不要再写本地 StockDetailPanel / K 线弹窗组件，统一复用 `components/StockChartModal.tsx`
 
+- **K 线图均线**：系统内所有 K 线图（美股 + A 股，含 StockChartModal / StockAnalysis / Portfolio）的均线统一使用 **EMA7 / EMA21**，禁止再用 MA10 / MA20。
+  - 后端在 stock detail 的 `factors[].ma_fast`（=EMA7）/ `ma_slow`（=EMA21）字段输出，前端图例与线名显示为 `EMA7` / `EMA21`
+  - 美股：`web/services/factor_svc.py::get_stock_factors`；A 股：`web/services/astock_momentum_svc.py::get_astock_detail`，均用 `close.ewm(span=N, adjust=False).mean()`
+  - 注意：EMA 仅用于 K 线图展示；策略信号的 MA10>MA20 趋势过滤（`trend_filter` 因子）是独立逻辑，不要混用
+
 ---
 
 ## UI/Theme Conventions

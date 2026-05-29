@@ -215,6 +215,20 @@ export const rejectAIPending   = (symbol: string) =>
 export const getAIMomentum     = (force = false) =>
   api.get('/ai/momentum', { params: { force }, timeout: 120_000 }).then(r => r.data)
 
+// A 股动能扫描
+export const getAStockMomentum = (mode: 'sw' | 'theme' = 'sw', force = false) =>
+  api.get('/astock/momentum', { params: { mode, force }, timeout: 180_000 }).then(r => r.data)
+export const getAStockUniverse = () =>
+  api.get('/astock/universe', { timeout: 120_000 }).then(r => r.data)
+export const getAStockDetail   = (code: string, days = 120) =>
+  api.get(`/astock/stock/${code}`, { params: { days }, timeout: 60_000 }).then(r => r.data)
+export const classifyAStock    = (code: string) =>
+  api.get('/astock/classify', { params: { code }, timeout: 60_000 }).then(r => r.data)
+export const addAStockTheme    = (code: string, group: string) =>
+  api.post('/astock/themes/add', { code, group }).then(r => r.data)
+export const removeAStockTheme = (code: string) =>
+  api.post('/astock/themes/remove', { code }).then(r => r.data)
+
 // 单股回测（EMA21 补仓）
 export type SingleBacktestParams = {
   symbol: string; start: string; end: string

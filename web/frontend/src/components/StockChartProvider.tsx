@@ -8,8 +8,9 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import type { ReactNode } from 'react'
 import StockChartModal from './StockChartModal'
 
+type Market = 'us' | 'a'
 type Ctx = {
-  openChart: (symbol: string) => void
+  openChart: (symbol: string, market?: Market) => void
   closeChart: () => void
 }
 
@@ -22,8 +23,13 @@ export const useStockChart = () => useContext(StockChartContext)
 
 export function StockChartProvider({ children }: { children: ReactNode }) {
   const [symbol, setSymbol] = useState<string | null>(null)
+  const [market, setMarket] = useState<Market>('us')
 
-  const openChart  = useCallback((sym: string) => setSymbol((sym || '').toUpperCase()), [])
+  const openChart  = useCallback((sym: string, mkt: Market = 'us') => {
+    // 美股代码转大写；A 股保持 6 位数字原样
+    setSymbol(mkt === 'a' ? (sym || '').trim() : (sym || '').toUpperCase())
+    setMarket(mkt)
+  }, [])
   const closeChart = useCallback(() => setSymbol(null), [])
 
   // ESC 关闭
@@ -37,7 +43,7 @@ export function StockChartProvider({ children }: { children: ReactNode }) {
   return (
     <StockChartContext.Provider value={{ openChart, closeChart }}>
       {children}
-      {symbol && <StockChartModal symbol={symbol} onClose={closeChart} />}
+      {symbol && <StockChartModal symbol={symbol} market={market} onClose={closeChart} />}
     </StockChartContext.Provider>
   )
 }

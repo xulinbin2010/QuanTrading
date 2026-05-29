@@ -10,6 +10,7 @@ import StockAnalysis from './pages/StockAnalysis'
 import Optimizer from './pages/Optimizer'
 import BacktestHub from './pages/BacktestHub'
 import AITracker from './pages/AITracker'
+import AStockTracker from './pages/AStockTracker'
 import Scheduler from './pages/Scheduler'
 import Config from './pages/Config'
 
@@ -42,6 +43,7 @@ export default function App() {
               <Route path="single-bt"   element={<Navigate to="/backtest?tab=single" replace />} />
               <Route path="comparison"  element={<Navigate to="/backtest?tab=compare" replace />} />
               <Route path="ai"          element={<AITracker />} />
+              <Route path="astock"      element={<AStockTracker />} />
               <Route path="scheduler" element={<Scheduler />} />
               <Route path="config"    element={<Config />} />
             </Route>

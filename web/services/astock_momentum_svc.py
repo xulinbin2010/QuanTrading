@@ -190,6 +190,14 @@ def _do_scan(mode: str) -> dict:
     _logger.info(f'[AStockMomentum/{mode}] 扫描 {len(all_syms)} 只...')
 
     store = AStockDataStore()
+    # 当日补齐：sina 历史日K对当天有延迟，盘后先用实时快照把当天 bar 补进本地
+    try:
+        n = store.topup_today_from_spot(all_syms)
+        store.topup_index_today(_BENCHMARK)
+        if n:
+            _logger.info(f'[AStockMomentum/{mode}] 实时快照补当日 {n} 只')
+    except Exception as e:
+        _logger.warning(f'[AStockMomentum/{mode}] 当日补齐失败：{e}')
     start_d = str(date.today() - timedelta(days=90))
     price_map = store.get(all_syms + [_BENCHMARK], start=start_d, auto_update=True)
 

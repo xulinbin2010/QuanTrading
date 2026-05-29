@@ -201,8 +201,8 @@ class AStockDataStore:
             local = None
         if local is not None and not local.empty:
             last = local.index[-1].date()
-            if last >= today - timedelta(days=1):
-                return local  # 已是最新（或昨日），不重拉
+            if last >= today:
+                return local  # 已含当日数据，不重拉
             fetch_start = (last + timedelta(days=1)).strftime('%Y-%m-%d')
             fresh = self._download(code, fetch_start)
             if not fresh.empty:
@@ -218,6 +218,108 @@ class AStockDataStore:
         else:
             self._no_data.add(code)
         return full
+
+    # ── 当日补齐：sina 历史日K接口对当天有延迟，盘后用实时快照补当天 bar ──
+    def _fetch_spot(self, retries: int = 3):
+        """新浪全市场实时快照，带重试（该接口高频调用会被限流）。"""
+        import time
+        for i in range(retries):
+            try:
+                df = ak.stock_zh_a_spot()
+                if df is not None and not df.empty:
+                    return df
+            except Exception:
+                time.sleep(1.0 * (i + 1))
+        return None
+
+    def topup_today_from_spot(self, codes: list[str]) -> int:
+        """用实时快照把"当天"日K补进本地 Parquet（仅交易日、本地缺当天时）。返回补齐只数。
+        快照含 今开/最高/最低/最新价/成交量/昨收，单位与 sina 日线一致（股）。
+        以"快照昨收≈本地最新收盘"做连续性校验，防止错位。"""
+        today = date.today()
+        if today.isoweekday() > 5:   # 周末无新数据
+            return 0
+        spot = self._fetch_spot()
+        if spot is None:
+            _logger.warning('[AStock] 实时快照不可用，跳过当日补齐')
+            return 0
+        spot = spot.copy()
+        spot['_c6'] = spot['代码'].astype(str).str[-6:]
+        smap = {r['_c6']: r for _, r in spot.iterrows()}
+        ts = pd.Timestamp(today)
+        n = 0
+        for code in dict.fromkeys(str(c).zfill(6) for c in codes if c not in INDEX_SYMBOLS):
+            local = self._load_local(code)
+            if local is None or local.empty or 'volume' not in local.columns:
+                continue
+            if local.index[-1].date() >= today:
+                continue
+            r = smap.get(code)
+            if r is None:
+                continue
+            try:
+                o, hi, lo = float(r['今开']), float(r['最高']), float(r['最低'])
+                close, vol, prev = float(r['最新价']), float(r['成交量']), float(r['昨收'])
+            except Exception:
+                continue
+            if not (close > 0 and vol > 0 and o > 0):
+                continue
+            last_close = float(local['close'].iloc[-1])
+            if last_close <= 0 or abs(prev - last_close) / last_close > 0.2:
+                continue   # 连续性校验失败（疑似代码错位/复权跳变），跳过
+            row = {'open': o, 'high': hi, 'low': lo, 'close': close, 'volume': vol}
+            if 'shares' in local.columns:
+                row['shares'] = local['shares'].iloc[-1]
+            merged = pd.concat([local, pd.DataFrame([row], index=[ts])])
+            merged = merged[~merged.index.duplicated(keep='last')].sort_index()
+            merged.to_parquet(self._path(code))
+            n += 1
+        return n
+
+    def topup_index_today(self, key: str) -> bool:
+        """用指数实时快照补当天基准 bar（如 HS300）。"""
+        today = date.today()
+        if today.isoweekday() > 5 or key not in INDEX_SYMBOLS:
+            return False
+        cache_path = self.stocks_dir / f'_idx_{key}.parquet'
+        if not cache_path.exists():
+            return False
+        try:
+            local = pd.read_parquet(cache_path)
+        except Exception:
+            return False
+        if local.empty or local.index[-1].date() >= today:
+            return False
+        sym = INDEX_SYMBOLS[key]
+        num = sym[2:] if sym[:2] in ('sh', 'sz') else sym
+        import time
+        idx = None
+        for i in range(3):
+            try:
+                idx = ak.stock_zh_index_spot_sina()
+                if idx is not None and not idx.empty:
+                    break
+            except Exception:
+                time.sleep(1.0 * (i + 1))
+        if idx is None or idx.empty:
+            return False
+        try:
+            ccol = '代码' if '代码' in idx.columns else idx.columns[0]
+            row = idx[idx[ccol].astype(str).str.contains(num)]
+            if row.empty:
+                return False
+            r = row.iloc[0]
+            o, hi, lo, close = float(r['今开']), float(r['最高']), float(r['最低']), float(r['最新价'])
+            if close <= 0:
+                return False
+            new = pd.DataFrame([{'open': o, 'high': hi, 'low': lo, 'close': close, 'volume': 0.0}],
+                               index=[pd.Timestamp(today)])
+            merged = pd.concat([local, new])
+            merged = merged[~merged.index.duplicated(keep='last')].sort_index()
+            merged.to_parquet(cache_path)
+            return True
+        except Exception:
+            return False
 
     # ── 主入口 ──
     def get(self, symbols: list[str], start: str = '2023-01-01',

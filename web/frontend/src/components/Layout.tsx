@@ -239,17 +239,22 @@ function IBAccountSelector() {
 }
 
 export default function Layout() {
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebarCollapsed') === '1')
+  useEffect(() => { localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0') }, [collapsed])
+
   return (
     <div className="flex h-screen bg-slate-900 text-slate-200 overflow-hidden">
       {/* 侧边栏 */}
-      <aside className="w-48 flex-shrink-0 bg-slate-800 flex flex-col">
-        <div className="px-4 py-4">
+      <aside className={`${collapsed ? 'w-14' : 'w-48'} flex-shrink-0 bg-slate-800 flex flex-col transition-all duration-200`}>
+        <div className={`py-4 ${collapsed ? 'px-0 flex justify-center' : 'px-4'}`}>
           <div className="flex items-center gap-2.5">
             <img src="/logo.png" alt="logo" className="w-8 h-8 rounded-lg object-contain flex-shrink-0" />
-            <div>
-              <div className="text-sm font-bold text-slate-200">QuanTrading</div>
-              <div className="text-xs text-slate-400 mt-0.5">个人量化交易平台</div>
-            </div>
+            {!collapsed && (
+              <div>
+                <div className="text-sm font-bold text-slate-200">QuanTrading</div>
+                <div className="text-xs text-slate-400 mt-0.5">个人量化交易平台</div>
+              </div>
+            )}
           </div>
         </div>
         <nav className="flex-1 py-3">
@@ -258,29 +263,40 @@ export default function Layout() {
               key={item.to}
               to={item.to}
               end={item.to === '/'}
+              title={collapsed ? item.label : undefined}
               className={({ isActive }) =>
-                `flex items-center gap-2 px-4 py-2.5 text-sm transition-colors border-l-[4px] ${
+                `flex items-center gap-2 ${collapsed ? 'justify-center px-0' : 'px-4'} py-2.5 text-sm transition-colors border-l-[4px] ${
                   isActive
                     ? 'border-blue-500 text-white font-medium'
                     : 'border-transparent text-slate-400 hover:bg-slate-700 hover:text-slate-200'
                 }`
               }
             >
-              <span>{item.icon}</span>
-              <span>{item.label}</span>
+              <span className="text-base">{item.icon}</span>
+              {!collapsed && <span>{item.label}</span>}
             </NavLink>
           ))}
         </nav>
-        <div className="px-4 py-3 text-xs text-slate-500">
-          v1.0
-        </div>
+        {!collapsed && (
+          <div className="px-4 py-3 text-xs text-slate-500">
+            v1.0
+          </div>
+        )}
       </aside>
 
       {/* 主内容区 */}
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* 顶栏 */}
         <header className="h-12 bg-slate-800 flex items-center justify-between px-5 flex-shrink-0">
-          <div />
+          <button
+            onClick={() => setCollapsed(c => !c)}
+            title={collapsed ? '展开菜单' : '收起菜单'}
+            className="p-1.5 -ml-2 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700 transition-colors"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+            </svg>
+          </button>
           <div className="flex items-center gap-4">
             <ETClock />
             <IBAccountSelector />

@@ -14,8 +14,13 @@ __pycache__/
 venv/
 
 # Project
-data/
+# 注: 用 data/* 而非 data/(目录级会阻止白名单),子目录(stocks/ 等缓存)仍隐式忽略
+data/*
 logs/
+
+# 用户手动维护的配置数据(跨电脑同步)
+!data/ai_universe.json
+!data/astock_themes.json
 
 # IDE
 .idea/

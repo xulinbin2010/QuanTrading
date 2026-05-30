@@ -200,23 +200,30 @@ def run_backtest(
         atr_series: dict[str, pd.Series] = dict(precomputed_cache.atr_series)
     else:
         # 标准路径：逐股计算（独立回测 / Web 回测 / CLI，向后兼容）
+        # AI 优先池(与 auto_trader 对齐):成员走宽松扫描 prox=15%+vol=0
+        from auto_trader import _load_ai_priority_set
+        ai_set = _load_ai_priority_set()
         if factors:
             from strategies.dynamic_factor import DynamicFactorStrategy
             strategy = DynamicFactorStrategy(factors, factor_params)
+            strategy_relaxed = None
         else:
             from web.services.factor_svc import get_factor_params_from_db
             _rs_p = get_factor_params_from_db('rs_score')
-            strategy = RSMomentum(
+            _common = dict(
                 rs_period=int(_rs_p.get('period', 63)),
                 rs_weights=str(_rs_p.get('weights', '') or ''),
                 vol_shrink_ratio=VOL_SHRINK_RATIO,
-                breakout_proximity_pct=breakout_proximity_pct,
             )
+            strategy = RSMomentum(**_common, breakout_proximity_pct=breakout_proximity_pct)
+            strategy_relaxed = RSMomentum(**_common, breakout_proximity_pct=0.15, vol_multiplier=0.0)
+            strategy_relaxed.set_spy(spy_close)
         strategy.set_spy(spy_close)
         signals = {}
         for sym, df in stock_data.items():
             try:
-                signals[sym] = strategy.generate_signals(df)
+                strat = strategy_relaxed if (strategy_relaxed is not None and sym.upper() in ai_set) else strategy
+                signals[sym] = strat.generate_signals(df)
             except Exception:
                 pass
 
@@ -490,23 +497,26 @@ def run_backtest(
                     continue
                 row = sig_df.loc[date]
                 if row['signal'] == 1 and _is_allowed(sym):
-                    new_buys.append((sym, row['rs_score']))
-            new_buys.sort(key=lambda x: x[1], reverse=True)
+                    new_buys.append((sym, row['rs_score'], sym.upper() in ai_set))
+            # AI 优先成员排在前面 (+0.5 等效)，同组内按 rs 排
+            new_buys.sort(key=lambda x: (x[2], x[1]), reverse=True)
             kept_sectors: dict[str, int] = {}
             for s in positions:
-                if s not in pending_sells:
+                if s not in pending_sells and s.upper() not in ai_set:
                     sec = _sector_map.get(s, 'Unknown')
                     kept_sectors[sec] = kept_sectors.get(sec, 0) + 1
             pending_sector_counts = dict(kept_sectors)
             filtered_buys = []
-            for sym, rs in new_buys:
+            for sym, rs, is_ai in new_buys:
                 if len(filtered_buys) >= free_slots:
                     break
                 sec = _sector_map.get(sym, 'Unknown')
-                if pending_sector_counts.get(sec, 0) >= MAX_PER_SECTOR:
+                # AI 优先池豁免行业去重 + 不计入计数（与 SP500 池独立）
+                if not is_ai and pending_sector_counts.get(sec, 0) >= MAX_PER_SECTOR:
                     continue
                 filtered_buys.append((sym, rs))
-                pending_sector_counts[sec] = pending_sector_counts.get(sec, 0) + 1
+                if not is_ai:
+                    pending_sector_counts[sec] = pending_sector_counts.get(sec, 0) + 1
             pending_buys = filtered_buys
 
         # 当日净值

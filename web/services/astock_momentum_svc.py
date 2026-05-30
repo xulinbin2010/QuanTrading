@@ -207,7 +207,9 @@ def _do_scan(mode: str, refresh: bool = False) -> dict:
                 _logger.info(f'[AStockMomentum/{mode}] 实时快照补当日 {n} 只')
         except Exception as e:
             _logger.warning(f'[AStockMomentum/{mode}] 当日补齐失败：{e}')
-    start_d = str(date.today() - timedelta(days=90))
+    # 530 天 ≈ 1.5 年:实时扫描只用近期数据,但回测需要更长历史,
+    # 一次预热兼顾两边(_update_one 增量,本地有数据不会重拉)
+    start_d = str(date.today() - timedelta(days=530))
     price_map = store.get(all_syms + [_BENCHMARK], start=start_d, auto_update=True)
 
     bench = price_map.get(_BENCHMARK)
@@ -287,6 +289,16 @@ def _do_scan(mode: str, refresh: bool = False) -> dict:
     raw_rows.sort(key=lambda x: x['composite'], reverse=True)
     for i, r in enumerate(raw_rows):
         r['rank'] = i + 1
+
+    # 板块内排名(group_rank=1 即龙头,仅展示用,不影响 composite 排序)
+    _by_group: dict[str, list[dict]] = {}
+    for r in raw_rows:
+        _by_group.setdefault(r['group'], []).append(r)
+    for _members in _by_group.values():
+        _members.sort(key=lambda x: x['composite'], reverse=True)
+        for idx, r in enumerate(_members):
+            r['group_rank'] = idx + 1
+            r['group_size'] = len(_members)
 
     # 子组聚合
     groups_summary: list[dict] = []

@@ -3,16 +3,18 @@ import { useSearchParams } from 'react-router-dom'
 import Backtest from './Backtest'
 import SingleBacktest from './SingleBacktest'
 import Comparison from './Comparison'
+import AStockMomentumBacktest from './AStockMomentumBacktest'
 
-type TabKey = 'portfolio' | 'single' | 'compare'
+type TabKey = 'portfolio' | 'single' | 'compare' | 'astock'
 
 const TABS: { key: TabKey; label: string; icon: string }[] = [
   { key: 'portfolio', label: '策略回测', icon: '📈' },
   { key: 'single',    label: '单股回测', icon: '🪙' },
   { key: 'compare',   label: '收益对比', icon: '⚖️' },
+  { key: 'astock',    label: 'A股动能轮动', icon: '🇨🇳' },
 ]
 
-const VALID: TabKey[] = ['portfolio', 'single', 'compare']
+const VALID: TabKey[] = ['portfolio', 'single', 'compare', 'astock']
 
 export default function BacktestHub() {
   const [params, setParams] = useSearchParams()
@@ -51,6 +53,7 @@ export default function BacktestHub() {
       {mounted.has('portfolio') && <div hidden={tab !== 'portfolio'}><Backtest /></div>}
       {mounted.has('single')    && <div hidden={tab !== 'single'}>   <SingleBacktest /></div>}
       {mounted.has('compare')   && <div hidden={tab !== 'compare'}>  <Comparison /></div>}
+      {mounted.has('astock')    && <div hidden={tab !== 'astock'}>   <AStockMomentumBacktest /></div>}
     </div>
   )
 }

@@ -5,6 +5,40 @@ from fastapi import APIRouter, HTTPException, Query, Body
 router = APIRouter(prefix='/api/astock', tags=['astock'])
 
 
+@router.post('/backtest')
+def backtest_submit(data: dict = Body(...)):
+    """提交 A 股动能轮动回测(每周一 rebalance,持有 composite 前 N)。
+    body: { start_date, end_date, initial_cash?, top_n?, groups? }
+    return: { task_id }
+    """
+    try:
+        from web.services.astock_backtest_svc import submit_backtest
+        params = {
+            'start_date': data['start_date'],
+            'end_date':   data['end_date'],
+            'initial_cash': float(data.get('initial_cash', 100_000)),
+            'top_n':      int(data.get('top_n', 4)),
+            'groups':     data.get('groups'),
+            'strategy':   data.get('strategy', 'momentum'),
+        }
+        task_id = submit_backtest(params)
+        return {'task_id': task_id, 'status': 'running'}
+    except KeyError as e:
+        raise HTTPException(status_code=400, detail=f'缺少字段: {e}')
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get('/backtest/{task_id}')
+def backtest_status(task_id: str):
+    """查询回测状态/结果。status: running / completed / failed。"""
+    from web.services.astock_backtest_svc import get_task
+    task = get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f'task {task_id} 不存在')
+    return task
+
+
 @router.get('/momentum')
 def momentum(mode: str = Query('sw'), force: bool = Query(False)):
     """A 股板块强度 + 个股动能。mode='sw'（申万行业）|'theme'（主题板块）。"""

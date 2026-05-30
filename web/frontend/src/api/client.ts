@@ -57,6 +57,16 @@ export const getProductionSignals = () =>
 export const runProductionSignalsNow = () =>
   api.post('/factors/production-signals/run-now').then(r => r.data)
 
+// A 股动能轮动回测
+export const submitAStockBacktest = (body: {
+  start_date: string; end_date: string;
+  initial_cash?: number; top_n?: number; groups?: string[];
+  strategy?: 'momentum' | 'momentum_filtered' | 'sector_rotation' | 'quality_momentum';
+}) =>
+  api.post('/astock/backtest', body).then(r => r.data as { task_id: string; status: string })
+export const getAStockBacktestTask = (taskId: string) =>
+  api.get(`/astock/backtest/${taskId}`).then(r => r.data)
+
 // ── 策略回测 ──────────────────────────────────────────────
 
 export interface BacktestParams {

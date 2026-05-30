@@ -442,6 +442,7 @@ export default function AStockTracker() {
                   <th className="text-right px-2 py-2.5 font-medium">现价</th>
                   <th className="text-right px-2 py-2.5 font-medium">市值</th>
                   <th className="text-center px-2 py-2.5 font-medium">综合分</th>
+                  <th className="text-center px-2 py-2.5 font-medium" title="板块内 composite 强度排名(短期动量+量能),不等同于机构龙头(无市值/北上/龙虎榜数据)">板块强度</th>
                   <th className="text-center px-2 py-2.5 font-medium">趋势</th>
                   <th className="text-right px-2 py-2.5 font-medium">3日</th>
                   <th className="text-right px-2 py-2.5 font-medium">5日</th>
@@ -466,6 +467,25 @@ export default function AStockTracker() {
                     <td className="px-2 py-1.5 text-right font-mono text-xs text-slate-300">{r.close != null ? r.close.toFixed(2) : '—'}</td>
                     <td className="px-2 py-1.5 text-right font-mono text-xs text-slate-400">{fmtCap(r.market_cap)}</td>
                     <td className="px-2 py-1.5 text-center"><CompositeBadge score={r.composite} /></td>
+                    <td className="px-2 py-1.5 text-center text-sm">
+                      {r.group_rank == null ? (
+                        <span className="text-slate-700 text-xs">·</span>
+                      ) : r.group_rank <= 3 ? (
+                        <span
+                          className="text-amber-400 tracking-tight"
+                          title={`板块强度第 ${r.group_rank}/${r.group_size}(composite 排名,动态)`}
+                        >
+                          {'★'.repeat(4 - r.group_rank)}
+                        </span>
+                      ) : (
+                        <span
+                          className="text-slate-500 font-mono text-xs"
+                          title={`板块强度第 ${r.group_rank}/${r.group_size}`}
+                        >
+                          #{r.group_rank}
+                        </span>
+                      )}
+                    </td>
                     <td className="px-2 py-1.5 text-center">
                       {r.trend_score != null ? (
                         <span title={r.ema7_hold != null ? `EMA7站稳 ${Math.round(r.ema7_hold * 100)}%` : ''}>

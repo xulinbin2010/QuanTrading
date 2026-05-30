@@ -193,13 +193,23 @@ class AStockDataStore:
         return pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume'])
 
     def _update_one(self, code: str, start: str) -> pd.DataFrame:
-        """增量更新单只：本地有则只补最新日期之后，无则全量。"""
+        """增量更新单只：补 (a) earliest > start 时向前回补历史 (b) 最新日期之后增量，无本地则全量。"""
         local = self._load_local(code)
         today = date.today()
         # 自愈：旧数据缺 volume 列（早期腾讯源遗留）则丢弃本地，强制全量重拉
         if local is not None and not local.empty and 'volume' not in local.columns:
             local = None
         if local is not None and not local.empty:
+            # (a) 历史不够：earliest > start 时从 start 重拉，merge dedup(keep='last') 覆盖重叠
+            earliest_local = local.index[0].date()
+            req_start = date.fromisoformat(start) if isinstance(start, str) else start
+            if earliest_local > req_start:
+                back_fill = self._download(code, start)
+                if not back_fill.empty:
+                    local = pd.concat([local, back_fill])
+                    local = local[~local.index.duplicated(keep='last')].sort_index()
+                    local.to_parquet(self._path(code))
+            # (b) 最新之后增量
             last = local.index[-1].date()
             if last >= today:
                 return local  # 已含当日数据，不重拉

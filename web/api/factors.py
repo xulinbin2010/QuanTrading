@@ -4,9 +4,28 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 from typing import Optional, List
 from web.services import factor_svc
+from web.services import production_signal_svc
 from core.universe import get_tickers
 
 router = APIRouter(prefix='/api/factors', tags=['factors'])
+
+
+@router.get('/production-signals')
+def production_signals():
+    """每日生产信号 top10:复用 auto_trader.scan_signals(含 AI 双路 + 过滤 + 排名)。"""
+    try:
+        return production_signal_svc.get_signals()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post('/production-signals/run-now')
+def production_signals_run_now():
+    """触发后台扫描,立即返回当前缓存 + scanning=True。"""
+    try:
+        return production_signal_svc.trigger_scan_background()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get('/universes')

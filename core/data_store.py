@@ -69,19 +69,27 @@ class DataStore:
         end:        str  = None,
         min_rows:   int  = 40,
         auto_update: bool = True,
+        force_refresh_recent_days: int = 0,
     ) -> dict[str, pd.DataFrame]:
         """
         确保数据是最新的，然后返回 {symbol: DataFrame}。
         与 MarketCache.get() 接口兼容，无需修改调用方代码。
+
+        force_refresh_recent_days: 强制重拉最近 N 个交易日(覆盖 yfinance 在
+        美东收盘前/后两次拉取产生的"stale-but-corrupted"数据,典型场景如
+        MRVL 5/29 volume 13.75M→33.95M 的校正)。N=0 时为现有 incremental 行为。
         """
         end = self._cap_end(end)
         if auto_update:
-            self.update(symbols, start, end)
+            self.update(symbols, start, end, force_refresh_recent_days=force_refresh_recent_days)
         return self._load(symbols, start, end, min_rows)
 
-    def update(self, symbols: list[str], start: str, end: str = None) -> bool:
+    def update(self, symbols: list[str], start: str, end: str = None,
+               force_refresh_recent_days: int = 0) -> bool:
         """
         增量下载：只补充本地没有的日期。
+        force_refresh_recent_days > 0 时,强制从 last_trading - N×2 日(留余量给周末)起重拉,
+        合并时由 dedup(keep='last') 自动用 fresh 数据覆盖旧值。
         返回 True 表示有新数据被写入。
         """
         end = self._cap_end(end)
@@ -89,7 +97,7 @@ class DataStore:
 
         groups: dict[str, list[str]] = {}
         for sym in symbols:
-            dl_from = self._dl_from(sym, start, end)
+            dl_from = self._dl_from(sym, start, end, force_refresh_recent_days)
             if dl_from is not None:
                 groups.setdefault(dl_from, []).append(sym)
 
@@ -143,15 +151,18 @@ class DataStore:
 
     # ── 内部：增量判断 ────────────────────────────────────────
 
-    def _dl_from(self, symbol: str, requested_start: str, end: str) -> str | None:
+    def _dl_from(self, symbol: str, requested_start: str, end: str,
+                 force_refresh_recent_days: int = 0) -> str | None:
         """
         计算该 symbol 的下载起始日期，返回 None 表示无需下载。
 
         规则（按优先级顺序）：
-          1. 本地无文件              → 从 requested_start 全量下载
-          2. 本地最早日期 > 请求起点 → 从 requested_start 补历史（即使 latest 已最新）
-          3. 已经足够新且无历史缺口  → None（跳过）
-          4. 本地最新日期 < end      → 从 latest+1 增量补充
+          1. 本地无文件                       → 从 requested_start 全量下载
+          2. 本地最早日期 > 请求起点          → 从 requested_start 补历史
+          3. force_refresh_recent_days > 0    → 从 last_trading - N×2 日重拉
+                                                (覆盖 yfinance 校正过的最近 K 线)
+          4. 已经足够新且无历史缺口           → None（跳过）
+          5. 本地最新日期 < end               → 从 latest+1 增量补充
         """
         last_trading = self._last_trading_day()
         end_date     = date.fromisoformat(end)
@@ -165,6 +176,11 @@ class DataStore:
         # 先检查历史是否完整（不受 latest 是否最新影响）
         if earliest is not None and earliest > start_date:
             return requested_start                               # 历史不够，向前补
+
+        # 强制刷新最近 N 个交易日(×2 日历日留余量给周末/节假日)
+        if force_refresh_recent_days > 0:
+            refresh_from = last_trading - timedelta(days=force_refresh_recent_days * 2)
+            return refresh_from.strftime('%Y-%m-%d') if refresh_from <= end_date else None
 
         # 历史完整再判断是否最新
         if latest >= min(end_date, last_trading):

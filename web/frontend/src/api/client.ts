@@ -52,6 +52,11 @@ export const previewFactorSignals = (universe: string, factors: string[], top = 
 export const checkTrailStops = (positions: { symbol: string; avg_cost: number }[]) =>
   api.post('/factors/trail-stop-check', positions).then(r => r.data)
 
+export const getProductionSignals = () =>
+  api.get('/factors/production-signals').then(r => r.data)
+export const runProductionSignalsNow = () =>
+  api.post('/factors/production-signals/run-now').then(r => r.data)
+
 // ── 策略回测 ──────────────────────────────────────────────
 
 export interface BacktestParams {

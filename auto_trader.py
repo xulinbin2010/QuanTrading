@@ -164,6 +164,7 @@ def scan_signals(
     min_cap_b:        float     = None,    # 最小市值（十亿 USD），如 10
     max_cap_b:        float     = None,    # 最大市值（十亿 USD），如 500
     deny_industries:  list[str] = None,    # 拒绝行业，如 ['Software—Application']
+    force_refresh_recent_days: int = 0,    # 强制重拉最近 N 个交易日(覆盖 yfinance 校正过的数据)
 ) -> dict:
     """用昨日收盘数据跑 RS 策略，返回买卖信号（可按市值/行业过滤）"""
 
@@ -181,7 +182,10 @@ def scan_signals(
 
     all_syms = list(set(tickers + ['SPY', '^VIX']))
     store    = DataStore()
-    all_data = store.get(all_syms, start=dl_start, end=dl_end)
+    all_data = store.get(all_syms, start=dl_start, end=dl_end,
+                         force_refresh_recent_days=force_refresh_recent_days)
+    if force_refresh_recent_days > 0:
+        print(f"  [数据校准] 已强制重拉最近 {force_refresh_recent_days} 个交易日(覆盖 yfinance 校正过的 K 线)")
 
     spy_df = all_data.get('SPY')
     if spy_df is None:

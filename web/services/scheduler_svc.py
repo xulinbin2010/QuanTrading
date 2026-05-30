@@ -64,8 +64,16 @@ DEFAULT_TASKS = [
         'description': '扫描所有缓存数据，自动修复历史缺失/价格偏移/退市等问题',
     },
     {
+        'task_id':  'production_signals',
+        'name':     '生产信号扫描(因子看板 top10)',
+        'command':  f'{PYTHON} -m web.services.production_signal_svc',
+        'cron_expr': '50 21 * * 1-5',  # 北京 周一至五 21:50(美东 08:50,开盘前 40 分钟)
+        'enabled':  False,
+        'description': '复用 auto_trader.scan_signals 全套(双路扫描+过滤+排名),写 top10 缓存供因子看板「生产信号」展示',
+    },
+    {
         'task_id':  'astock_update',
-        'name':     'A股盘后数据更新 + 扫描（主题板块）',
+        'name':     'A股盘后数据更新 + 扫描(主题板块)',
         'command':  f'{PYTHON} -m web.services.astock_momentum_svc --mode theme',
         'cron_expr': '30 16 * * 1-5',  # 北京 周一至五 16:30（A股收盘后约 1.5 小时，数据已结算稳定）
         'enabled':  False,

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getFactorRegistry, updateFactor, scanFactors, previewFactorSignals, checkTrailStops, getPositions } from '../api/client'
+import { getFactorRegistry, updateFactor, previewFactorSignals, checkTrailStops, getPositions, getProductionSignals, runProductionSignalsNow } from '../api/client'
 import SymbolLink from '../components/SymbolLink'
 
 // ── RSMomentum 策略买入条件模板（desc/param 由注册表参数动态填充） ──
@@ -162,6 +162,107 @@ function SignalTags({ signals, color }: { signals: any[]; color: 'green' | 'red'
   )
 }
 
+// ── 今日生产信号(top10 买入候选,复用 auto_trader.scan_signals)────────
+function ProductionSignalsPanel() {
+  const qc = useQueryClient()
+  const { data, isFetching } = useQuery({
+    queryKey: ['production-signals'],
+    queryFn: getProductionSignals,
+    refetchInterval: (q) => (q.state.data?.scanning ? 15000 : false),  // 扫描中 15s 轮询
+  })
+  const runNow = useMutation({
+    mutationFn: runProductionSignalsNow,
+    onSuccess: (d) => qc.setQueryData(['production-signals'], d),
+  })
+  const scanning = data?.scanning || runNow.isPending
+  const rows: any[] = data?.rows ?? []
+
+  return (
+    <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="text-sm font-medium text-slate-300">
+          🎯 今日生产信号 · Top {data?.top_n ?? 10} 买入候选
+        </div>
+        <button
+          onClick={() => runNow.mutate()}
+          disabled={scanning || isFetching}
+          className="px-3 py-1 text-xs bg-slate-700 hover:bg-slate-600 disabled:opacity-40 text-slate-300 rounded transition-colors"
+        >
+          {scanning ? '扫描中...' : '立即刷新'}
+        </button>
+      </div>
+
+      {data && (
+        <div className="text-xs text-slate-400 mb-3 flex flex-wrap gap-x-4 gap-y-1">
+          {data.last_updated && <span>更新 {data.last_updated.replace('T', ' ').slice(0, 16)}</span>}
+          <span className={data.spy_brake ? 'text-red-400' : 'text-emerald-400'}>
+            SPY {data.spy_brake ? '✗ 熔断' : '✓'}
+          </span>
+          <span className={data.vix_brake ? 'text-red-400' : 'text-emerald-400'}>
+            VIX {data.vix_close != null ? data.vix_close.toFixed(1) : '-'} {data.vix_brake ? '✗ 熔断' : '✓'}
+          </span>
+          <span className={data.breadth_cap ? 'text-amber-400' : 'text-emerald-400'}>
+            宽度 {data.breadth_pct != null ? `${(data.breadth_pct * 100).toFixed(0)}%` : '-'}
+            {data.breadth_cap && ' · 压仓 4'}
+          </span>
+          <span>共 {data.total_buy ?? 0} 只候选 · AI 池 {data.ai_pool_size ?? 0} 只</span>
+        </div>
+      )}
+
+      {rows.length === 0 ? (
+        <div className="text-xs text-slate-500 py-3">
+          {scanning
+            ? '首次扫描进行中(约 30-60 秒),稍后自动刷新...'
+            : '暂无缓存,点击「立即刷新」触发扫描。'}
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-xs">
+            <thead className="text-slate-400 border-b border-slate-700">
+              <tr>
+                <th className="text-left py-2 pr-2">#</th>
+                <th className="text-left py-2 pr-2">Symbol</th>
+                <th className="text-right py-2 px-2">入场分</th>
+                <th className="text-right py-2 px-2">RS</th>
+                <th className="text-right py-2 px-2">量比</th>
+                <th className="text-left py-2 px-2">行业</th>
+                <th className="text-left py-2 px-2">标识</th>
+                <th className="text-right py-2 px-2">现价</th>
+                <th className="text-right py-2 pl-2">ATR止损</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r: any) => (
+                <tr key={r.symbol} className="border-b border-slate-700/40 hover:bg-slate-700/30">
+                  <td className="py-2 pr-2 text-slate-500">{r.rank}</td>
+                  <td className="py-2 pr-2 font-medium"><SymbolLink symbol={r.symbol} /></td>
+                  <td className="py-2 px-2 text-right text-emerald-300 font-mono">{r.entry_score?.toFixed(2)}</td>
+                  <td className="py-2 px-2 text-right font-mono">{(r.rs_score * 100).toFixed(1)}%</td>
+                  <td className="py-2 px-2 text-right font-mono">{r.vol_ratio?.toFixed(2)}x</td>
+                  <td className="py-2 px-2 text-slate-300 truncate max-w-[150px]" title={r.industry || r.sector || '-'}>
+                    {r.industry ?? r.sector ?? '-'}
+                  </td>
+                  <td className="py-2 px-2">
+                    {r.ai_priority
+                      ? <span className="text-amber-400">⭐ AI优先</span>
+                      : r.ai_boost > 0
+                        ? <span className="text-cyan-400">🤖 +{(r.ai_boost * 100).toFixed(0)}%</span>
+                        : <span className="text-slate-600">·</span>}
+                  </td>
+                  <td className="py-2 px-2 text-right font-mono">${r.close?.toFixed(2)}</td>
+                  <td className="py-2 pl-2 text-right font-mono text-slate-400">
+                    {r.stop_price ? `$${r.stop_price.toFixed(2)}` : '-'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── 主页面 ────────────────────────────────────────────────
 export default function FactorDashboard() {
   const [showRegistry, setShowRegistry] = useState(true)
@@ -222,18 +323,6 @@ export default function FactorDashboard() {
     .filter((f: any) => f.data_type === 'technical' && !f.is_dependency && f.enabled)
     .map((f: any) => f.key)
 
-  // 最新扫描结果（仅读缓存，不触发自动扫描）
-  const { data: scanResult } = useQuery({
-    queryKey: ['factors-scan', universe],
-    queryFn: () => scanFactors(universe, 100),
-    staleTime: Infinity,
-    gcTime: 24 * 3_600_000,
-    enabled: false,
-  })
-  const rows: any[] = Array.isArray(scanResult) ? scanResult : (scanResult?.rows ?? [])
-  const buySignals  = rows.filter((r: any) => r.signal === 1)
-  const sellSignals = rows.filter((r: any) => r.signal === -1)
-
   // 按分类分组
   const techFactors = (registry as any[]).filter((f: any) => f.data_type === 'technical' && !f.is_dependency)
   const fundFactors = (registry as any[]).filter((f: any) => f.data_type === 'fundamental')
@@ -277,6 +366,9 @@ export default function FactorDashboard() {
         <span className="text-xs text-slate-400 bg-slate-700 border border-slate-600 rounded px-2 py-1">sp500+ndx</span>
       </div>
 
+      {/* 今日生产信号(全宽置顶)*/}
+      <ProductionSignalsPanel />
+
       {/* 策略概览 */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* 买入条件 */}
@@ -302,48 +394,25 @@ export default function FactorDashboard() {
           </div>
         </div>
 
-        {/* 卖出条件 + 当前信号摘要 */}
-        <div className="space-y-4">
-          <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
-            <div className="text-sm font-medium text-slate-300 mb-3 flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-red-400 inline-block" />
-              卖出信号
-            </div>
-            <div className="space-y-2">
-              {SELL_CONDITIONS.map(c => (
-                <div key={c.label} className="flex items-start gap-2">
-                  <span className="text-base shrink-0">{c.icon}</span>
-                  <div>
-                    <div className="flex items-baseline gap-2">
-                      <span className="text-sm text-white">{c.label}</span>
-                      <span className="text-xs font-mono text-slate-600">{c.key}</span>
-                    </div>
-                    <div className="text-xs text-slate-500">{c.desc}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
+        {/* 卖出条件 */}
+        <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
+          <div className="text-sm font-medium text-slate-300 mb-3 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-red-400 inline-block" />
+            卖出信号
           </div>
-
-          {/* 当前信号摘要（RSMomentum 生产扫描缓存） */}
-          <div className="bg-slate-800 rounded-lg border border-slate-700 p-4">
-            <div className="text-sm font-medium text-slate-300 mb-3">
-              生产信号（RSMomentum · 上次市场扫描）
-            </div>
-            {rows.length === 0 ? (
-              <div className="text-xs text-slate-500">暂无数据，请前往「市场扫描」执行扫描</div>
-            ) : (
-              <div className="space-y-2">
+          <div className="space-y-2">
+            {SELL_CONDITIONS.map(c => (
+              <div key={c.label} className="flex items-start gap-2">
+                <span className="text-base shrink-0">{c.icon}</span>
                 <div>
-                  <div className="text-xs text-slate-400 mb-1.5">买入 {buySignals.length} 只</div>
-                  <SignalTags signals={buySignals} color="green" />
-                </div>
-                <div>
-                  <div className="text-xs text-slate-400 mb-1.5">卖出 {sellSignals.length} 只</div>
-                  <SignalTags signals={sellSignals} color="red" />
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-sm text-white">{c.label}</span>
+                    <span className="text-xs font-mono text-slate-600">{c.key}</span>
+                  </div>
+                  <div className="text-xs text-slate-500">{c.desc}</div>
                 </div>
               </div>
-            )}
+            ))}
           </div>
         </div>
       </div>

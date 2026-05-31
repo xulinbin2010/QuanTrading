@@ -183,11 +183,10 @@ export default function Scheduler() {
         </div>
       )}
 
-      {/* 任务卡片网格 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {tasksLoading ? (
-          // 骨架屏
-          Array.from({ length: 4 }).map((_, i) => (
+      {/* 任务卡片 — 按市场分组(美股 / A股) */}
+      {tasksLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {Array.from({ length: 4 }).map((_, i) => (
             <div key={i} className="bg-slate-800 rounded-lg border border-slate-700 p-4 animate-pulse">
               <div className="flex items-start justify-between mb-3">
                 <div className="space-y-1.5">
@@ -205,10 +204,12 @@ export default function Scheduler() {
                 <div className="h-6 w-12 bg-slate-700 rounded" />
               </div>
             </div>
-          ))
-        ) : tasks.length === 0 ? (
-          <div className="col-span-2 text-center py-10 text-slate-500 text-sm">暂无任务，点击「+ 新建任务」添加</div>
-        ) : tasks.map((task: any) => (
+          ))}
+        </div>
+      ) : tasks.length === 0 ? (
+        <div className="text-center py-10 text-slate-500 text-sm">暂无任务，点击「+ 新建任务」添加</div>
+      ) : (() => {
+        const renderTaskCard = (task: any) => (
           <div key={task.task_id} className="bg-slate-800 rounded-lg border border-slate-700 p-4">
             <div className="flex items-start justify-between mb-3">
               <div>
@@ -279,8 +280,29 @@ export default function Scheduler() {
               </button>
             </div>
           </div>
-        ))}
-      </div>
+        )
+        // 按 task_id 前缀分组(astock_* → A 股,其它 → 美股)
+        const groups: { key: string; title: string; list: any[] }[] = [
+          { key: 'us',     title: '🇺🇸 美股', list: (tasks as any[]).filter(t => !t.task_id.startsWith('astock')) },
+          { key: 'astock', title: '🇨🇳 A 股', list: (tasks as any[]).filter(t =>  t.task_id.startsWith('astock')) },
+        ].filter(g => g.list.length > 0)
+        return (
+          <div className="space-y-6">
+            {groups.map(g => (
+              <div key={g.key}>
+                <div className="text-sm font-medium text-slate-300 mb-3 flex items-center gap-2">
+                  <span>{g.title}</span>
+                  <span className="text-xs text-slate-500">({g.list.length})</span>
+                  <span className="flex-1 border-b border-slate-700/60 ml-2" />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {g.list.map(renderTaskCard)}
+                </div>
+              </div>
+            ))}
+          </div>
+        )
+      })()}
 
       {/* 执行历史 */}
       <div className="bg-slate-800 rounded-lg border border-slate-700">

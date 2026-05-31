@@ -62,6 +62,9 @@ export const submitAStockBacktest = (body: {
   start_date: string; end_date: string;
   initial_cash?: number; top_n?: number; groups?: string[];
   strategy?: 'momentum' | 'momentum_filtered' | 'sector_rotation' | 'quality_momentum';
+  rebalance_freq?: 'daily' | 'weekly' | 'biweekly' | 'monthly';
+  apply_costs?: boolean;
+  stop_loss?: 'none' | 'ema21' | 'fixed_pct';
 }) =>
   api.post('/astock/backtest', body).then(r => r.data as { task_id: string; status: string })
 export const getAStockBacktestTask = (taskId: string) =>

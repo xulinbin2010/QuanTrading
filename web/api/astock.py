@@ -20,6 +20,9 @@ def backtest_submit(data: dict = Body(...)):
             'top_n':      int(data.get('top_n', 4)),
             'groups':     data.get('groups'),
             'strategy':   data.get('strategy', 'momentum'),
+            'rebalance_freq': data.get('rebalance_freq', 'weekly'),
+            'apply_costs':    bool(data.get('apply_costs', False)),
+            'stop_loss':      data.get('stop_loss', 'none'),
         }
         task_id = submit_backtest(params)
         return {'task_id': task_id, 'status': 'running'}

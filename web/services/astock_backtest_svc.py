@@ -219,6 +219,40 @@ def _load_pe_map() -> dict[str, float]:
     return pe_map
 
 
+# 实盘成本估算:买入印花税 0 + 佣金 0.025% + 滑点 0.1% = 0.125%
+# 卖出印花税 0.05% + 佣金 0.025% + 滑点 0.1% = 0.175%
+_BUY_COST_RATE  = 0.00125
+_SELL_COST_RATE = 0.00175
+
+# 固定百分比止损默认 -15%(从买入价跌 15% 即卖)
+_FIXED_STOP_PCT = -0.15
+
+
+def _check_stop_loss(positions: dict, price_map: dict, eval_date: pd.Timestamp,
+                     stop_loss: str) -> list[str]:
+    """返回触发止损的 symbol 列表。eval_date 用前一交易日数据判断(避免前瞻偏差)。"""
+    if stop_loss == 'none' or not positions:
+        return []
+    out: list[str] = []
+    for sym, pos in positions.items():
+        df = price_map.get(sym)
+        if df is None:
+            continue
+        close = df['close'].loc[:eval_date]
+        if len(close) < 21:
+            continue
+        last_close = float(close.iloc[-1])
+        if stop_loss == 'ema21':
+            ema21 = float(close.ewm(span=21, adjust=False).mean().iloc[-1])
+            if last_close < ema21:
+                out.append(sym)
+        elif stop_loss == 'fixed_pct':
+            entry = pos['entry_price']
+            if entry > 0 and last_close / entry - 1 <= _FIXED_STOP_PCT:
+                out.append(sym)
+    return out
+
+
 def run_backtest(
     start_date: str,
     end_date: str,
@@ -226,10 +260,23 @@ def run_backtest(
     top_n: int = 4,
     groups: list[str] | None = None,
     strategy: str = 'momentum',
+    rebalance_freq: str = 'weekly',
+    apply_costs: bool = False,
+    stop_loss: str = 'none',
 ) -> dict:
-    """主入口。每周第一个交易日 rebalance,持有 strategy 选出的前 top_n 等分。"""
+    """主入口。按 rebalance_freq 频率 rebalance,持有 strategy 选出的前 top_n 等分。
+
+    rebalance_freq: daily / weekly(默认) / biweekly / monthly
+    apply_costs:   True 时扣印花税+佣金+滑点(BUY 0.125%, SELL 0.175%)
+    stop_loss:     none(默认) / ema21(收盘破 EMA21 即卖) / fixed_pct(从买入价 -15% 即卖)
+                   每个交易日都检查,触发后当日开盘价卖出(优先于 rebalance)
+    """
     if strategy not in _STRATEGIES:
         raise ValueError(f'未知策略 {strategy},可选:{list(_STRATEGIES.keys())}')
+    if rebalance_freq not in ('daily', 'weekly', 'biweekly', 'monthly'):
+        raise ValueError(f'未知频率 {rebalance_freq}')
+    if stop_loss not in ('none', 'ema21', 'fixed_pct'):
+        raise ValueError(f'未知止损 {stop_loss}')
     themes_cfg = _au.load_themes().get('groups', {})
     if groups:
         themes_cfg = {k: v for k, v in themes_cfg.items() if k in groups}
@@ -263,14 +310,28 @@ def run_backtest(
     if len(all_dates) < 5:
         raise ValueError(f'{start_date} ~ {end_date} 交易日不足({len(all_dates)} 天)')
 
-    # 每周第一个交易日 = rebalance 日(周一,或周一假期顺延)
+    # rebalance 日:按 rebalance_freq 计算
     rebalance_dates: list[pd.Timestamp] = []
-    seen_weeks: set = set()
-    for d in all_dates:
-        wk = (d.year, d.isocalendar()[1])
-        if wk not in seen_weeks:
-            seen_weeks.add(wk)
-            rebalance_dates.append(d)
+    if rebalance_freq == 'daily':
+        rebalance_dates = list(all_dates[1:])   # 跳过首日(无前一日评分基准)
+    elif rebalance_freq == 'weekly':
+        seen: set = set()
+        for d in all_dates:
+            wk = (d.year, d.isocalendar()[1])
+            if wk not in seen:
+                seen.add(wk); rebalance_dates.append(d)
+    elif rebalance_freq == 'biweekly':
+        seen: set = set()
+        for d in all_dates:
+            wk_pair = (d.year, d.isocalendar()[1] // 2)   # 两周一组
+            if wk_pair not in seen:
+                seen.add(wk_pair); rebalance_dates.append(d)
+    else:   # monthly
+        seen: set = set()
+        for d in all_dates:
+            mo = (d.year, d.month)
+            if mo not in seen:
+                seen.add(mo); rebalance_dates.append(d)
     rebal_set = set(rebalance_dates)
     selector = _STRATEGIES[strategy]
     # quality_momentum 用 PE 加权,提前加载
@@ -286,6 +347,34 @@ def run_backtest(
     bench_initial = float(bench_df.loc[all_dates[0], 'close'])
 
     for i, d in enumerate(all_dates):
+        # 每日止损检查:用前一交易日数据判断,当日开盘价卖(优先于 rebalance)
+        if stop_loss != 'none' and i > 0 and positions:
+            eval_date = all_dates[i - 1]
+            stop_syms = _check_stop_loss(positions, price_map, eval_date, stop_loss)
+            for sym in stop_syms:
+                df = price_map.get(sym)
+                if df is None or d not in df.index:
+                    continue
+                sell_price = float(df.loc[d, 'open'])
+                pos = positions.pop(sym)
+                qty = pos['qty']
+                entry_price = pos['entry_price']
+                gross = qty * sell_price
+                cost = gross * _SELL_COST_RATE if apply_costs else 0.0
+                proceeds = gross - cost
+                cash += proceeds
+                profit = proceeds - entry_price * qty
+                profit_pct = profit / (entry_price * qty) if entry_price > 0 else 0
+                trades.append({
+                    'date': d.strftime('%Y-%m-%d'), 'action': 'SELL',
+                    'symbol': sym, 'qty': qty, 'price': sell_price, 'amount': proceeds,
+                    'entry_price': round(entry_price, 2),
+                    'profit': round(profit, 2),
+                    'profit_pct': round(profit_pct, 4),
+                    'hold_days': (d - pos['entry_date']).days,
+                    'reason': 'stop_loss',
+                })
+
         # rebalance:用前一交易日数据评分(避免前瞻),当日开盘价成交
         if d in rebal_set and i > 0:
             eval_date = all_dates[i - 1]
@@ -310,9 +399,11 @@ def run_backtest(
                     pos = positions.pop(sym)
                     qty = pos['qty']
                     entry_price = pos['entry_price']
-                    proceeds = qty * sell_price
+                    gross = qty * sell_price
+                    cost = gross * _SELL_COST_RATE if apply_costs else 0.0
+                    proceeds = gross - cost
                     cash += proceeds
-                    profit = (sell_price - entry_price) * qty
+                    profit = proceeds - entry_price * qty   # entry 已含买入成本
                     profit_pct = (sell_price - entry_price) / entry_price if entry_price > 0 else 0
                     hold_days = (d - pos['entry_date']).days
                     trades.append({
@@ -345,11 +436,17 @@ def run_backtest(
                     if qty <= 0:
                         continue
                     cost = qty * buy_price
-                    cash -= cost
-                    positions[sym] = {'qty': qty, 'entry_price': buy_price, 'entry_date': d}
+                    fee = cost * _BUY_COST_RATE if apply_costs else 0.0
+                    total_pay = cost + fee
+                    if total_pay > cash:
+                        continue   # 含手续费后超预算,跳过
+                    cash -= total_pay
+                    # entry_price 含买入成本(用于 SELL 时正确算盈亏)
+                    effective_entry = (cost + fee) / qty
+                    positions[sym] = {'qty': qty, 'entry_price': effective_entry, 'entry_date': d}
                     trades.append({
                         'date': d.strftime('%Y-%m-%d'), 'action': 'BUY',
-                        'symbol': sym, 'qty': qty, 'price': buy_price, 'amount': cost,
+                        'symbol': sym, 'qty': qty, 'price': buy_price, 'amount': total_pay,
                     })
 
         # 当日净值(收盘价)
@@ -399,6 +496,10 @@ def run_backtest(
         'start_date': start_date, 'end_date': end_date,
         'initial_cash': float(initial_cash), 'top_n': top_n,
         'strategy': strategy,
+        'rebalance_freq': rebalance_freq,
+        'apply_costs': apply_costs,
+        'stop_loss': stop_loss,
+        'n_stop_loss_sells': sum(1 for t in trades if t.get('reason') == 'stop_loss'),
         'universe_size': len(all_syms), 'groups_used': sorted(themes_cfg.keys()),
         'final_value': float(port_series.iloc[-1]),
         'total_return': float(total_return),

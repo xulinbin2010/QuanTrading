@@ -26,6 +26,9 @@ export default function AStockMomentumBacktest() {
   const [initialCash, setInitialCash] = useState(100_000)
   const [topN, setTopN] = useState(4)
   const [strategy, setStrategy] = useState<'momentum' | 'momentum_filtered' | 'sector_rotation' | 'quality_momentum'>('momentum_filtered')
+  const [rebalanceFreq, setRebalanceFreq] = useState<'daily' | 'weekly' | 'biweekly' | 'monthly'>('weekly')
+  const [applyCosts, setApplyCosts] = useState(false)
+  const [stopLoss, setStopLoss] = useState<'none' | 'ema21' | 'fixed_pct'>('none')
   const [taskId, setTaskId] = useState<string | null>(null)
   const [status, setStatus] = useState<'idle' | 'running' | 'completed' | 'failed'>('idle')
   const [result, setResult] = useState<any>(null)
@@ -65,6 +68,9 @@ export default function AStockMomentumBacktest() {
         start_date: start, end_date: end,
         initial_cash: initialCash, top_n: topN,
         strategy,
+        rebalance_freq: rebalanceFreq,
+        apply_costs: applyCosts,
+        stop_loss: stopLoss,
       })
       setTaskId(r.task_id)
     } catch (e: any) {
@@ -134,6 +140,32 @@ export default function AStockMomentumBacktest() {
               <option value="quality_momentum">质量动能(PE 加权)</option>
             </select>
           </div>
+          <div>
+            <div className="text-xs text-slate-400 mb-1">Rebalance 频率</div>
+            <select value={rebalanceFreq} onChange={e => setRebalanceFreq(e.target.value as any)}
+              className="bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-white w-32">
+              <option value="daily">每个交易日</option>
+              <option value="weekly">每周一 ⭐</option>
+              <option value="biweekly">每双周</option>
+              <option value="monthly">每月初</option>
+            </select>
+          </div>
+          <div>
+            <div className="text-xs text-slate-400 mb-1">止损规则</div>
+            <select value={stopLoss} onChange={e => setStopLoss(e.target.value as any)}
+              className="bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-white w-44"
+              title="每日检查;触发后当日开盘价卖,优先于 rebalance">
+              <option value="none">无(仅 rebalance 卖)</option>
+              <option value="ema21">EMA21 破位即卖 ⭐</option>
+              <option value="fixed_pct">固定 -15% 止损</option>
+            </select>
+          </div>
+          <label className="flex items-center gap-1.5 text-xs text-slate-300 cursor-pointer select-none pb-2"
+                 title="扣印花税(卖 0.05%)+ 佣金(双边 0.025%)+ 滑点(0.1%)→ 实战估算">
+            <input type="checkbox" checked={applyCosts} onChange={e => setApplyCosts(e.target.checked)}
+              className="rounded border-slate-600" />
+            扣实盘成本
+          </label>
           <button onClick={runBacktest} disabled={isRunning}
             className="px-4 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 disabled:opacity-40 text-white rounded transition-colors">
             {isRunning ? '回测中...' : '跑回测'}

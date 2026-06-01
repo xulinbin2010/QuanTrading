@@ -85,6 +85,12 @@ def run(trade_date: str, debug: bool = False):
     # ── 查询当天待确认订单 ───────────────────────────────────
     db = Database()
     db.connect()
+
+    # 清扫历史遗留：账龄 ≥3 天仍未对账的非终态单必然已死，标记 Expired，防止累积
+    _stale = db.expire_stale_orders(days=3)
+    if _stale:
+        logger.warning(f'清扫 {_stale} 笔过期未对账订单（账龄≥3天）→ Expired')
+
     pending = db.get_pending_orders(trade_date)
 
     if not pending:

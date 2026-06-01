@@ -887,8 +887,12 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
     elif not buy_list:
         print(f"  今日无买入信号")
     else:
-        # 统计当前持仓的行业分布
+        # 统计当前持仓的行业分布 + 非 AI 票数量（含存量口径，AI 优先池不计入）
         sector_counts: dict[str, int] = {}
+        ai_set = _load_ai_priority_set()
+        non_ai_held = 0
+        # getattr 兜底：config.py 未纳入 git，旧机器若无此参数则退回默认 1，避免 AttributeError
+        max_non_ai = getattr(config, 'MAX_NON_AI_POS', 1)
         if stock_positions:
             pos_info = get_stock_info(list(stock_positions.keys()))
             for sym in stock_positions:
@@ -896,6 +900,8 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
                     continue  # 本次已触发止损/卖出，不计入行业占用
                 sec = (pos_info.get(sym, {}).get('sector') or 'Unknown')
                 sector_counts[sec] = sector_counts.get(sec, 0) + 1
+                if sym.upper() not in ai_set:
+                    non_ai_held += 1
 
         executed = 0
         opg_buy_trades: list = []   # [(symbol, orig_qty, limit_price, trade)] 供补单监控用
@@ -911,6 +917,10 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
             is_ai_priority = sig.get('ai_priority', False)
             if not is_ai_priority and sector_counts.get(sec, 0) >= MAX_PER_SECTOR:
                 print(f"  [{symbol}] 行业[{sec}]已持有 {sector_counts[sec]} 只（上限 {MAX_PER_SECTOR}），跳过")
+                continue
+            # 非 AI 主线倾斜：纯动量票（非 AI 优先池）数量封顶，AI 票不受限
+            if not is_ai_priority and non_ai_held >= max_non_ai:
+                print(f"  [{symbol}] 非 AI 动量票已达上限 {max_non_ai} 只（书向 AI 主线倾斜），跳过")
                 continue
             # 财报回避
             if config.EARNINGS_AVOID_DAYS > 0 and has_upcoming_earnings(symbol, config.EARNINGS_AVOID_DAYS):
@@ -976,6 +986,7 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
                     print(f"  → [dry-run] 将下 {tif_label}")
             if not is_ai_priority:
                 sector_counts[sec] = sector_counts.get(sec, 0) + 1
+                non_ai_held += 1
             executed += 1
 
         # 在线路径：等待开盘集合竞价完成，检测并补充部分成交订单

@@ -398,6 +398,7 @@ ai_priority_bonus  = +0.5（AI 优先池成员绝对置顶；rs_score 通常 [-0
 |--------|----------|
 | 已持仓 | `symbol in stock_positions` |
 | 行业集中度 | 该 GICS 行业已持有 ≥ `MAX_PER_SECTOR`（默认3）只。**AI 优先池成员豁免**（GPU/网络/电力本来就重叠半导体，且不计入计数，与 SP500 池独立） |
+| 非 AI 主线倾斜 | 非 AI 优先池的纯动量票已持有 ≥ `MAX_NON_AI_POS`（默认1，含存量口径）则跳过。**AI 优先池成员豁免**。让书向 AI 主线集中，又保留少量宽基动量机会（如 D 电力、DAL 航空这类 off-theme 票被限到最多 1 只） |
 | 财报回避 | N 日历日内有财报，`EARNINGS_AVOID_DAYS=1` |
 | 仓位槽位 | `executed >= slots`（已满则停止） |
 | 资金不足 | `deployable < budget_per_pos × 0.5` |
@@ -459,6 +460,7 @@ VIX得分    = clip((30 - VIX) / 100, -0.2, +0.2)      → [-0.2, +0.2]
 | `POSITION_PCT` | 0.15 | 每仓占净值比例（15% ≈ $9,000/仓） |
 | `CASH_RESERVE_PCT` | 派生 | = 1 - MAX_POSITIONS × POSITION_PCT，自动计算 |
 | `MAX_PER_SECTOR` | 3 | 同一 GICS 行业最多持有只数 |
+| `MAX_NON_AI_POS` | 1 | 非 AI 优先池的纯动量票最多持有只数（含存量口径，AI 池不受限）；设大值如 99 = 不限制 |
 | `TARGET_RISK_PER_POS` | 0.03 | 每仓目标风险比例（ATR止损触发最大亏损） |
 
 **止损参数：**

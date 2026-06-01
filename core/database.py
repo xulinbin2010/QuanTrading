@@ -154,10 +154,27 @@ class Database:
              WHERE DATE(created_at) = ?
                AND filled_price IS NULL
                AND order_id IS NOT NULL
-               AND status NOT IN ('Cancelled', 'ApiCancelled', 'Inactive')
+               AND status NOT IN ('Cancelled', 'ApiCancelled', 'Inactive', 'Expired')
              ORDER BY created_at ASC
         """, (trade_date,))
         return self.cursor.fetchall()
+
+    def expire_stale_orders(self, days: int = 3) -> int:
+        """把账龄 ≥ days 天仍处于非终态(PreSubmitted/Submitted/PendingSubmit)的订单标记为 Expired。
+        OPG 单只对下一开盘有效、DAY 单当日失效，几天前仍未对账的必然已死。返回失效笔数。
+        非破坏性：仅改 status，行保留可回溯。"""
+        if not self._ensure_conn():
+            return 0
+        self.cursor.execute("""
+            UPDATE orders
+               SET status = 'Expired'
+             WHERE status IN ('PreSubmitted', 'Submitted', 'PendingSubmit')
+               AND filled_price IS NULL
+               AND DATE(created_at) <= DATE('now', 'localtime', ?)
+        """, (f'-{int(days)} days',))
+        n = self.cursor.rowcount
+        self.conn.commit()
+        return n
 
     def get_orders(self, symbol=None, limit=50):
         if not self._ensure_conn():

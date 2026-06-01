@@ -243,9 +243,10 @@ class AStockDataStore:
         return None
 
     def topup_today_from_spot(self, codes: list[str]) -> int:
-        """用实时快照把"当天"日K补进本地 Parquet（仅交易日、本地缺当天时）。返回补齐只数。
+        """用实时快照把"当天"日K补进本地 Parquet（仅交易日）。返回补齐只数。
         快照含 今开/最高/最低/最新价/成交量/昨收，单位与 sina 日线一致（股）。
-        以"快照昨收≈本地最新收盘"做连续性校验，防止错位。"""
+        盘中可重复调用：当天 bar 用最新快照覆盖（最新价/最高/最低/量滚动更新），
+        以"快照昨收≈昨日收盘"做连续性校验，防止错位。次日 refresh_recent 用正式日线覆盖。"""
         today = date.today()
         if today.isoweekday() > 5:   # 周末无新数据
             return 0
@@ -262,8 +263,8 @@ class AStockDataStore:
             local = self._load_local(code)
             if local is None or local.empty or 'volume' not in local.columns:
                 continue
-            if local.index[-1].date() >= today:
-                continue
+            if local.index[-1].date() > today:
+                continue   # 本地存在未来日期 bar（异常），跳过
             r = smap.get(code)
             if r is None:
                 continue
@@ -274,12 +275,16 @@ class AStockDataStore:
                 continue
             if not (close > 0 and vol > 0 and o > 0):
                 continue
-            last_close = float(local['close'].iloc[-1])
+            # 连续性基准取「昨日(<today)」最后一根，避免盘中已补的当天实时价干扰校验
+            prior = local[local.index.date < today]
+            if prior.empty:
+                continue
+            last_close = float(prior['close'].iloc[-1])
             if last_close <= 0 or abs(prev - last_close) / last_close > 0.2:
                 continue   # 连续性校验失败（疑似代码错位/复权跳变），跳过
             row = {'open': o, 'high': hi, 'low': lo, 'close': close, 'volume': vol}
-            if 'shares' in local.columns:
-                row['shares'] = local['shares'].iloc[-1]
+            if 'shares' in prior.columns:
+                row['shares'] = prior['shares'].iloc[-1]   # 盘中流通股本不变，用昨日值
             merged = pd.concat([local, pd.DataFrame([row], index=[ts])])
             merged = merged[~merged.index.duplicated(keep='last')].sort_index()
             merged.to_parquet(self._path(code))
@@ -298,8 +303,8 @@ class AStockDataStore:
             local = pd.read_parquet(cache_path)
         except Exception:
             return False
-        if local.empty or local.index[-1].date() >= today:
-            return False
+        if local.empty or local.index[-1].date() > today:
+            return False   # 盘中可重复覆盖当天 bar（>today 才跳过）
         sym = INDEX_SYMBOLS[key]
         num = sym[2:] if sym[:2] in ('sh', 'sz') else sym
         import time

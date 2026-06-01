@@ -73,11 +73,11 @@ DEFAULT_TASKS = [
     },
     {
         'task_id':  'astock_update',
-        'name':     'A股盘后数据更新 + 扫描(主题板块)',
+        'name':     'A股盘中实时刷新 + 扫描(主题板块)',
         'command':  f'{PYTHON} -m web.services.astock_momentum_svc --mode theme',
-        'cron_expr': '30 16 * * 1-5',  # 北京 周一至五 16:30（A股收盘后约 1.5 小时，数据已结算稳定）
+        'cron_expr': '0,30 10-11,13-15 * * 1-5',  # 北京 交易时段每 30 分钟（10:00~11:30 / 13:00~15:30）
         'enabled':  False,
-        'description': 'A股交易日收盘后用实时快照补当日 bar 并重建主题扫描缓存',
+        'description': 'A股交易时段每 30 分钟用实时快照覆盖当日 bar 并重建主题扫描缓存；15:30 那次即收盘价，次日 astock_refresh 用正式日线复核',
     },
     {
         'task_id':  'astock_refresh',
@@ -88,6 +88,12 @@ DEFAULT_TASKS = [
         'description': '次日早重拉 sina 正式前复权日线，覆盖前一日盘后快照补的原始价 bar，保证数据最终准确',
     },
 ]
+
+# 默认任务 cron 调整（非 UTC 迁移）：task_id → 需被替换的旧默认 cron。
+# DB 里命中此旧值时升级到 DEFAULT_TASKS 当前 cron；用户手改过的自定义 cron 不受影响。
+_REPLACE_OLD_CRON = {
+    'astock_update': '30 16 * * 1-5',  # 盘后单次 → 盘中每 30 分钟实时刷新
+}
 
 # 旧 UTC cron → 新北京时间 cron（自动迁移）
 _UTC_TO_CST = {
@@ -165,6 +171,15 @@ class SchedulerService:
                         name=t['name'],
                         command=t['command'],
                         cron_expr=_UTC_TO_CST[old_cron],
+                        enabled=existing[t['task_id']][4],
+                    )
+                elif _REPLACE_OLD_CRON.get(t['task_id']) == old_cron:
+                    # 命中需替换的旧默认 cron → 升级到当前默认（同时刷新 name/description）
+                    db.upsert_task(
+                        task_id=t['task_id'],
+                        name=t['name'],
+                        command=t['command'],
+                        cron_expr=t['cron_expr'],
                         enabled=existing[t['task_id']][4],
                     )
 

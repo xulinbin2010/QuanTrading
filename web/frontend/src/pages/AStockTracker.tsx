@@ -184,6 +184,11 @@ export default function AStockTracker() {
     queryKey: ['astock-momentum', mode],
     queryFn: () => getAStockMomentum(mode, false),
     staleTime: 30 * 60_000,
+    // 每 5 分钟自动拉一次（force=false，命中调度保鲜的热缓存）：
+    // 调度任务交易时段每 30 分钟刷新缓存，页面据此自动跟新，无需手动点刷新；
+    // 盘后缓存过期时这次轮询会触发一次后台重扫，补上调度不覆盖的时段。
+    // refetchIntervalInBackground 默认 false → tab 失焦时暂停，省请求。
+    refetchInterval: 5 * 60_000,
     retry: false,
   })
 

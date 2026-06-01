@@ -464,6 +464,25 @@ def place_sell_order(symbol: str, qty: int, order_type: str,
     trading = Trading(_ib, db)
 
     def _do():
+        # 防重复/超卖：已挂未成交卖单 + 本次数量 不得超过持仓（跨 clientId 全量查询，
+        # 防止盘前重复点击卖出把仓位卖空。reqAllOpenOrders 拉全部 client 的挂单含
+        # auto_trader 的止损单）。如确需追加卖出，请先撤销原卖单。
+        _ib.reqAllOpenOrders()
+        pending = sum(
+            float(t.order.totalQuantity)
+            for t in _ib.openTrades()
+            if t.contract.symbol == symbol and t.order.action == 'SELL'
+            and t.orderStatus.status not in ('Filled', 'Cancelled', 'ApiCancelled', 'Inactive')
+        )
+        held = sum(
+            abs(float(p.position)) for p in _ib.positions()
+            if p.contract.symbol == symbol and getattr(p.contract, 'secType', 'STK') == 'STK'
+        )
+        if pending + qty > held:
+            raise ValueError(
+                f"{symbol} 已有 {int(pending)} 股待成交卖单，再卖 {qty} 股将超过持仓 "
+                f"{int(held)} 股（会卖空）。如需调整请先撤销原卖单（持仓页订单区或 TWS）。"
+            )
         if order_type == 'LMT':
             if limit_price is None:
                 raise ValueError("限价单需要提供限价")

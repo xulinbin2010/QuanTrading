@@ -548,6 +548,34 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
         cash += sgov_value
         print(f"  现金等价持仓：{list(cash_equiv_pos)} 合计 ${sgov_value:,.0f}（已计入可用现金）")
 
+    # ── 待成交市价卖单感知（含 Web UI 手动卖出）：对应持仓视为退出，腾槽位 + 预计回笼资金 ──
+    # Web UI 用不同 clientId 下单，ib.openTrades() 看不到，故从 DB 读今日非终态卖单。
+    # 仅认市价单(MKT/MOC)——开盘集合竞价必成交，腾槽安全；限价卖单可能不成交，不腾以防过投。
+    # 仅当卖出股数 ≥ 持仓股数(全平)才腾槽，部分卖出不腾。处理同 CASH_EQUIV：从 stock_positions
+    # 移出 → 不占槽、不被止损/报警重复处理。自校正：卖单若已成交，持仓不在 stock_positions，不会误腾。
+    _px = signals.get('_prices', {})
+    pending_sell_exits = {}
+    try:
+        _sell_qty: dict[str, float] = {}
+        for _row in db.get_pending_orders(date.today().strftime('%Y-%m-%d')):
+            # (id, symbol, action, order_type, quantity, price, order_id)
+            if _row[2] == 'SELL' and _row[3] in ('MKT', 'MOC'):
+                _sell_qty[_row[1]] = _sell_qty.get(_row[1], 0.0) + (_row[4] or 0.0)
+        for _sym, _q in _sell_qty.items():
+            if (_sym in stock_positions and _sym not in CASH_EQUIV
+                    and _q >= int(stock_positions[_sym].position)):
+                pending_sell_exits[_sym] = stock_positions[_sym]
+    except Exception as _e:
+        print(f"  [warn] 待成交卖单检测失败，按常规持仓处理：{_e}")
+    if pending_sell_exits:
+        _proceeds = sum(abs(p.position) * (_px.get(s) or p.avgCost)
+                        for s, p in pending_sell_exits.items())
+        cash += _proceeds
+        for s in pending_sell_exits:
+            del stock_positions[s]
+        print(f"  待成交市价卖单：{list(pending_sell_exits)} → 视为退出，腾出 {len(pending_sell_exits)} 槽，"
+              f"预计回笼 ${_proceeds:,.0f}（计入可用资金）")
+
     n_held    = len(stock_positions)
 
     # ── 查询已有挂单，重复运行时撤旧换新 ─────────────────────────
@@ -911,6 +939,9 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
             symbol = sig['symbol']
             if symbol in stock_positions:
                 print(f"  [{symbol}] 已持仓，跳过")
+                continue
+            if symbol in pending_sell_exits:
+                print(f"  [{symbol}] 正在卖出（待成交市价单），不回补，跳过")
                 continue
             # 行业集中度限制(AI 优先池豁免:GPU/网络/电力本来就重叠半导体)
             sec = sig.get('sector') or 'Unknown'

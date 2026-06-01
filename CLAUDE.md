@@ -221,6 +221,8 @@ python auto_trader.py --dry-run --universe nasdaq100     # 切换股票池
 
 **现金等价 ETF（SGOV/BIL/USFR）：** 自动识别，市值计入现金，不占仓位槽，跳过止损和信号扫描。
 
+**待成交市价卖单感知（含 Web UI 手动卖出）：** auto_trader 执行前从 DB 读当日非终态卖单，对**市价单(MKT/MOC)且卖出股数≥持仓**的标的，视为退出 → 腾出仓位槽 + 预计回笼资金计入可用现金（处理同现金等价 ETF：从 stock_positions 移出，不被止损/报警重复处理，买入循环不回补）。这样盘前手动卖出后，**同一轮 auto_trader 就能补仓**，不必等卖单实际成交（市价单开盘集合竞价必成交）。限价卖单不计入（可能不成交，防过投）；仅认全平、部分卖出不腾槽；卖单若已成交则持仓不在 stock_positions，自校正不误腾。注意：Web UI 用不同 clientId 下单，`ib.openTrades()` 跨 client 不可见，故走 DB 而非 IB 查询。
+
 **`auto_trader.py` 内部常量（不在 config.py）：**
 
 | 常量 | 值 | 说明 |

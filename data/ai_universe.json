@@ -1,0 +1,163 @@
+{
+  "groups": {
+    "hyperscalers": {
+      "label": "AI 云服务",
+      "color": "#6366f1",
+      "symbols": [
+        "AMZN",
+        "GOOGL"
+      ]
+    },
+    "gpu_compute": {
+      "label": "GPU/算力芯片",
+      "color": "#f97316",
+      "symbols": [
+        "NVDA",
+        "AMD",
+        "INTC",
+        "AVGO",
+        "MRVL",
+        "QCOM",
+        "ALAB",
+        "TSM",
+        "ARM",
+        "TXN",
+        "ADI",
+        "MPWR",
+        "MCHP",
+        "NXPI",
+        "SWKS",
+        "NVTS",
+        "WOLF",
+        "POWI"
+      ]
+    },
+    "memory_storage": {
+      "label": "存储/DRAM/NAND",
+      "color": "#a855f7",
+      "symbols": [
+        "MU",
+        "SNDK",
+        "WDC",
+        "STX",
+        "RMBS",
+        "DRAM"
+      ]
+    },
+    "semicon_equip": {
+      "label": "半导体设备/材料",
+      "color": "#eab308",
+      "symbols": [
+        "LRCX",
+        "KLAC",
+        "AMAT",
+        "ASML",
+        "ONTO",
+        "TER",
+        "AMKR",
+        "ENTG",
+        "AEHR",
+        "AXTI",
+        "Q"
+      ]
+    },
+    "datacenter_infra": {
+      "label": "数据中心基础设施",
+      "color": "#22c55e",
+      "symbols": [
+        "SMCI",
+        "DELL",
+        "HPE",
+        "VRT",
+        "EQIX",
+        "DLR",
+        "AMT",
+        "PSTG",
+        "NTAP",
+        "CLS",
+        "IONQ"
+      ]
+    },
+    "ai_networking": {
+      "label": "AI网络/交换",
+      "color": "#0ea5e9",
+      "symbols": [
+        "ANET",
+        "CSCO",
+        "CIEN",
+        "LITE",
+        "VIAV",
+        "CALX",
+        "AAOI",
+        "CRDO",
+        "LASR",
+        "NOK",
+        "JBL",
+        "GLW"
+      ]
+    },
+    "ai_infra_build": {
+      "label": "AI基础设施建设",
+      "color": "#06b6d4",
+      "symbols": [
+        "IREN",
+        "NBIS",
+        "CRWV",
+        "APLD",
+        "WULF",
+        "CORZ",
+        "BTDR",
+        "HIVE",
+        "CIFR",
+        "POWL",
+        "AGX"
+      ]
+    },
+    "power_cooling": {
+      "label": "电力/冷却",
+      "color": "#ef4444",
+      "symbols": [
+        "VST",
+        "CEG",
+        "ETR",
+        "NRG",
+        "EXC",
+        "AES",
+        "GEV",
+        "GTLS",
+        "TDW",
+        "ETN",
+        "GNRC",
+        "PWR",
+        "FIX",
+        "EME",
+        "OKLO",
+        "LEU",
+        "BE",
+        "FCEL",
+        "FLNC",
+        "PSIX"
+      ]
+    }
+  },
+  "pending_review": [],
+  "rejected": [
+    "AAPL",
+    "MSFT",
+    "META",
+    "ORCL",
+    "GTLB",
+    "NTNX",
+    "IBM",
+    "PLTR",
+    "SNPS",
+    "CDNS",
+    "APH",
+    "TEL",
+    "ON",
+    "MSI",
+    "HUBB",
+    "HPQ",
+    "ZBRA"
+  ]
+}

@@ -25,6 +25,8 @@ export const placeSellOrder = (body: {
   symbol: string; qty: number; order_type: 'MKT' | 'LMT'
   limit_price?: number; tif?: string
 }) => api.post('/portfolio/sell', body).then(r => r.data)
+export const cancelOrders = (symbol: string) =>
+  api.post('/portfolio/cancel-orders', { symbol }).then(r => r.data)
 
 // ── 因子看板 ──────────────────────────────────────────────
 

@@ -126,6 +126,21 @@ def place_sell(req: SellOrderRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+class CancelOrdersRequest(BaseModel):
+    symbol: str
+
+
+@router.post('/cancel-orders')
+def cancel_orders(req: CancelOrdersRequest):
+    """撤销指定股票的全部未成交挂单。"""
+    try:
+        return portfolio_svc.cancel_open_orders(req.symbol)
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get('/signals')
 def signals(universe: str = Query('sp500')):
     try:

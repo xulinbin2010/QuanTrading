@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient, useMutation } from '@tanstack/react-query'
-import { getOrders, getBalance, getPositions, refreshPositions, getEarningsDates, getPerformance, getStockDetail, getStockNews, placeSellOrder, getConfig, updateConfig } from '../api/client'
+import { getOrders, getBalance, getPositions, refreshPositions, getEarningsDates, getPerformance, getStockDetail, getStockNews, placeSellOrder, cancelOrders, getConfig, updateConfig } from '../api/client'
 import ReactECharts from 'echarts-for-react'
 import { useState } from 'react'
 import { useAccount } from '../App'
@@ -1082,7 +1082,23 @@ export default function Portfolio() {
   const [spinning, setSpinning] = useState(false)
   const [selectedPos, setSelectedPos] = useState<any>(null)
   const [sellPos, setSellPos] = useState<any>(null)
+  const [cancellingSym, setCancellingSym] = useState<string | null>(null)
   const queryClient = useQueryClient()
+
+  const handleCancelOrders = async (symbol: string) => {
+    if (!confirm(`确认撤销 ${symbol} 的全部未成交挂单？`)) return
+    setCancellingSym(symbol)
+    try {
+      const r = await cancelOrders(symbol)
+      queryClient.invalidateQueries({ queryKey: ['orders'] })
+      queryClient.invalidateQueries({ queryKey: ['positions'] })
+      alert(`已撤销 ${symbol} 的 ${r.count} 笔未成交挂单`)
+    } catch (e: any) {
+      alert(e.response?.data?.detail || '撤单失败（如需撤其他会话的单，请确认 Gateway 已设 Master API client ID）')
+    } finally {
+      setCancellingSym(null)
+    }
+  }
 
   const { data: balance, isError: balanceErr, refetch: refetchBalance } = useQuery({
     queryKey: ['balance'],
@@ -1299,7 +1315,7 @@ export default function Portfolio() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-slate-400 text-xs border-b border-slate-700">
-                  {['时间', '股票', '方向', '类型', '数量', '价格', '成交价', '状态'].map(h => (
+                  {['时间', '股票', '方向', '类型', '数量', '价格', '成交价', '状态', '操作'].map(h => (
                     <th key={h} className="px-4 py-2 text-left font-medium">{h}</th>
                   ))}
                 </tr>
@@ -1307,6 +1323,7 @@ export default function Portfolio() {
               <tbody>
                 {orders.map((o: any) => {
                   const filled = o.status === 'Filled' || o.status === 'PartialFill'
+                  const pending = ['PreSubmitted', 'Submitted', 'PendingSubmit', 'PendingCancel'].includes(o.status)
                   const dim = !filled ? 'opacity-40' : ''
                   return (
                   <tr key={o.id} className={`border-b border-slate-700/50 hover:bg-slate-700/30 text-xs ${dim}`}>
@@ -1320,6 +1337,18 @@ export default function Portfolio() {
                     <td className="px-4 py-2">{o.price ? `$${o.price.toFixed(2)}` : '市价'}</td>
                     <td className="px-4 py-2">{o.filled_price ? `$${o.filled_price.toFixed(2)}` : '-'}</td>
                     <td className={`px-4 py-2 ${filled ? 'text-slate-300' : 'text-slate-500'}`}>{o.status}</td>
+                    <td className="px-4 py-2">
+                      {pending && (
+                        <button
+                          onClick={() => handleCancelOrders(o.symbol)}
+                          disabled={cancellingSym === o.symbol}
+                          className="px-2 py-0.5 rounded text-[11px] bg-slate-700 hover:bg-red-700 text-slate-300 hover:text-white transition-colors disabled:opacity-40"
+                          title={`撤销 ${o.symbol} 的全部未成交挂单`}
+                        >
+                          {cancellingSym === o.symbol ? '撤销中…' : '撤单'}
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 )})}
 

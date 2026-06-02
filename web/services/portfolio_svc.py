@@ -31,7 +31,6 @@ _conn = None        # IBConnection 对象
 _ib   = None        # _conn.ib 的引用
 _ib_lock = threading.Lock()
 _last_attempt: float = 0.0
-_client_id_offset: int = 0   # 每次重置递增，避免旧连接 client_id 占用（Error 326）
 _COOLDOWN = 30.0    # 两次连接尝试之间最少间隔（秒）
 
 # ib_insync 同步方法（qualifyContracts / reqTickers / reqHistoricalData 等）内部
@@ -52,7 +51,7 @@ def _run_ib_sync(fn, *args, timeout: float = 30, **kwargs):
 
 def _ensure_connected():
     """首次（或冷却后）建立 IB 连接；之后依赖 IBConnection 自动重连。"""
-    global _conn, _ib, _last_attempt, _client_id_offset, _ib_event_loop, _ib_executor
+    global _conn, _ib, _last_attempt, _ib_event_loop, _ib_executor
     import asyncio
     with _ib_lock:
         # 已有连接管理器 → 由 IBConnection._on_disconnected 负责重连，不干预
@@ -73,8 +72,11 @@ def _ensure_connected():
 
             import config
             from core.connection import IBConnection
-            # client_id = 基础值 + 10（Web专用）+ offset（每次重置+1，避免Error 326）
-            cid = config.IB_CLIENT_ID + 10 + (_client_id_offset % 10)
+            # Web 专用固定 client_id（默认 IB_CLIENT_ID+10=11，可用 .env IB_WEB_CLIENT_ID 覆盖）。
+            # 必须与 Gateway「Configuration→API→Master API client ID」一致 → Web 成为主控
+            # client，才能撤销/管理任意 client（含 auto_trader clientId=1）下的订单。固定 id 是
+            # master 的前提；万一旧连接未释放报 Error 326，由 IBConnection 重试兜底。
+            cid = getattr(config, 'IB_WEB_CLIENT_ID', config.IB_CLIENT_ID + 10)
             _conn = IBConnection(
                 host=config.IB_HOST,
                 port=config.IB_PORT,
@@ -206,9 +208,9 @@ def _reset_connection():
     注意：ib_insync 事件循环运行在后台线程，直接从 FastAPI 线程调用
     ib.disconnect() 可能跨线程失效，导致旧 client_id 占用（Error 326）。
     此处只阻止旧对象自动重连、然后直接丢弃引用，让 GC + socket 超时自然回收。
-    新连接使用递增 client_id 避免冲突。
+    client_id 固定（master 需固定 id），重连仍用同一 id，Error 326 由 IBConnection 重试兜底。
     """
-    global _conn, _ib, _last_attempt, _client_id_offset, _ib_event_loop, _ib_executor
+    global _conn, _ib, _last_attempt, _ib_event_loop, _ib_executor
     with _ib_lock:
         if _conn is not None:
             try:
@@ -229,7 +231,7 @@ def _reset_connection():
         _ib = None
         _ib_event_loop = None
         _ib_executor = None
-        _client_id_offset += 1   # 换一个 client_id，绕开 Error 326
+        # 固定 master client_id，不再换号（master 需固定 id）；Error 326 由 IBConnection 重试兜底
         _last_attempt = 0.0
 
 
@@ -503,6 +505,49 @@ def place_sell_order(symbol: str, qty: int, order_type: str,
         "status":     trade.orderStatus.status,
         "order_id":   trade.order.orderId,
     }
+
+
+def cancel_open_orders(symbol: str) -> dict:
+    """撤销指定股票的全部未成交挂单。
+    需 Web 连接为 master client（IB_WEB_CLIENT_ID 与 Gateway Master API client ID 一致），
+    才能撤其他 client（如 auto_trader）下的单；否则只能撤本连接自己的单。
+    按 symbol 级撤销，规避不同 client 的 orderId 重号问题。"""
+    _ensure_connected()
+    if not _ib or not _ib.isConnected():
+        raise RuntimeError("IB Gateway 未连接")
+    symu = symbol.upper()
+
+    def _do():
+        _ib.reqAllOpenOrders()
+        targets = [
+            t for t in _ib.openTrades()
+            if t.contract.symbol.upper() == symu
+            and t.orderStatus.status not in ('Filled', 'Cancelled', 'ApiCancelled', 'Inactive')
+        ]
+        for t in targets:
+            _ib.cancelOrder(t.order)
+        return [
+            {'symbol': t.contract.symbol, 'orderId': t.order.orderId,
+             'action': t.order.action, 'orderType': t.order.orderType,
+             'qty': float(t.order.totalQuantity)}
+            for t in targets
+        ]
+
+    cancelled = _run_ib_sync(_do, timeout=30)
+    # 同步 DB（独立连接，线程安全）
+    if cancelled:
+        try:
+            import sqlite3 as _sq
+            import config as _cfg
+            con = _sq.connect(_cfg.DB_PATH, timeout=5)
+            con.execute(
+                "UPDATE orders SET status='Cancelled' WHERE UPPER(symbol)=? "
+                "AND status IN ('PreSubmitted','Submitted','PendingSubmit','PendingCancel')",
+                (symu,))
+            con.commit(); con.close()
+        except Exception:
+            pass
+    return {"symbol": symu, "cancelled": cancelled, "count": len(cancelled)}
 
 
 def get_signals(universe: str = 'sp500') -> dict:

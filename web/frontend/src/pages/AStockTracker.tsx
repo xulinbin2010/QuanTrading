@@ -71,6 +71,7 @@ function GroupCard({ g, active, onClick }: {
   const tone = rs5 >= 0 ? 'pos' : 'neg'
   return (
     <button onClick={onClick}
+      title={`${g.label}：板块中位 5 日相对沪深300 ${pctFmt(g.median_rs_5d)}`}
       className={`group-card group-card-${tone} text-left rounded-lg border p-2.5 transition-colors ${
         active ? 'border-blue-500' : 'border-slate-700 hover:border-slate-500'}`}
       style={{ background: bg }}>
@@ -79,26 +80,10 @@ function GroupCard({ g, active, onClick }: {
         <span className="gc-label text-[11px] text-slate-200 font-medium truncate">{g.label}</span>
       </div>
       <div className={`gc-rs font-mono text-sm font-bold ${rs5 >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
-        {pctFmt(g.median_rs_5d)} <span className="text-[9px] text-slate-400 font-normal">vs 300</span>
+        {pctFmt(g.median_rs_5d)}
       </div>
       <div className="gc-ad text-[10px] text-slate-400 mt-0.5">
         涨 <span className="gc-up text-emerald-300">{g.advance}</span> / 跌 <span className="gc-dn text-red-300">{g.decline}</span>
-      </div>
-      <div className="flex items-center gap-1 mt-1">
-        <span className={`gc-flow text-[10px] px-1 rounded ${
-          g.flow_signal === 'inflow' ? 'bg-emerald-900/60 text-emerald-300'
-          : g.flow_signal === 'outflow' ? 'bg-red-900/60 text-red-300'
-          : 'bg-slate-700 text-slate-400'}`}>
-          {g.flow_signal === 'inflow' ? '净流入' : g.flow_signal === 'outflow' ? '净流出' : '中性'}
-        </span>
-        <span className="gc-leaders text-[10px] text-slate-400 truncate inline-flex gap-1">
-          {g.leaders.slice(0, 2).map((l: any) => (
-            <SymbolLink key={l.symbol} symbol={l.symbol} market="a"
-              className="text-slate-400" title={l.name ?? l.symbol}>
-              {l.name ?? l.symbol}
-            </SymbolLink>
-          ))}
-        </span>
       </div>
     </button>
   )
@@ -351,19 +336,21 @@ export default function AStockTracker() {
             ))}
           </div>
 
-          {/* 筛选 + 窗口切换 */}
+          {/* 筛选 + 窗口切换（板块筛选靠上方热力方块点击，此处不再重复列板块按钮） */}
           <div className="flex items-center gap-2 flex-wrap">
             <button onClick={() => setGroupFilter('all')}
               className={`px-3 py-1 text-xs rounded ${groupFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
-              全部
+              全部板块
             </button>
-            {groups.map((g: any) => (
-              <button key={g.key} onClick={() => setGroupFilter(f => f === g.key ? 'all' : g.key)}
-                className={`px-3 py-1 text-xs rounded ${groupFilter === g.key ? 'text-white' : 'text-slate-300 hover:opacity-80'}`}
-                style={groupFilter === g.key ? { background: g.color } : { background: g.color + '33' }}>
-                {g.label}
-              </button>
-            ))}
+            {groupFilter !== 'all' && (
+              <span className="text-xs text-slate-400 inline-flex items-center gap-1">
+                已选
+                <span className="px-2 py-0.5 rounded text-white"
+                  style={{ background: groups.find((g: any) => g.key === groupFilter)?.color }}>
+                  {groupOptions.find(g => g.key === groupFilter)?.label ?? groupFilter}
+                </span>
+              </span>
+            )}
             <div className="ml-auto flex items-center gap-2">
               <span className="text-xs text-slate-500">均线：</span>
               {([['ema21','站上EMA21'],['ema7','站上EMA7'],['all','全部']] as const).map(([k, l]) => (

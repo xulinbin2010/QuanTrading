@@ -60,6 +60,25 @@ class DataStore:
         # 可选：IBKRDataStore 实例，用于 yfinance 复权跳变时的数据修复
         self._ibkr_store = ibkr_store
 
+    def _split_in_range(self, sym: str, d1, d2) -> bool:
+        """[d1, d2]（含端点，按日期）内是否真有拆股事件。
+
+        衔接处涨跌幅 >20% 既可能是拆股复权（需全量重下），也可能是财报单日暴涨
+        （MRVL/AEHR 这类高波动 AI 半导体票常见）。用 yfinance 拆股事件区分二者，
+        避免把真实暴涨误判成复权、白白触发 8 年全量重下。
+        网络失败时返回 True（保守：宁可多重下一次，也不漏真拆股导致脏数据）。"""
+        lo, hi = sorted([pd.Timestamp(d1).date(), pd.Timestamp(d2).date()])
+        try:
+            splits = yf.Ticker(sym).splits
+        except Exception:
+            return True
+        if splits is None or len(splits) == 0:
+            return False
+        for ts, ratio in splits.items():
+            if lo <= ts.date() <= hi and ratio and ratio != 1.0:
+                return True
+        return False
+
     # ── 主入口 ────────────────────────────────────────────────
 
     def get(
@@ -239,23 +258,34 @@ class DataStore:
                         ref_old = old['close'].iloc[-1]
                         ref_new = new_rows['close'].iloc[0]
                         if ref_old > 0 and abs(ref_new / ref_old - 1) > 0.20:
-                            _logger.warning(
-                                f'[DataStore] {sym} 复权跳变（追加）'
-                                f'({ref_old:.2f}→{ref_new:.2f})，触发全量重下'
+                            # 跳变>20%：拆股复权才需全量重下，财报单日暴涨按真实波动正常追加
+                            if self._split_in_range(sym, old.index[-1], new_rows.index[0]):
+                                _logger.warning(
+                                    f'[DataStore] {sym} 复权跳变（追加）'
+                                    f'({ref_old:.2f}→{ref_new:.2f})，确认有拆股，触发全量重下'
+                                )
+                                suspect_syms.add(sym)
+                                continue
+                            _logger.info(
+                                f'[DataStore] {sym} 衔接处大幅波动（追加）'
+                                f'({ref_old:.2f}→{ref_new:.2f})，无拆股事件，按真实涨跌正常追加'
                             )
-                            suspect_syms.add(sym)
-                            continue
                     elif is_backfill:
                         # 回补：检查 new_rows 末行 vs old 首行的衔接
                         ref_new = new_rows['close'].iloc[-1]
                         ref_old = old['close'].iloc[0]
                         if ref_old > 0 and abs(ref_new / ref_old - 1) > 0.20:
-                            _logger.warning(
-                                f'[DataStore] {sym} 复权跳变（回补）'
-                                f'({ref_new:.2f}→{ref_old:.2f})，触发全量重下'
+                            if self._split_in_range(sym, new_rows.index[-1], old.index[0]):
+                                _logger.warning(
+                                    f'[DataStore] {sym} 复权跳变（回补）'
+                                    f'({ref_new:.2f}→{ref_old:.2f})，确认有拆股，触发全量重下'
+                                )
+                                suspect_syms.add(sym)
+                                continue
+                            _logger.info(
+                                f'[DataStore] {sym} 衔接处大幅波动（回补）'
+                                f'({ref_new:.2f}→{ref_old:.2f})，无拆股事件，按真实涨跌正常合并'
                             )
-                            suspect_syms.add(sym)
-                            continue
                     # 跨范围混合（既有回补又有追加）：直接合并，dedup 处理
                 df = pd.concat([old, df])
                 df = df[~df.index.duplicated(keep='last')].sort_index()

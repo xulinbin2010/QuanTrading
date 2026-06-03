@@ -222,6 +222,9 @@ export default function AITracker() {
       {/* ── Tab: 追踪清单 ─────────────────────────────────────── */}
       {tab === 'tracker' && (
         <div className="space-y-3">
+          <div className="text-[11px] text-slate-500 bg-slate-900/40 border border-slate-700/50 rounded px-2.5 py-1.5 leading-relaxed">
+            <span className="text-slate-400">策展工具</span>：基本面+技术 4 维 10 分评分（Capex/RS/营收/叙事/技术）。在此筛出的标的加入 <span className="text-slate-300">AI 优先池（ai_universe.json）</span> → 喂给实盘引擎 auto_trader，享宽松 RS 参数 + 排序置顶。本页不出交易信号、不下单。
+          </div>
           {/* 过滤栏：子主题 + 市值范围 */}
           <div className="flex items-center gap-3 flex-wrap">
             <div className="flex gap-2 flex-wrap">
@@ -672,6 +675,9 @@ function MomentumTab() {
 
   return (
     <div className="space-y-4">
+      <div className="text-[11px] text-slate-500 bg-slate-900/40 border border-slate-700/50 rounded px-2.5 py-1.5 leading-relaxed">
+        <span className="text-slate-400">研究/择时视图</span>：AI 篮子内短线动能 + 资金流复合分排名（与「A 股动能扫描」同方法）。<span className="text-slate-300">独立打分，不接入实盘下单</span>——auto_trader 用的是 RS 动量（见因子看板），与此处 composite 是两套口径。
+      </div>
       {/* 操作栏 */}
       <div className="flex items-center gap-3 flex-wrap">
         <div className="flex gap-1">

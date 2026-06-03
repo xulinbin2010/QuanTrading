@@ -192,6 +192,10 @@ function ProductionSignalsPanel() {
         </button>
       </div>
 
+      <div className="text-[11px] text-slate-500 bg-slate-900/40 border border-slate-700/50 rounded px-2.5 py-1.5 mb-3 leading-relaxed">
+        实盘下单引擎 <span className="text-slate-400">auto_trader</span>（调度任务 auto-run）的<span className="text-slate-300">只读预览</span>，同一套 RS 动量扫描（含 AI 优先池）。此处不下单；真实下单由「任务调度」里的 auto_trader 定时执行。
+      </div>
+
       {data && (
         <div className="text-xs text-slate-400 mb-3 flex flex-wrap gap-x-4 gap-y-1">
           {data.last_updated && <span>更新 {data.last_updated.replace('T', ' ').slice(0, 16)}</span>}

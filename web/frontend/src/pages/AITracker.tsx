@@ -509,6 +509,41 @@ export default function AITracker() {
             )}
           </div>
 
+          {/* 待定区（灰色暂存，选分组「加入」后转正进优先池生效） */}
+          {pending.length > 0 && (
+            <div className="bg-slate-800/40 rounded-lg p-4 border border-dashed border-slate-600">
+              <div className="flex items-center gap-2 mb-3 flex-wrap">
+                <span className="text-sm font-medium text-slate-400">⏳ 待定（{pending.length}）</span>
+                <span className="text-xs text-slate-600">灰色暂存，不参与分析；选分组「加入」后进优先池生效，「✕」移除</span>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
+                {(pending as any[]).map((p: any) => (
+                  <div key={p.symbol}
+                    className="relative bg-slate-900/40 border border-slate-700/60 rounded-md p-2 opacity-70 hover:opacity-100 transition-opacity">
+                    <button onClick={() => rejectMutation.mutate(p.symbol)} title="移除待定"
+                      className="absolute top-1 right-1 text-slate-600 hover:text-red-400 text-xs leading-none">✕</button>
+                    <SymbolLink symbol={p.symbol} className="font-semibold text-slate-300 text-sm" />
+                    <div className="text-[10px] text-slate-500 mt-0.5 truncate" title={p.name || ''}>{p.name || '—'}</div>
+                    {p.note && <div className="text-[10px] text-slate-600 mt-0.5 truncate" title={p.note}>{p.note}</div>}
+                    <div className="flex gap-1 mt-1.5">
+                      <select defaultValue={p.suggest_group} id={`pend-grp-${p.symbol}`}
+                        className="flex-1 min-w-0 bg-slate-700 border border-slate-600 rounded px-1 py-0.5 text-[10px] text-slate-200 focus:outline-none">
+                        {Object.entries(groups).map(([gk, gv]) => (
+                          <option key={gk} value={gk}>{gv.label}</option>
+                        ))}
+                      </select>
+                      <button onClick={() => {
+                          const sel = document.getElementById(`pend-grp-${p.symbol}`) as HTMLSelectElement
+                          approveMutation.mutate({ symbol: p.symbol, group: sel?.value || p.suggest_group })
+                        }}
+                        className="px-1.5 py-0.5 text-[10px] bg-emerald-700 hover:bg-emerald-600 rounded text-white shrink-0">加入</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {Object.entries(groups).map(([gk, gv]) => {
             const syms: string[] = universe?.groups?.[gk]?.symbols ?? []
             return (

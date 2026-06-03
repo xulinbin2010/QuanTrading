@@ -270,7 +270,7 @@ function ProductionSignalsPanel() {
 // ── 主页面 ────────────────────────────────────────────────
 export default function FactorDashboard() {
   const [showRegistry, setShowRegistry] = useState(true)
-  const [universe] = useState('sp500+ndx')
+  const [universe] = useState('ai')
   const [previewResult, setPreviewResult] = useState<any>(null)
   const [trailResults, setTrailResults] = useState<any[]>([])
   const [trailLoading, setTrailLoading] = useState(false)
@@ -367,7 +367,7 @@ export default function FactorDashboard() {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-lg font-semibold text-white">因子看板</h1>
-        <span className="text-xs text-slate-400 bg-slate-700 border border-slate-600 rounded px-2 py-1">sp500+ndx</span>
+        <span className="text-xs text-slate-400 bg-slate-700 border border-slate-600 rounded px-2 py-1">AI 库</span>
       </div>
 
       {/* 今日生产信号(全宽置顶)*/}

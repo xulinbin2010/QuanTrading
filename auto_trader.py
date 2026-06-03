@@ -160,7 +160,7 @@ def _load_ai_boost_map() -> dict[str, float]:
 def scan_signals(
     held_symbols:     list[str],
     extra:            list[str] = None,
-    universe:         str       = 'sp500+ndx',
+    universe:         str       = 'ai',
     min_cap_b:        float     = None,    # 最小市值（十亿 USD），如 10
     max_cap_b:        float     = None,    # 最大市值（十亿 USD），如 500
     deny_industries:  list[str] = None,    # 拒绝行业，如 ['Software—Application']
@@ -1037,6 +1037,8 @@ def main():
                         help=f'最大市值（十亿USD），默认 {config.MAX_CAP_B}B')
     parser.add_argument('--deny-industry', nargs='+', default=config.DENY_INDUSTRIES,
                         help='拒绝行业关键词（模糊匹配）')
+    parser.add_argument('--universe', default='ai',
+                        help='股票池：ai(默认，data/ai_universe.json) / sp500+ndx / sp500 / nasdaq100')
     args = parser.parse_args()
 
     dry_run         = not args.run
@@ -1068,7 +1070,7 @@ def main():
 
     print("第一步：扫描信号（基于昨日收盘数据）")
     signals = scan_signals(
-        held, extra=extra, universe='sp500+ndx',
+        held, extra=extra, universe=args.universe,
         min_cap_b=args.min_cap, max_cap_b=args.max_cap,
         deny_industries=deny_industries,
     )

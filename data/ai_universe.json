@@ -1,163 +1,430 @@
 {
-  "groups": {
-    "hyperscalers": {
-      "label": "AI 云服务",
-      "color": "#6366f1",
-      "symbols": [
-        "AMZN",
-        "GOOGL"
-      ]
-    },
-    "gpu_compute": {
-      "label": "GPU/算力芯片",
-      "color": "#f97316",
-      "symbols": [
-        "NVDA",
-        "AMD",
-        "INTC",
-        "AVGO",
-        "MRVL",
-        "QCOM",
-        "ALAB",
-        "TSM",
-        "ARM",
-        "TXN",
-        "ADI",
-        "MPWR",
-        "MCHP",
-        "NXPI",
-        "SWKS",
-        "NVTS",
-        "WOLF",
-        "POWI"
-      ]
-    },
-    "memory_storage": {
-      "label": "存储/DRAM/NAND",
-      "color": "#a855f7",
-      "symbols": [
-        "MU",
-        "SNDK",
-        "WDC",
-        "STX",
-        "RMBS",
-        "DRAM"
-      ]
-    },
-    "semicon_equip": {
-      "label": "半导体设备/材料",
-      "color": "#eab308",
-      "symbols": [
-        "LRCX",
-        "KLAC",
-        "AMAT",
-        "ASML",
-        "ONTO",
-        "TER",
-        "AMKR",
-        "ENTG",
-        "AEHR",
-        "AXTI",
-        "Q"
-      ]
-    },
-    "datacenter_infra": {
-      "label": "数据中心基础设施",
-      "color": "#22c55e",
-      "symbols": [
-        "SMCI",
-        "DELL",
-        "HPE",
-        "VRT",
-        "EQIX",
-        "DLR",
-        "AMT",
-        "PSTG",
-        "NTAP",
-        "CLS",
-        "IONQ"
-      ]
-    },
-    "ai_networking": {
-      "label": "AI网络/交换",
-      "color": "#0ea5e9",
-      "symbols": [
-        "ANET",
-        "CSCO",
-        "CIEN",
-        "LITE",
-        "VIAV",
-        "CALX",
-        "AAOI",
-        "CRDO",
-        "LASR",
-        "NOK",
-        "JBL",
-        "GLW"
-      ]
-    },
-    "ai_infra_build": {
-      "label": "AI基础设施建设",
-      "color": "#06b6d4",
-      "symbols": [
-        "IREN",
-        "NBIS",
-        "CRWV",
-        "APLD",
-        "WULF",
-        "CORZ",
-        "BTDR",
-        "HIVE",
-        "CIFR",
-        "POWL",
-        "AGX"
-      ]
-    },
-    "power_cooling": {
-      "label": "电力/冷却",
-      "color": "#ef4444",
-      "symbols": [
-        "VST",
-        "CEG",
-        "ETR",
-        "NRG",
-        "EXC",
-        "AES",
-        "GEV",
-        "GTLS",
-        "TDW",
-        "ETN",
-        "GNRC",
-        "PWR",
-        "FIX",
-        "EME",
-        "OKLO",
-        "LEU",
-        "BE",
-        "FCEL",
-        "FLNC",
-        "PSIX"
-      ]
-    }
+ "groups": {
+  "hyperscalers": {
+   "label": "AI 云服务",
+   "color": "#6366f1",
+   "symbols": [
+    "AMZN",
+    "GOOGL"
+   ]
   },
-  "pending_review": [],
-  "rejected": [
-    "AAPL",
-    "MSFT",
-    "META",
-    "ORCL",
-    "GTLB",
-    "NTNX",
-    "IBM",
-    "PLTR",
-    "SNPS",
-    "CDNS",
-    "APH",
-    "TEL",
-    "ON",
-    "MSI",
-    "HUBB",
-    "HPQ",
-    "ZBRA"
-  ]
+  "gpu_compute": {
+   "label": "GPU/算力芯片",
+   "color": "#f97316",
+   "symbols": [
+    "NVDA",
+    "AMD",
+    "INTC",
+    "AVGO",
+    "MRVL",
+    "QCOM",
+    "ALAB",
+    "TSM",
+    "ARM",
+    "TXN",
+    "ADI",
+    "MPWR",
+    "MCHP",
+    "NXPI",
+    "SWKS",
+    "NVTS",
+    "WOLF",
+    "POWI"
+   ]
+  },
+  "memory_storage": {
+   "label": "存储/DRAM/NAND",
+   "color": "#a855f7",
+   "symbols": [
+    "MU",
+    "SNDK",
+    "WDC",
+    "STX",
+    "RMBS",
+    "DRAM",
+    "SIMO"
+   ]
+  },
+  "semicon_equip": {
+   "label": "半导体设备/材料",
+   "color": "#eab308",
+   "symbols": [
+    "LRCX",
+    "KLAC",
+    "AMAT",
+    "ASML",
+    "ONTO",
+    "TER",
+    "AMKR",
+    "ENTG",
+    "AEHR",
+    "AXTI",
+    "Q",
+    "TSEM",
+    "CAMT",
+    "GFS"
+   ]
+  },
+  "datacenter_infra": {
+   "label": "数据中心基础设施",
+   "color": "#22c55e",
+   "symbols": [
+    "SMCI",
+    "DELL",
+    "HPE",
+    "VRT",
+    "EQIX",
+    "DLR",
+    "AMT",
+    "PSTG",
+    "NTAP",
+    "CLS",
+    "IONQ",
+    "TTMI",
+    "TEL"
+   ]
+  },
+  "ai_networking": {
+   "label": "AI网络/交换",
+   "color": "#0ea5e9",
+   "symbols": [
+    "ANET",
+    "CSCO",
+    "CIEN",
+    "LITE",
+    "VIAV",
+    "CALX",
+    "AAOI",
+    "CRDO",
+    "LASR",
+    "NOK",
+    "JBL",
+    "GLW",
+    "COHR",
+    "SMTC",
+    "LPTH",
+    "SITM",
+    "MXL"
+   ]
+  },
+  "ai_infra_build": {
+   "label": "AI基础设施建设",
+   "color": "#06b6d4",
+   "symbols": [
+    "IREN",
+    "NBIS",
+    "CRWV",
+    "APLD",
+    "WULF",
+    "CORZ",
+    "BTDR",
+    "HIVE",
+    "CIFR",
+    "POWL",
+    "AGX",
+    "HUT"
+   ]
+  },
+  "power_cooling": {
+   "label": "电力/冷却",
+   "color": "#ef4444",
+   "symbols": [
+    "VST",
+    "CEG",
+    "ETR",
+    "NRG",
+    "EXC",
+    "AES",
+    "GEV",
+    "GTLS",
+    "TDW",
+    "ETN",
+    "GNRC",
+    "PWR",
+    "FIX",
+    "EME",
+    "OKLO",
+    "LEU",
+    "BE",
+    "FCEL",
+    "FLNC",
+    "PSIX",
+    "DGXX",
+    "MOD",
+    "AAON",
+    "VICR"
+   ]
+  }
+ },
+ "pending_review": [
+  {
+   "symbol": "LWLG",
+   "name": "Lightwave Logic",
+   "suggest_group": "ai_networking",
+   "note": "B·电光聚合物,未量产",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "INOD",
+   "name": "Innodata",
+   "suggest_group": "ai_infra_build",
+   "note": "B·AI数据标注(软件服务)",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "MRAM",
+   "name": "Everspin",
+   "suggest_group": "memory_storage",
+   "note": "B·MRAM存储,小盘",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "SLNH",
+   "name": "Soluna",
+   "suggest_group": "ai_infra_build",
+   "note": "B·绿电算力,微盘",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "HYLN",
+   "name": "Hyliion",
+   "suggest_group": "power_cooling",
+   "note": "B·分布式发电,投机",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "IPWR",
+   "name": "Ideal Power",
+   "suggest_group": "power_cooling",
+   "note": "B·功率半导体B-TRAN,小盘",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "AOSL",
+   "name": "Alpha & Omega Semi",
+   "suggest_group": "power_cooling",
+   "note": "B·功率半导体,偏泛",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "OUST",
+   "name": "Ouster",
+   "suggest_group": "ai_networking",
+   "note": "C·激光雷达/自动驾驶,非AI基建",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "CRWD",
+   "name": "CrowdStrike",
+   "suggest_group": "ai_infra_build",
+   "note": "C·网安纯软件",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "HLIT",
+   "name": "Harmonic",
+   "suggest_group": "ai_networking",
+   "note": "C·视频宽带网,非AI数据中心",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "VSH",
+   "name": "Vishay",
+   "suggest_group": "semicon_equip",
+   "note": "C·通用被动元件",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "STM",
+   "name": "STMicroelectronics",
+   "suggest_group": "gpu_compute",
+   "note": "C·综合半导体,AI暴露低",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "KOPN",
+   "name": "Kopin",
+   "suggest_group": "gpu_compute",
+   "note": "C·微显示/军工热成像",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "SANM",
+   "name": "Sanmina",
+   "suggest_group": "datacenter_infra",
+   "note": "C·通用EMS",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "DOCN",
+   "name": "DigitalOcean",
+   "suggest_group": "hyperscalers",
+   "note": "C·通用中小云",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "SEDG",
+   "name": "SolarEdge",
+   "suggest_group": "power_cooling",
+   "note": "C·光伏逆变器,关联弱",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "NVEC",
+   "name": "NVE Corp",
+   "suggest_group": "semicon_equip",
+   "note": "C·自旋传感器,小盘",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "IBM",
+   "name": "IBM",
+   "suggest_group": "hyperscalers",
+   "note": "C·综合偏软件",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "HPQ",
+   "name": "HP Inc",
+   "suggest_group": "datacenter_infra",
+   "note": "C·PC/打印,非AI",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "BB",
+   "name": "BlackBerry",
+   "suggest_group": "ai_infra_build",
+   "note": "C·软件",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "CAT",
+   "name": "Caterpillar",
+   "suggest_group": "power_cooling",
+   "note": "C·工程机械/备用发电",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "FOTO",
+   "name": "(待确认)",
+   "suggest_group": "datacenter_infra",
+   "note": "D·业务待确认",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "WYFI",
+   "name": "(待确认)",
+   "suggest_group": "ai_infra_build",
+   "note": "D·业务待确认",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "TCAI",
+   "name": "(待确认)",
+   "suggest_group": "ai_infra_build",
+   "note": "D·疑似ETF,待确认",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "TE",
+   "name": "T1 Energy",
+   "suggest_group": "power_cooling",
+   "note": "D·太阳能/储能,关联弱",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  }
+ ],
+ "rejected": [
+  "AAPL",
+  "MSFT",
+  "META",
+  "ORCL",
+  "GTLB",
+  "NTNX",
+  "IBM",
+  "PLTR",
+  "SNPS",
+  "CDNS",
+  "APH",
+  "TEL",
+  "ON",
+  "MSI",
+  "HUBB",
+  "HPQ",
+  "ZBRA"
+ ]
 }

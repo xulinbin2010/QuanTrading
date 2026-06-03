@@ -99,7 +99,7 @@ def read_cache() -> dict | None:
         return None
 
 
-def _do_scan(universe: str = 'sp500+ndx') -> dict:
+def _do_scan(universe: str = 'ai') -> dict:
     """同步跑一次扫描 + 写缓存。"""
     from auto_trader import scan_signals, _load_ai_priority_set
     import config
@@ -122,7 +122,7 @@ def _do_scan(universe: str = 'sp500+ndx') -> dict:
     return result
 
 
-def trigger_scan_background(universe: str = 'sp500+ndx') -> dict:
+def trigger_scan_background(universe: str = 'ai') -> dict:
     """触发后台扫描,立即返回当前缓存(可能为旧或 None)。"""
     global _scan_running
     with _scan_lock:

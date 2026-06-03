@@ -77,6 +77,12 @@ export default function StockChartModal({ symbol, market = 'us', onClose }: {
         const o = data.ohlcv[i]; const f = data.factors[i] || {}
         if (!o) return ''
         let h = `${o.date}<br/>开 ${o.open}　收 ${o.close}<br/>高 ${o.high}　低 ${o.low}<br/>`
+        const prev = i > 0 ? data.ohlcv[i - 1] : null
+        if (prev && prev.close) {
+          const chg = (o.close - prev.close) / prev.close
+          const col = chg >= 0 ? '#22c55e' : '#ef4444'
+          h += `涨跌 <span style="color:${col}">${chg >= 0 ? '+' : ''}${(chg * 100).toFixed(2)}%</span><br/>`
+        }
         if (f.ma_fast != null) h += `EMA7 ${f.ma_fast.toFixed(2)}　EMA21 ${f.ma_slow != null ? f.ma_slow.toFixed(2) : '-'}<br/>`
         h += `量 ${(o.volume / 1e4).toFixed(0)}万`
         if (f.turnover != null) h += `　换手 ${f.turnover.toFixed(2)}%`
@@ -138,6 +144,13 @@ export default function StockChartModal({ symbol, market = 'us', onClose }: {
   const fund = data?.fundamental ?? {}
   const hasFundamental = Object.values(fund).some(v => v != null)
 
+  // 最新交易日收盘价 + 涨跌幅（相对前一日收盘），标题栏常驻显示
+  const _ohlcv = data?.ohlcv ?? []
+  const _lastBar = _ohlcv[_ohlcv.length - 1]
+  const _prevBar = _ohlcv[_ohlcv.length - 2]
+  const lastChg = (_lastBar && _prevBar && _prevBar.close)
+    ? (_lastBar.close - _prevBar.close) / _prevBar.close : null
+
   const TABS = [
     { key: 'tech',    label: '技术分析' },
     ...(!isAStock ? [{ key: 'analyst' as const, label: '分析师 & 公告' }] : []),
@@ -151,7 +164,18 @@ export default function StockChartModal({ symbol, market = 'us', onClose }: {
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700 shrink-0">
           <div className="text-white font-semibold">
             {data?.info?.name && <span>{data.info.name} </span>}
-            <span className="font-mono text-sm text-slate-400">{symbol}</span> {isAStock ? '🇨🇳' : ''} — 个股详情
+            <span className="font-mono text-sm text-slate-400">{symbol}</span> {isAStock ? '🇨🇳' : ''}
+            {_lastBar && (
+              <span className="ml-2 font-mono text-sm font-normal">
+                <span className="text-slate-200">{_lastBar.close}</span>
+                {lastChg != null && (
+                  <span className={`ml-1.5 ${lastChg >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                    {lastChg >= 0 ? '▲' : '▼'}{lastChg >= 0 ? '+' : ''}{(lastChg * 100).toFixed(2)}%
+                  </span>
+                )}
+              </span>
+            )}
+            <span className="text-slate-500 text-sm font-normal"> — 个股详情</span>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white text-lg leading-none">✕</button>
         </div>

@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import SymbolLink from '../components/SymbolLink'
+import { AI_COMPANY_META, AI_CHAIN_LAYERS } from '../data/aiCompanyMeta'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import ReactECharts from 'echarts-for-react'
 import {
@@ -21,16 +22,6 @@ function fmt(v: number | null | undefined) {
   return v >= 1000 ? `$${(v / 1000).toFixed(1)}T` : `$${v.toFixed(1)}B`
 }
 
-function ScoreBadge({ score, max = 10 }: { score: number; max?: number }) {
-  const pct = score / max
-  const color = pct >= 0.7 ? 'bg-emerald-500' : pct >= 0.4 ? 'bg-amber-500' : 'bg-slate-600'
-  return (
-    <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-bold text-white ${color}`}>
-      {score}
-    </span>
-  )
-}
-
 function GroupBadge({ label, color }: { label: string; color: string }) {
   return (
     <span className="text-[11px] px-1.5 py-0.5 rounded font-medium"
@@ -40,37 +31,11 @@ function GroupBadge({ label, color }: { label: string; color: string }) {
   )
 }
 
-function BreakdownBar({ bd }: { bd: Record<string, number> }) {
-  const items = [
-    { key: 'capex_growth', label: 'Capex', max: 2 },
-    { key: 'rs', label: 'RS', max: 2 },
-    { key: 'rev_growth', label: '营收', max: 2 },
-    { key: 'news', label: '新闻', max: 1 },
-    { key: 'tech', label: '技术', max: 3 },
-  ]
-  return (
-    <div className="flex gap-1">
-      {items.map(it => {
-        const v = bd[it.key] ?? 0
-        const filled = v > 0
-        return (
-          <span key={it.key} title={`${it.label}: ${v}/${it.max}`}
-            className={`text-[10px] px-1 py-0.5 rounded ${filled ? 'bg-blue-700 text-blue-200' : 'bg-slate-700 text-slate-500'}`}>
-            {it.label}
-          </span>
-        )
-      })}
-    </div>
-  )
-}
-
 // ── 主页面 ─────────────────────────────────────────────────────
 
 export default function AITracker() {
   const qc = useQueryClient()
   const [tab, setTab] = useState<'tracker' | 'momentum' | 'pending' | 'manage'>('tracker')
-  const [groupFilter, setGroupFilter] = useState<string>('all')
-  const [sortBy, setSortBy]     = useState<'score' | 'mom_1d' | 'mom_5d' | 'mom_20d'>('score')
   const [forcing, setForcing] = useState(false)
   const [addForm, setAddForm] = useState<{ symbol: string; group: string } | null>(null)
   const [discovering, setDiscovering] = useState(false)
@@ -179,9 +144,6 @@ export default function AITracker() {
     : {}
 
   const rows: any[] = scanData?.rows ?? []
-  const filteredRows = rows
-    .filter(r => groupFilter === 'all' || r.group === groupFilter)
-    .sort((a, b) => (b[sortBy] ?? -Infinity) - (a[sortBy] ?? -Infinity))
   const pending: any[] = universe?.pending_review ?? []
 
   return (
@@ -219,153 +181,63 @@ export default function AITracker() {
         ))}
       </div>
 
-      {/* ── Tab: 追踪清单 ─────────────────────────────────────── */}
+      {/* ── Tab: 追踪清单（AI 硬件产业链图谱）─────────────────── */}
       {tab === 'tracker' && (
-        <div className="space-y-3">
+        <div className="space-y-5">
           <div className="text-[11px] text-slate-500 bg-slate-900/40 border border-slate-700/50 rounded px-2.5 py-1.5 leading-relaxed">
-            <span className="text-slate-400">策展工具</span>：基本面+技术 4 维 10 分评分（Capex/RS/营收/叙事/技术）。在此筛出的标的加入 <span className="text-slate-300">AI 优先池（ai_universe.json）</span> → 喂给实盘引擎 auto_trader，享宽松 RS 参数 + 排序置顶。本页不出交易信号、不下单。
-          </div>
-          {/* 过滤栏：子主题 + 市值范围 */}
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="flex gap-2 flex-wrap">
-              <button onClick={() => setGroupFilter('all')}
-                className={`px-3 py-1 text-xs rounded transition-colors ${
-                  groupFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
-                全部
-              </button>
-              {Object.entries(groups).map(([gk, gv]) => (
-                <button key={gk} onClick={() => setGroupFilter(gk)}
-                  className={`px-3 py-1 text-xs rounded transition-colors ${
-                    groupFilter === gk ? 'text-white' : 'text-slate-300 hover:opacity-80'}`}
-                  style={groupFilter === gk ? { background: gv.color } : { background: gv.color + '33' }}>
-                  {gv.label}
-                </button>
-              ))}
-            </div>
-            <div className="ml-auto flex items-center gap-2 text-xs">
-              <span className="text-slate-500">排序：</span>
-              {(['score','mom_1d','mom_5d','mom_20d'] as const).map(k => (
-                <button key={k} onClick={() => setSortBy(k)}
-                  className={`px-2 py-1 rounded transition-colors ${
-                    sortBy === k ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-slate-200'}`}>
-                  {k === 'score' ? '评分' : k === 'mom_1d' ? '日涨' : k === 'mom_5d' ? '5日' : '20日'}
-                </button>
-              ))}
-              <span className="text-slate-500 ml-2">共 {filteredRows.length} 只</span>
-            </div>
+            <span className="text-slate-400">AI 硬件产业链图谱</span>：按上下游分层 + 子主题分区，每张卡是一家公司的主营业务。点代码看 K 线；评分 / 动量 / 涨跌等数据对比见「<span className="text-slate-300">动能轮动</span>」tab。
           </div>
 
-          {/* 评分说明 + 行高亮图例（CSS 变量驱动，浅/深主题自动对比） */}
-          <div className="text-xs text-slate-400 flex gap-4 flex-wrap items-center">
-            <span><span className="text-slate-500">评分 /10：</span> Capex增速(2) RS动量(2) 营收增速(2) AI新闻(1) 技术信号(3：突破+量能+趋势)</span>
-            <span className="flex items-center gap-2">
-              <span className="text-slate-500">行底色：</span>
-              <span className="inline-flex items-center gap-1">
-                <span className="inline-block w-3 h-3 rounded" style={{ background: 'rgba(245,158,11,0.35)' }} />
-                日涨 ≥ +5%
-              </span>
-              <span className="inline-flex items-center gap-1">
-                <span className="inline-block w-3 h-3 rounded" style={{ background: 'rgba(239,68,68,0.25)' }} />
-                日跌 ≥ -5%
-              </span>
-            </span>
-          </div>
+          {AI_CHAIN_LAYERS.map((layer, li) => (
+            <div key={layer.title}>
+              {/* 层标题 */}
+              <div className="flex items-baseline gap-2 mb-2">
+                <span className="text-sm font-semibold text-slate-200">{layer.title}</span>
+                <span className="text-[11px] text-slate-500">— {layer.flow}</span>
+              </div>
 
-          {isLoading ? (
-            <div className="text-center py-12 text-slate-500 text-sm">加载中，首次约需 1-2 分钟…</div>
-          ) : (
-            <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-slate-400 border-b border-slate-700">
-                    <th className="text-left px-4 py-2.5 font-medium">标的</th>
-                    <th className="text-center px-3 py-2.5 font-medium">评分/10</th>
-                    <th className="text-left px-3 py-2.5 font-medium">维度</th>
-                    <th className="text-center px-3 py-2.5 font-medium">信号</th>
-                    <th className="text-right px-3 py-2.5 font-medium">现价</th>
-                    <th className="text-right px-3 py-2.5 font-medium" title="最后一根日线 vs 前一根">日涨</th>
-                    <th className="text-right px-3 py-2.5 font-medium">5日</th>
-                    <th className="text-right px-3 py-2.5 font-medium">20日</th>
-                    <th className="text-right px-3 py-2.5 font-medium">Capex增速</th>
-                    <th className="text-right px-3 py-2.5 font-medium">RS vs SPY</th>
-                    <th className="text-right px-3 py-2.5 font-medium">营收增速</th>
-                    <th className="text-right px-3 py-2.5 font-medium">市值</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredRows.map((r: any) => {
-                    const m1 = r.mom_1d ?? null
-                    // 直接 rgba，深/浅主题下对比度都足够
-                    const rowBg = m1 != null && m1 >= 0.05
-                      ? 'rgba(245,158,11,0.18)'   // 淡橙：日涨 ≥ +5%
-                      : m1 != null && m1 <= -0.05
-                        ? 'rgba(239,68,68,0.12)' // 淡红：日跌 ≥ -5%
-                        : undefined
-                    return (
-                    <tr key={r.symbol} style={{ background: rowBg }}
-                        className="border-b border-slate-700/50 hover:bg-slate-750 transition-colors">
-                      <td className="px-4 py-2">
-                        <SymbolLink symbol={r.symbol} className="font-medium text-white" />
-                        <GroupBadge label={r.group_label} color={r.group_color} />
-                      </td>
-                      <td className="px-3 py-2 text-center">
-                        <ScoreBadge score={r.score} />
-                      </td>
-                      <td className="px-3 py-2">
-                        <BreakdownBar bd={r.breakdown ?? {}} />
-                      </td>
-                      {/* 技术信号列 + 🔥 异动 badge */}
-                      <td className="px-3 py-2 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          {m1 != null && m1 >= 0.10 && <span title={`今日大涨 ${(m1*100).toFixed(1)}%`} className="text-sm">🔥🔥</span>}
-                          {m1 != null && m1 >= 0.05 && m1 < 0.10 && <span title={`今日上涨 ${(m1*100).toFixed(1)}%`} className="text-sm">🔥</span>}
-                          {m1 != null && m1 <= -0.05 && <span title={`今日下跌 ${(m1*100).toFixed(1)}%`} className="text-sm">💧</span>}
-                          {r.signal === 1 && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-700 text-emerald-200 font-semibold">买</span>
-                          )}
-                          {r.signal === -1 && (
-                            <span className="text-[10px] px-1.5 py-0.5 rounded bg-red-800 text-red-300 font-semibold">警</span>
-                          )}
-                          {r.breakout && <span title="价格突破" className="text-yellow-400 text-xs">⚡</span>}
-                          {r.vol_surge && <span title="成交量放量" className="text-blue-400 text-xs">▲</span>}
-                          {r.uptrend  && <span title="趋势向上"   className="text-emerald-400 text-xs">↑</span>}
-                        </div>
-                      </td>
-                      {/* 现价 + 短期动量 */}
-                      <td className="px-3 py-2 text-right font-mono text-xs text-slate-300">
-                        {r.price != null ? r.price.toFixed(2) : '—'}
-                      </td>
-                      <td className={`px-3 py-2 text-right font-mono text-xs ${m1 == null ? 'text-slate-500' : m1 >= 0 ? 'text-emerald-400' : 'text-red-400'} ${m1 != null && Math.abs(m1) >= 0.05 ? 'font-bold' : ''}`}>
-                        {m1 != null ? pct(m1, 1) : '—'}
-                      </td>
-                      <td className={`px-3 py-2 text-right font-mono text-xs ${(r.mom_5d ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {r.mom_5d != null ? pct(r.mom_5d, 1) : '—'}
-                      </td>
-                      <td className={`px-3 py-2 text-right font-mono text-xs ${(r.mom_20d ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {r.mom_20d != null ? pct(r.mom_20d, 1) : '—'}
-                      </td>
-                      <td className={`px-3 py-2 text-right font-mono text-xs ${(r.capex_growth ?? 0) > 0 ? 'text-emerald-400' : 'text-slate-400'}`}>
-                        {r.capex_growth != null ? pct(r.capex_growth, 0) : '—'}
-                      </td>
-                      <td className={`px-3 py-2 text-right font-mono text-xs ${(r.rs_score ?? 0) > 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {r.rs_score != null ? pct(r.rs_score, 1) : '—'}
-                      </td>
-                      <td className={`px-3 py-2 text-right font-mono text-xs ${(r.revenue_growth ?? 0) > 0 ? 'text-emerald-400' : 'text-slate-400'}`}>
-                        {r.revenue_growth != null ? pct(r.revenue_growth, 0) : '—'}
-                      </td>
-                      <td className="px-3 py-2 text-right font-mono text-xs text-slate-400">
-                        {fmt(r.market_cap_b)}
-                      </td>
-                    </tr>
-                    )
-                  })}
-                  {filteredRows.length === 0 && (
-                    <tr><td colSpan={12} className="text-center py-8 text-slate-500 text-sm">暂无数据，点击刷新获取</td></tr>
-                  )}
-                </tbody>
-              </table>
+              {/* 该层的子主题分区 */}
+              <div className="space-y-3 pl-3 border-l-2 border-slate-700/60">
+                {layer.groups.map(gk => {
+                  const gv: any = (groups as any)[gk]
+                  const syms: string[] = universe?.groups?.[gk]?.symbols ?? []
+                  if (!gv || syms.length === 0) return null
+                  return (
+                    <div key={gk}>
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="w-2 h-2 rounded-full" style={{ background: gv.color }} />
+                        <span className="text-xs font-medium text-slate-300">{gv.label}</span>
+                        <span className="text-[10px] text-slate-600">{syms.length}</span>
+                      </div>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
+                        {syms.map(sym => {
+                          const meta = AI_COMPANY_META[sym]
+                          return (
+                            <div key={sym}
+                              className="bg-slate-800/70 border border-slate-700/60 rounded-lg px-2.5 py-2 hover:border-slate-500 hover:bg-slate-800 transition-colors"
+                              style={{ borderLeftColor: gv.color, borderLeftWidth: 3 }}>
+                              <div className="flex items-baseline gap-1.5">
+                                <SymbolLink symbol={sym} className="font-semibold text-white text-sm" />
+                                {meta?.name && <span className="text-[11px] text-slate-400 truncate">{meta.name}</span>}
+                              </div>
+                              <div className="text-[10px] text-slate-500 mt-0.5 leading-snug truncate" title={meta?.desc || ''}>
+                                {meta?.desc || '—'}
+                              </div>
+                            </div>
+                          )
+                        })}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+
+              {/* 层间流向 */}
+              {li < AI_CHAIN_LAYERS.length - 1 && (
+                <div className="flex justify-center mt-3 text-slate-600 text-sm leading-none">↓</div>
+              )}
             </div>
-          )}
+          ))}
         </div>
       )}
 

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import SymbolLink from '../components/SymbolLink'
-import { AI_COMPANY_META, AI_CHAIN_LAYERS } from '../data/aiCompanyMeta'
+import { AI_COMPANY_META, AI_CHAIN_LAYERS, MEGA_CAPS, SMALL_CAPS } from '../data/aiCompanyMeta'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import ReactECharts from 'echarts-for-react'
 import {
@@ -256,14 +256,23 @@ export default function AITracker() {
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
                         {syms.map(sym => {
                           const meta = AI_COMPANY_META[sym]
+                          const isMega = MEGA_CAPS.has(sym)
+                          const isSmall = SMALL_CAPS.has(sym)
+                          // 市值档位视觉权重：龙头亮+👑，小盘暗淡，其余默认
+                          const tierCls = isMega
+                            ? 'bg-slate-700/80 border-slate-500'
+                            : isSmall
+                              ? 'bg-slate-800/30 border-slate-800 opacity-55 hover:opacity-100'
+                              : 'bg-slate-800/70 border-slate-700/60'
                           return (
                             <div key={sym}
-                              className="group relative bg-slate-800/70 border border-slate-700/60 rounded-lg px-2.5 py-2 hover:border-slate-500 hover:bg-slate-800 transition-colors"
+                              className={`group relative border rounded-lg px-2.5 py-2 hover:border-slate-500 hover:bg-slate-800 transition-all ${tierCls}`}
                               style={{ borderLeftColor: color, borderLeftWidth: 3 }}>
                               <button onClick={() => removeMutation.mutate(sym)} title="从池中移除"
                                 className="absolute top-1 right-1 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity text-xs leading-none">✕</button>
-                              <div className="flex items-baseline gap-1.5">
-                                <SymbolLink symbol={sym} className="font-semibold text-white text-sm" />
+                              <div className="flex items-baseline gap-1">
+                                {isMega && <span title="大盘龙头" className="text-[11px] leading-none">👑</span>}
+                                <SymbolLink symbol={sym} className={`${isMega ? 'font-bold' : 'font-semibold'} text-white text-sm`} />
                                 {meta?.name && <span className="text-[11px] text-slate-400 truncate">{meta.name}</span>}
                               </div>
                               <div className="text-[10px] text-slate-500 mt-0.5 leading-snug truncate" title={meta?.desc || ''}>
@@ -346,6 +355,7 @@ export default function AITracker() {
       <div className="text-xs text-slate-600 space-y-0.5">
         <div>· 产业图谱按上下游分层展示，公司业务为人工标注（data/aiCompanyMeta.ts）；增删即时写入 ai_universe.json（auto_trader 优先池）</div>
         <div>· 「手动加入」识别行业并归组；待定区（图谱最下方）选分组「加入」转正；评分/动量数据见「动能轮动」</div>
+        <div>· <span className="text-slate-400">👑</span> 大盘龙头（约 ≥ $100B）卡片高亮，<span className="opacity-55">暗淡卡</span>为微小盘（约 ≤ $5B），档位静态（aiCompanyMeta.ts）</div>
       </div>
     </div>
   )

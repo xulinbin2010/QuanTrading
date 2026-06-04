@@ -139,3 +139,20 @@ export const AI_CHAIN_LAYERS: { title: string; flow: string; groups: string[] }[
   { title: '下游 · 算力运营 / 云', flow: '把算力变成钱',   groups: ['ai_infra_build', 'hyperscalers'] },
   { title: '配套 · 电力 / 散热',   flow: '能源与冷却贯穿全链', groups: ['power_cooling'] },
 ]
+
+/**
+ * 市值档位（静态，用于产业图谱「龙头高亮」视觉权重；龙头/小盘归属变化慢，无需实时拉）。
+ * MEGA：大盘龙头（约 ≥ $100B）→ 卡片高亮 + 👑
+ * SMALL：微小盘（约 ≤ $5B）→ 卡片暗淡
+ * 其余默认中档样式。归属可按需增删。
+ */
+export const MEGA_CAPS = new Set<string>([
+  'NVDA', 'AVGO', 'TSM', 'AMD', 'QCOM', 'TXN', 'ARM', 'ASML', 'MU', 'ADI',
+  'AMAT', 'LRCX', 'KLAC', 'MCHP', 'NXPI', 'INTC', 'MRVL', 'ANET', 'CSCO',
+  'AMZN', 'GOOGL', 'IBM', 'ETN', 'CAT', 'GEV', 'VST', 'CEG', 'AMT', 'EQIX',
+  'DLR', 'DELL', 'GLW', 'TEL',
+])
+export const SMALL_CAPS = new Set<string>([
+  'AEHR', 'DGXX', 'LPTH', 'AXTI', 'VICR', 'CRDO', 'CALX', 'LASR', 'AGX',
+  'PSIX', 'NVEC', 'IPWR', 'MRAM', 'SLNH', 'HYLN', 'NVTS', 'POWI', 'AOSL',
+])

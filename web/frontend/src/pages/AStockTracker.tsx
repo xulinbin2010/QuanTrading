@@ -8,6 +8,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import ReactECharts from 'echarts-for-react'
 import { getAStockMomentum, classifyAStock, addAStockTheme, removeAStockTheme } from '../api/client'
 import SymbolLink from '../components/SymbolLink'
+import { ASTOCK_LEADERS } from '../data/astockLeaders'
 
 // ── 辅助函数 ──────────────────────────────────────────────────
 
@@ -497,6 +498,12 @@ export default function AStockTracker() {
                     <td className="px-3 py-1.5 text-slate-500 text-xs">{idx + 1}
                       <SymbolLink symbol={r.symbol} market="a"
                         className="ml-1.5 font-mono font-medium text-white text-sm" />
+                      {ASTOCK_LEADERS[r.symbol] && (
+                        <span title={ASTOCK_LEADERS[r.symbol].note}
+                          className={`ml-1 cursor-help text-[11px] ${ASTOCK_LEADERS[r.symbol].tier === '◆' ? 'text-sky-400' : ASTOCK_LEADERS[r.symbol].tier === '○' ? 'text-slate-400' : ''}`}>
+                          {ASTOCK_LEADERS[r.symbol].tier}
+                        </span>
+                      )}
                     </td>
                     <td className="px-3 py-1.5 text-xs text-slate-400 max-w-[120px]">
                       <div className="truncate">{r.name}</div>
@@ -571,6 +578,7 @@ export default function AStockTracker() {
 
       {/* 说明 */}
       <div className="text-xs text-slate-400 space-y-0.5">
+        <div>· 龙头标记(代码后)：<span className="text-amber-300">🏆</span> 全球第一/垄断 · <span className="text-sky-400">◆</span> 全球前列 · <span className="text-slate-400">○</span> 国产替代龙头(定性参考，鼠标悬停看具体领域)</div>
         <div>· 综合分 = 0.35×5日相对沪深300 + 0.20×3日相对沪深300 + 0.20×组内排名 + 0.15×量比 + 0.10×资金流（z-score 归一 0-10）</div>
         <div>· 加速 ▲：3日日均收益 &gt; 5日日均收益</div>
         <div>· 均线：<span className="text-emerald-300">强</span>=站上EMA7+EMA21 / <span className="text-amber-300">破7</span>=跌破EMA7仍站上EMA21 / <span className="text-red-300">破21</span>=跌破EMA21中期走弱；默认隐藏破EMA21，可切「全部」查看</div>

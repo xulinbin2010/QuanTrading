@@ -39,6 +39,23 @@ def get_universe():
     return load_universe()
 
 
+from functools import lru_cache
+
+
+@lru_cache(maxsize=1)
+def _index_sets():
+    """S&P500 / Nasdaq100 成分（进程级缓存，成分变化慢；首次走 IVV/wiki/builtin 兜底）。"""
+    from core.universe import get_sp500_tickers, get_nasdaq100_tickers
+    return sorted(set(get_sp500_tickers())), sorted(set(get_nasdaq100_tickers()))
+
+
+@router.get('/index-membership')
+def index_membership():
+    """产业图谱用：标记每只 AI 股是否属于 S&P500 / Nasdaq100 成分。"""
+    sp, ndx = _index_sets()
+    return {'sp500': sp, 'ndx': ndx}
+
+
 # NOTE: pending 字面路由必须在 /universe/{group}/{symbol} 之前注册，
 # 否则会被误匹配为 group="pending"。
 @router.post('/universe/pending/approve')

@@ -4,7 +4,7 @@ import { AI_COMPANY_META, AI_CHAIN_LAYERS, MEGA_CAPS, SMALL_CAPS } from '../data
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import ReactECharts from 'echarts-for-react'
 import {
-  scanAITracker, getAIUniverse,
+  scanAITracker, getAIUniverse, getIndexMembership,
   addAISymbol, removeAISymbol,
   approveAIPending, rejectAIPending,
   getAIMomentum, analyzeAISymbol,
@@ -57,6 +57,16 @@ export default function AITracker() {
     queryFn: getAIUniverse,
     staleTime: 60_000,
   })
+
+  // S&P500 / Nasdaq100 成分（图谱角标），成分变化慢，缓存 24h
+  const { data: idxMem } = useQuery({
+    queryKey: ['ai-index-membership'],
+    queryFn: getIndexMembership,
+    staleTime: 24 * 3_600_000,
+    retry: false,
+  })
+  const sp500Set = new Set<string>(idxMem?.sp500 ?? [])
+  const ndxSet = new Set<string>(idxMem?.ndx ?? [])
 
   const refresh = () => {
     setForcing(true)
@@ -275,8 +285,14 @@ export default function AITracker() {
                                 <SymbolLink symbol={sym} className={`${isMega ? 'font-bold' : 'font-semibold'} text-white text-sm`} />
                                 {meta?.name && <span className="text-[11px] text-slate-400 truncate">{meta.name}</span>}
                               </div>
-                              <div className="text-[10px] text-slate-500 mt-0.5 leading-snug truncate" title={meta?.desc || ''}>
-                                {meta?.desc || '—'}
+                              <div className="flex items-end justify-between gap-1 mt-0.5">
+                                <span className="text-[10px] text-slate-500 leading-snug truncate" title={meta?.desc || ''}>
+                                  {meta?.desc || '—'}
+                                </span>
+                                <span className="flex gap-0.5 shrink-0">
+                                  {sp500Set.has(sym) && <span title="S&P 500 成分" className="text-[8px] leading-tight px-1 rounded bg-blue-900/50 text-blue-300">S&P</span>}
+                                  {ndxSet.has(sym) && <span title="Nasdaq 100 成分" className="text-[8px] leading-tight px-1 rounded bg-purple-900/50 text-purple-300">100</span>}
+                                </span>
                               </div>
                             </div>
                           )
@@ -355,7 +371,7 @@ export default function AITracker() {
       <div className="text-xs text-slate-600 space-y-0.5">
         <div>· 产业图谱按上下游分层展示，公司业务为人工标注（data/aiCompanyMeta.ts）；增删即时写入 ai_universe.json（auto_trader 优先池）</div>
         <div>· 「手动加入」识别行业并归组；待定区（图谱最下方）选分组「加入」转正；评分/动量数据见「动能轮动」</div>
-        <div>· <span className="text-slate-400">👑</span> 大盘龙头（约 ≥ $100B）卡片高亮，<span className="opacity-55">暗淡卡</span>为微小盘（约 ≤ $5B），档位静态（aiCompanyMeta.ts）</div>
+        <div>· <span className="text-slate-400">👑</span> 大盘龙头（约 ≥ $100B）卡片高亮，<span className="opacity-55">暗淡卡</span>为微小盘（约 ≤ $5B）；<span className="text-blue-300">S&P</span>=标普500 / <span className="text-purple-300">100</span>=纳指100 成分</div>
       </div>
     </div>
   )

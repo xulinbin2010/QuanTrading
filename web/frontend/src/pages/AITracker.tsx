@@ -35,7 +35,8 @@ function GroupBadge({ label, color }: { label: string; color: string }) {
 
 export default function AITracker() {
   const qc = useQueryClient()
-  const [tab, setTab] = useState<'tracker' | 'momentum' | 'pending' | 'manage'>('tracker')
+  const [tab, setTab] = useState<'tracker' | 'momentum'>('tracker')
+  const [showAddTool, setShowAddTool] = useState(false)
   const [forcing, setForcing] = useState(false)
   const [addForm, setAddForm] = useState<{ symbol: string; group: string } | null>(null)
   const [discovering, setDiscovering] = useState(false)
@@ -56,14 +57,6 @@ export default function AITracker() {
     queryKey: ['ai-universe'],
     queryFn: getAIUniverse,
     staleTime: 60_000,
-  })
-
-  // 动能 Top-4 列表（与 MomentumTab 共享缓存），manage tab 用来标记 🔥
-  const { data: momentumData } = useQuery({
-    queryKey: ['ai-momentum'],
-    queryFn: () => getAIMomentum(false),
-    staleTime: 30 * 60_000,
-    retry: false,
   })
 
   const refresh = () => {
@@ -135,15 +128,15 @@ export default function AITracker() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ai-universe'] }),
   })
 
-  const groups: Record<string, { label: string; color: string }> = scanData?.groups
+  // 子主题 label/color 直接取自 universe（ai_universe.json），不依赖 scan，图谱秒开
+  const groups: Record<string, { label: string; color: string }> = universe?.groups
     ? Object.fromEntries(
-        Object.entries(scanData.groups as Record<string, string>).map(([k, label]) => [
-          k, { label, color: (scanData.group_colors as Record<string, string>)[k] ?? '#94a3b8' }
+        Object.entries(universe.groups as Record<string, any>).map(([k, v]) => [
+          k, { label: v.label, color: v.color ?? '#94a3b8' }
         ])
       )
     : {}
 
-  const rows: any[] = scanData?.rows ?? []
   const pending: any[] = universe?.pending_review ?? []
 
   return (
@@ -166,10 +159,8 @@ export default function AITracker() {
       {/* Tab 导航 */}
       <div className="flex gap-0 border-b border-slate-700">
         {[
-          { key: 'tracker',  label: `追踪清单 (${rows.length})` },
+          { key: 'tracker',  label: '产业图谱' },
           { key: 'momentum', label: '动能轮动' },
-          { key: 'pending',  label: `待审核 (${pending.length})` },
-          { key: 'manage',   label: '管理股票池' },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key as any)}
             className={`px-4 py-2 text-sm border-b-2 transition-colors ${
@@ -183,215 +174,85 @@ export default function AITracker() {
 
       {/* ── Tab: 追踪清单（AI 硬件产业链图谱）─────────────────── */}
       {tab === 'tracker' && (
-        <div className="space-y-5">
-          <div className="text-[11px] text-slate-500 bg-slate-900/40 border border-slate-700/50 rounded px-2.5 py-1.5 leading-relaxed">
-            <span className="text-slate-400">AI 硬件产业链图谱</span>：按上下游分层 + 子主题分区，每张卡是一家公司的主营业务。点代码看 K 线；评分 / 动量 / 涨跌等数据对比见「<span className="text-slate-300">动能轮动</span>」tab。
-          </div>
-
-          {AI_CHAIN_LAYERS.map((layer, li) => (
-            <div key={layer.title}>
-              {/* 层标题 */}
-              <div className="flex items-baseline gap-2 mb-2">
-                <span className="text-sm font-semibold text-slate-200">{layer.title}</span>
-                <span className="text-[11px] text-slate-500">— {layer.flow}</span>
-              </div>
-
-              {/* 该层的子主题分区 */}
-              <div className="space-y-3 pl-3 border-l-2 border-slate-700/60">
-                {layer.groups.map(gk => {
-                  const gv: any = (groups as any)[gk]
-                  const syms: string[] = universe?.groups?.[gk]?.symbols ?? []
-                  if (!gv || syms.length === 0) return null
-                  return (
-                    <div key={gk}>
-                      <div className="flex items-center gap-1.5 mb-1.5">
-                        <span className="w-2 h-2 rounded-full" style={{ background: gv.color }} />
-                        <span className="text-xs font-medium text-slate-300">{gv.label}</span>
-                        <span className="text-[10px] text-slate-600">{syms.length}</span>
-                      </div>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
-                        {syms.map(sym => {
-                          const meta = AI_COMPANY_META[sym]
-                          return (
-                            <div key={sym}
-                              className="bg-slate-800/70 border border-slate-700/60 rounded-lg px-2.5 py-2 hover:border-slate-500 hover:bg-slate-800 transition-colors"
-                              style={{ borderLeftColor: gv.color, borderLeftWidth: 3 }}>
-                              <div className="flex items-baseline gap-1.5">
-                                <SymbolLink symbol={sym} className="font-semibold text-white text-sm" />
-                                {meta?.name && <span className="text-[11px] text-slate-400 truncate">{meta.name}</span>}
-                              </div>
-                              <div className="text-[10px] text-slate-500 mt-0.5 leading-snug truncate" title={meta?.desc || ''}>
-                                {meta?.desc || '—'}
-                              </div>
-                            </div>
-                          )
-                        })}
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-
-              {/* 层间流向 */}
-              {li < AI_CHAIN_LAYERS.length - 1 && (
-                <div className="flex justify-center mt-3 text-slate-600 text-sm leading-none">↓</div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* ── Tab: 动能轮动 ─────────────────────────────────────── */}
-      {tab === 'momentum' && <MomentumTab />}
-
-      {/* ── Tab: 待审核 ───────────────────────────────────────── */}
-      {tab === 'pending' && (
-        <div className="space-y-3">
-          <div className="flex items-center justify-between">
-            <p className="text-xs text-slate-500">自动发现的候选标的，审核后加入正式追踪清单</p>
-            <button onClick={discover} disabled={discovering}
-              className="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded text-slate-300 transition-colors">
-              {discovering ? '发现中…' : '自动发现'}
-            </button>
-          </div>
-
-          {pending.length === 0 ? (
-            <div className="text-center py-8 text-slate-500 text-sm">无待审核标的，点击「自动发现」扫描 S&P500/NDX</div>
-          ) : (
-            <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-xs text-slate-400 border-b border-slate-700">
-                    <th className="text-left px-4 py-2.5 font-medium">标的</th>
-                    <th className="text-left px-3 py-2.5 font-medium">行业</th>
-                    <th className="text-right px-3 py-2.5 font-medium">市值</th>
-                    <th className="text-right px-3 py-2.5 font-medium">营收增速</th>
-                    <th className="text-left px-3 py-2.5 font-medium">建议分组</th>
-                    <th className="text-center px-3 py-2.5 font-medium">操作</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pending.map((p: any) => (
-                    <tr key={p.symbol} className="border-b border-slate-700/50">
-                      <td className="px-4 py-2">
-                        <SymbolLink symbol={p.symbol} className="font-medium text-white" />
-                      </td>
-                      <td className="px-3 py-2 text-xs text-slate-400">{p.industry || p.sector || '—'}</td>
-                      <td className="px-3 py-2 text-right font-mono text-xs text-slate-400">{fmt(p.market_cap_b)}</td>
-                      <td className="px-3 py-2 text-right font-mono text-xs text-slate-400">
-                        {p.revenue_growth != null ? pct(p.revenue_growth, 0) : '—'}
-                      </td>
-                      <td className="px-3 py-2">
-                        <select
-                          defaultValue={p.suggest_group}
-                          id={`group-select-${p.symbol}`}
-                          className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none">
-                          {Object.entries(groups).map(([gk, gv]) => (
-                            <option key={gk} value={gk}>{gv.label}</option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-3 py-2 text-center">
-                        <div className="flex gap-2 justify-center">
-                          <button
-                            onClick={() => {
-                              const sel = document.getElementById(`group-select-${p.symbol}`) as HTMLSelectElement
-                              approveMutation.mutate({ symbol: p.symbol, group: sel?.value || p.suggest_group })
-                            }}
-                            className="px-2 py-1 text-xs bg-emerald-700 hover:bg-emerald-600 rounded text-white transition-colors">
-                            加入
-                          </button>
-                          <button
-                            onClick={() => rejectMutation.mutate(p.symbol)}
-                            className="px-2 py-1 text-xs bg-slate-600 hover:bg-slate-500 rounded text-slate-300 transition-colors">
-                            忽略
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* ── Tab: 管理股票池 ────────────────────────────────────── */}
-      {tab === 'manage' && (() => {
-        const rowsBySymbol = Object.fromEntries((rows as any[]).map(r => [r.symbol, r]))
-        const momentumBySymbol = Object.fromEntries(((momentumData as any)?.rows ?? []).map((r: any) => [r.symbol, r]))
-        const topSet = new Set<string>(((momentumData as any)?.top4 ?? []) as string[])
-        const ar = analyzeResult
-        const canAdd = ar && !ar.already_in_group && (analyzeGroupOverride || ar.suggest_group)
-        return (
         <div className="space-y-4">
-          {/* 手动分析 + 加入 */}
-          <div className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-            <div className="flex items-center gap-2 mb-2">
-              <span className="text-sm font-medium text-white">手动加入</span>
-              <span className="text-xs text-slate-500">输入代码，自动识别行业并推荐分组</span>
+          {/* 说明 + 工具条 */}
+          <div className="flex items-start gap-2 flex-wrap">
+            <div className="text-[11px] text-slate-500 bg-slate-900/40 border border-slate-700/50 rounded px-2.5 py-1.5 leading-relaxed flex-1 min-w-[280px]">
+              <span className="text-slate-400">AI 硬件产业链图谱</span>：上下游分层 + 子主题分区，每张卡=一家公司主营。点代码看 K 线；评分/动量见「<span className="text-slate-300">动能轮动</span>」。卡片悬停可移除，子主题旁 <span className="text-slate-400">＋</span> 添加。
             </div>
-            <div className="flex gap-2">
-              <input value={analyzeInput} autoFocus
-                onChange={e => setAnalyzeInput(e.target.value.toUpperCase())}
-                onKeyDown={e => { if (e.key === 'Enter') runAnalyze() }}
-                placeholder="例如 NVTS"
-                className="flex-1 max-w-[200px] bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-sm text-white font-mono focus:outline-none focus:border-blue-500" />
-              <button onClick={runAnalyze} disabled={analyzing || !analyzeInput.trim()}
-                className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded text-white transition-colors">
-                {analyzing ? '分析中…' : '分析'}
+            <div className="flex items-center gap-2 shrink-0">
+              <button onClick={() => setShowAddTool(v => !v)}
+                className={`px-3 py-1.5 text-xs rounded transition-colors ${showAddTool ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
+                ➕ 手动加入
+              </button>
+              <button onClick={discover} disabled={discovering}
+                className="px-3 py-1.5 text-xs bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded text-slate-300 transition-colors">
+                {discovering ? '发现中…' : '🔍 自动发现'}
               </button>
             </div>
-            {analyzeError && (
-              <div className="mt-2 text-xs text-red-400">{analyzeError}</div>
-            )}
-            {ar && (
-              <div className="mt-3 bg-slate-700/40 border border-slate-600 rounded p-3 space-y-2">
-                <div className="flex items-baseline gap-3 flex-wrap">
-                  <span className="text-base font-semibold text-white">{ar.symbol}</span>
-                  <span className="text-xs text-slate-400">{ar.industry || '—'}</span>
-                  <span className="text-xs text-slate-500">{ar.sector || '—'}</span>
-                  <span className="text-xs text-slate-300 font-mono">市值 {fmt(ar.market_cap_b)}</span>
-                  <span className="text-xs text-slate-300 font-mono">营收增速 {ar.revenue_growth != null ? pct(ar.revenue_growth, 0) : '—'}</span>
+          </div>
+
+          {/* 手动加入折叠面板（输入代码→识别行业→选组加入） */}
+          {showAddTool && (() => {
+            const ar = analyzeResult
+            const canAdd = ar && !ar.already_in_group && (analyzeGroupOverride || ar.suggest_group)
+            return (
+              <div className="bg-slate-800 rounded-lg p-3 border border-slate-700">
+                <div className="flex gap-2">
+                  <input value={analyzeInput} autoFocus
+                    onChange={e => setAnalyzeInput(e.target.value.toUpperCase())}
+                    onKeyDown={e => { if (e.key === 'Enter') runAnalyze() }}
+                    placeholder="输入代码，自动识别行业并推荐分组，如 NVTS"
+                    className="flex-1 max-w-[300px] bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-sm text-white font-mono focus:outline-none focus:border-blue-500" />
+                  <button onClick={runAnalyze} disabled={analyzing || !analyzeInput.trim()}
+                    className="px-3 py-1.5 text-sm bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded text-white transition-colors">
+                    {analyzing ? '分析中…' : '分析'}
+                  </button>
                 </div>
-                <div className="text-xs text-slate-300">{ar.reason}</div>
-                {!ar.already_in_group && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-slate-400">加入分组：</span>
-                    <select value={analyzeGroupOverride}
-                      onChange={e => setAnalyzeGroupOverride(e.target.value)}
-                      className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none">
-                      <option value="">— 选择分组 —</option>
-                      {Object.entries(groups).map(([gk, gv]) => (
-                        <option key={gk} value={gk}>
-                          {gv.label}{gk === ar.suggest_group ? '（推荐）' : ''}
-                        </option>
-                      ))}
-                    </select>
-                    <button onClick={confirmAddAnalyzed} disabled={!canAdd || addMutation.isPending}
-                      className="px-3 py-1 text-xs bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 rounded text-white transition-colors">
-                      加入
-                    </button>
-                    <button onClick={() => { setAnalyzeResult(null); setAnalyzeError(null) }}
-                      className="px-2 py-1 text-xs text-slate-400 hover:text-slate-200">取消</button>
+                {analyzeError && <div className="mt-2 text-xs text-red-400">{analyzeError}</div>}
+                {ar && (
+                  <div className="mt-3 bg-slate-700/40 border border-slate-600 rounded p-3 space-y-2">
+                    <div className="flex items-baseline gap-3 flex-wrap">
+                      <span className="text-base font-semibold text-white">{ar.symbol}</span>
+                      <span className="text-xs text-slate-400">{ar.industry || '—'}</span>
+                      <span className="text-xs text-slate-300 font-mono">市值 {fmt(ar.market_cap_b)}</span>
+                      <span className="text-xs text-slate-300 font-mono">营收 {ar.revenue_growth != null ? pct(ar.revenue_growth, 0) : '—'}</span>
+                    </div>
+                    <div className="text-xs text-slate-300">{ar.reason}</div>
+                    {ar.already_in_group ? (
+                      <div className="text-xs text-amber-400">已在池中</div>
+                    ) : (
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-xs text-slate-400">加入分组：</span>
+                        <select value={analyzeGroupOverride} onChange={e => setAnalyzeGroupOverride(e.target.value)}
+                          className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white focus:outline-none">
+                          <option value="">— 选择分组 —</option>
+                          {Object.entries(groups).map(([gk, gv]) => (
+                            <option key={gk} value={gk}>{gv.label}{gk === ar.suggest_group ? '（推荐）' : ''}</option>
+                          ))}
+                        </select>
+                        <button onClick={confirmAddAnalyzed} disabled={!canAdd || addMutation.isPending}
+                          className="px-3 py-1 text-xs bg-emerald-700 hover:bg-emerald-600 disabled:opacity-50 rounded text-white transition-colors">加入</button>
+                        <button onClick={() => { setAnalyzeResult(null); setAnalyzeError(null) }}
+                          className="px-2 py-1 text-xs text-slate-400 hover:text-slate-200">取消</button>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
-            )}
-          </div>
+            )
+          })()}
 
-          {/* 待定区（灰色暂存，选分组「加入」后转正进优先池生效） */}
+          {/* 待定区（灰色暂存，选分组「加入」转正） */}
           {pending.length > 0 && (
             <div className="bg-slate-800/40 rounded-lg p-4 border border-dashed border-slate-600">
               <div className="flex items-center gap-2 mb-3 flex-wrap">
                 <span className="text-sm font-medium text-slate-400">⏳ 待定（{pending.length}）</span>
-                <span className="text-xs text-slate-600">灰色暂存，不参与分析；选分组「加入」后进优先池生效，「✕」移除</span>
+                <span className="text-xs text-slate-600">灰色暂存，不在图谱内；选分组「加入」后进优先池，「✕」移除</span>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-2">
                 {(pending as any[]).map((p: any) => (
-                  <div key={p.symbol}
-                    className="relative bg-slate-900/40 border border-slate-700/60 rounded-md p-2 opacity-70 hover:opacity-100 transition-opacity">
+                  <div key={p.symbol} className="relative bg-slate-900/40 border border-slate-700/60 rounded-md p-2 opacity-70 hover:opacity-100 transition-opacity">
                     <button onClick={() => rejectMutation.mutate(p.symbol)} title="移除待定"
                       className="absolute top-1 right-1 text-slate-600 hover:text-red-400 text-xs leading-none">✕</button>
                     <SymbolLink symbol={p.symbol} className="font-semibold text-slate-300 text-sm" />
@@ -416,83 +277,87 @@ export default function AITracker() {
             </div>
           )}
 
-          {Object.entries(groups).map(([gk, gv]) => {
-            const syms: string[] = universe?.groups?.[gk]?.symbols ?? []
-            return (
-              <div key={gk} className="bg-slate-800 rounded-lg p-4 border border-slate-700">
-                <div className="flex items-center gap-2 mb-3">
-                  <span className="w-2.5 h-2.5 rounded-full" style={{ background: gv.color }} />
-                  <span className="text-sm font-medium text-white">{gv.label}</span>
-                  <span className="text-xs text-slate-500">({syms.length} 只)</span>
-                </div>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-2">
-                  {syms.map(sym => {
-                    const row = rowsBySymbol[sym] || {}
-                    const mom = momentumBySymbol[sym]
-                    const isTop = topSet.has(sym)
-                    return (
-                      <div key={sym}
-                        className="relative bg-slate-700/50 border border-slate-600/60 rounded-md p-2 hover:border-slate-500 transition-colors group">
-                        <button onClick={() => removeMutation.mutate(sym)}
-                          title="从池中移除"
-                          className="absolute top-1 right-1 text-slate-500 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity text-xs leading-none">✕</button>
-                        <div className="flex items-baseline gap-1.5">
-                          <SymbolLink symbol={sym} className="font-semibold text-white text-sm" />
-                          {isTop && <span title="当前在动能 Top-4" className="text-xs">🔥</span>}
-                        </div>
-                        <div className="text-[10px] text-slate-400 mt-0.5 truncate" title={row.industry || ''}>
-                          {row.industry || row.sector || '—'}
-                        </div>
-                        <div className="flex items-center gap-2 mt-1 text-[10px]">
-                          <span className="text-slate-300 font-mono">{fmt(row.market_cap_b)}</span>
-                          {mom?.composite != null && (
-                            <span className={`font-mono ${mom.composite >= 7 ? 'text-emerald-400' : mom.composite >= 5 ? 'text-amber-400' : 'text-slate-500'}`}
-                              title="动能复合分">
-                              ⚡{mom.composite.toFixed(1)}
-                            </span>
-                          )}
-                        </div>
+          {/* 产业链图谱（含管理：卡片悬停✕移除 / 子主题＋添加） */}
+          {AI_CHAIN_LAYERS.map((layer, li) => (
+            <div key={layer.title}>
+              <div className="flex items-baseline gap-2 mb-2">
+                <span className="text-sm font-semibold text-slate-200">{layer.title}</span>
+                <span className="text-[11px] text-slate-500">— {layer.flow}</span>
+              </div>
+              <div className="space-y-3 pl-3 border-l-2 border-slate-700/60">
+                {layer.groups.map(gk => {
+                  const gnode: any = universe?.groups?.[gk]
+                  if (!gnode) return null
+                  const color = gnode.color ?? '#94a3b8'
+                  const syms: string[] = gnode.symbols ?? []
+                  return (
+                    <div key={gk}>
+                      <div className="flex items-center gap-1.5 mb-1.5">
+                        <span className="w-2 h-2 rounded-full" style={{ background: color }} />
+                        <span className="text-xs font-medium text-slate-300">{gnode.label}</span>
+                        <span className="text-[10px] text-slate-600">{syms.length}</span>
+                        <button onClick={() => setAddForm({ group: gk, symbol: '' })} title="添加到本组"
+                          className="text-slate-600 hover:text-blue-400 text-sm leading-none ml-0.5">＋</button>
                       </div>
-                    )
-                  })}
-                  {/* 添加按钮卡片 */}
-                  {addForm?.group === gk ? (
-                    <div className="bg-slate-700/30 border border-blue-500 rounded-md p-2 flex flex-col gap-1">
-                      <input autoFocus value={addForm.symbol}
-                        onChange={e => setAddForm({ ...addForm, symbol: e.target.value.toUpperCase() })}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter' && addForm.symbol) addMutation.mutate({ group: gk, symbol: addForm.symbol })
-                          if (e.key === 'Escape') setAddForm(null)
-                        }}
-                        placeholder="TICKER"
-                        className="bg-slate-700 border border-slate-600 rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-blue-500 font-mono" />
-                      <div className="flex gap-1">
-                        <button onClick={() => addForm.symbol && addMutation.mutate({ group: gk, symbol: addForm.symbol })}
-                          className="flex-1 text-xs py-0.5 bg-blue-600 hover:bg-blue-500 rounded text-white">添加</button>
-                        <button onClick={() => setAddForm(null)}
-                          className="text-xs px-2 text-slate-500 hover:text-slate-300">取消</button>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
+                        {syms.map(sym => {
+                          const meta = AI_COMPANY_META[sym]
+                          return (
+                            <div key={sym}
+                              className="group relative bg-slate-800/70 border border-slate-700/60 rounded-lg px-2.5 py-2 hover:border-slate-500 hover:bg-slate-800 transition-colors"
+                              style={{ borderLeftColor: color, borderLeftWidth: 3 }}>
+                              <button onClick={() => removeMutation.mutate(sym)} title="从池中移除"
+                                className="absolute top-1 right-1 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity text-xs leading-none">✕</button>
+                              <div className="flex items-baseline gap-1.5">
+                                <SymbolLink symbol={sym} className="font-semibold text-white text-sm" />
+                                {meta?.name && <span className="text-[11px] text-slate-400 truncate">{meta.name}</span>}
+                              </div>
+                              <div className="text-[10px] text-slate-500 mt-0.5 leading-snug truncate" title={meta?.desc || ''}>
+                                {meta?.desc || '—'}
+                              </div>
+                            </div>
+                          )
+                        })}
+                        {/* 添加输入卡片 */}
+                        {addForm?.group === gk && (
+                          <div className="bg-slate-700/30 border border-blue-500 rounded-lg p-2 flex flex-col gap-1">
+                            <input autoFocus value={addForm.symbol}
+                              onChange={e => setAddForm({ ...addForm, symbol: e.target.value.toUpperCase() })}
+                              onKeyDown={e => {
+                                if (e.key === 'Enter' && addForm.symbol) addMutation.mutate({ group: gk, symbol: addForm.symbol })
+                                if (e.key === 'Escape') setAddForm(null)
+                              }}
+                              placeholder="TICKER"
+                              className="bg-slate-700 border border-slate-600 rounded px-2 py-0.5 text-xs text-white focus:outline-none focus:border-blue-500 font-mono" />
+                            <div className="flex gap-1">
+                              <button onClick={() => addForm.symbol && addMutation.mutate({ group: gk, symbol: addForm.symbol })}
+                                className="flex-1 text-xs py-0.5 bg-blue-600 hover:bg-blue-500 rounded text-white">添加</button>
+                              <button onClick={() => setAddForm(null)}
+                                className="text-xs px-2 text-slate-500 hover:text-slate-300">取消</button>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     </div>
-                  ) : (
-                    <button onClick={() => setAddForm({ group: gk, symbol: '' })}
-                      className="bg-slate-800 border border-dashed border-slate-600 hover:border-blue-500 hover:bg-slate-700/50 rounded-md p-2 text-xs text-slate-500 hover:text-blue-400 transition-colors flex items-center justify-center min-h-[68px]">
-                      + 添加
-                    </button>
-                  )}
-                </div>
+                  )
+                })}
               </div>
-            )
-          })}
+              {li < AI_CHAIN_LAYERS.length - 1 && (
+                <div className="flex justify-center mt-3 text-slate-600 text-sm leading-none">↓</div>
+              )}
+            </div>
+          ))}
         </div>
-        )
-      })()}
+      )}
+
+      {/* ── Tab: 动能轮动 ─────────────────────────────────────── */}
+      {tab === 'momentum' && <MomentumTab />}
+
 
       {/* 说明 */}
       <div className="text-xs text-slate-600 space-y-0.5">
-        <div>· Capex增速/RS动量/新闻命中为实时计算，首次加载约需 1-2 分钟</div>
-        <div>· 技术信号（⚡突破 ▲量能 ↑趋势）来自 RSMomentum，"买"=满足5个条件，"警"=量价背离</div>
-        <div>· 市场扫描器 "AI产业链" 模式只跑 $10B–$500B（本追踪器含超大市值全覆盖）</div>
-        <div>· 自动发现扫描 S&P500+NDX+Russell2000，过滤 $10B–$500B AI 相关标的</div>
+        <div>· 产业图谱按上下游分层展示，公司业务为人工标注（data/aiCompanyMeta.ts）；增删即时写入 ai_universe.json（auto_trader 优先池）</div>
+        <div>· 「自动发现」扫 S&P500/NDX 找 AI 候选 → 进待定区审核；「手动加入」识别并归组；评分/动量数据见「动能轮动」</div>
       </div>
     </div>
   )

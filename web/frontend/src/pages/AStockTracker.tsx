@@ -23,6 +23,23 @@ function pctColor(v: number | null | undefined): string {
   return 'text-red-500/80'
 }
 
+// 30 个细分主题归并为 10 个中类（板块卡 + 过滤用；细分降为股票上的标签）。
+// 仅 theme 模式生效；sw（申万行业）模式保持原行业分组不变。
+const ASTOCK_CATEGORIES: { key: string; label: string; color: string; groups: string[] }[] = [
+  { key: 'cat_optics',  label: '🔦 光通信/网络',   color: '#22c55e', groups: ['optical', 'ocs', 'optical_chip', 'fiber_cable', 'connector'] },
+  { key: 'cat_storage', label: '💾 存储',          color: '#06b6d4', groups: ['storage'] },
+  { key: 'cat_pcb',     label: '🟫 PCB/载板',      color: '#f97316', groups: ['pcb', 'ccl', 'glass_fiber', 'resin', 'copper_foil'] },
+  { key: 'cat_aichip',  label: '🧠 算力/AI芯片',   color: '#ef4444', groups: ['chip_compute', 'chip_design'] },
+  { key: 'cat_semimfg', label: '🏭 半导体制造',    color: '#eab308', groups: ['semi_material', 'semi_equip', 'foundry', 'packaging'] },
+  { key: 'cat_analog',  label: '🔌 模拟/功率/被动', color: '#d946ef', groups: ['analog_chip', 'power_semi', 'passive'] },
+  { key: 'cat_server',  label: '🖥 服务器/数据中心', color: '#3b82f6', groups: ['server', 'idc', 'compute_lease'] },
+  { key: 'cat_power',   label: '⚡ 电力/供电',     color: '#84cc16', groups: ['power_supply', 'sst', 'power_grid', 'power_compute', 'gas_turbine'] },
+  { key: 'cat_cooling', label: '❄️ 液冷/散热',     color: '#fb923c', groups: ['cooling'] },
+  { key: 'cat_display', label: '🖼 显示面板',      color: '#8b5cf6', groups: ['display_panel'] },
+]
+const CAT_BY_KEY: Record<string, { key: string; label: string; color: string; groups: string[] }> =
+  Object.fromEntries(ASTOCK_CATEGORIES.map(c => [c.key, c]))
+
 // ── 辅助组件（A 股版，与 AITracker 同款）────────────────────────
 
 function CompositeBadge({ score }: { score: number }) {
@@ -190,6 +207,30 @@ export default function AStockTracker() {
   const benchmark = data?.benchmark
   const groupOptions: { key: string; label: string }[] = groups.map((g: any) => ({ key: g.key, label: g.label }))
 
+  // 板块卡：theme 模式把 30 小类聚合成 10 中类；sw 模式用原申万行业组
+  const isTheme = mode === 'theme'
+  const groupLabelMap: Record<string, string> = Object.fromEntries(groups.map((g: any) => [g.key, g.label]))
+  const displayGroups: any[] = isTheme
+    ? ASTOCK_CATEGORIES.map(cat => {
+        const subs = groups.filter((g: any) => cat.groups.includes(g.key))
+        if (!subs.length) return null
+        const catRows = rows.filter((r: any) => cat.groups.includes(r.group))
+        const rsList = catRows.map((r: any) => r.rs_5d).filter((v: any) => v != null).sort((a: number, b: number) => a - b)
+        return {
+          key: cat.key, label: cat.label, color: cat.color,
+          median_rs_5d: rsList.length ? rsList[Math.floor(rsList.length / 2)] : 0,
+          advance: subs.reduce((s: number, g: any) => s + (g.advance || 0), 0),
+          decline: subs.reduce((s: number, g: any) => s + (g.decline || 0), 0),
+        }
+      }).filter(Boolean)
+    : groups
+  // 当前选中（中类 key 或 sw 小类 key）下，某只股票是否命中
+  const inActiveGroup = (r: any) => {
+    if (groupFilter === 'all') return true
+    if (isTheme) return (CAT_BY_KEY[groupFilter]?.groups ?? []).includes(r.group)
+    return r.group === groupFilter
+  }
+
   const doClassify = () => {
     const code = addCode.trim()
     if (!code) return
@@ -234,7 +275,7 @@ export default function AStockTracker() {
   const cMin = numOr(capMin, -Infinity), cMax = numOr(capMax, Infinity)
   const tMin = numOr(minTrend, -Infinity)
   const filteredRows = rows.filter(r => {
-    if (!(groupFilter === 'all' || r.group === groupFilter)) return false
+    if (!inActiveGroup(r)) return false
     if (!(emaFilter === 'all' || (emaFilter === 'ema7' ? r.above_ema7 : r.above_ema21))) return false
     if (r.close != null && (r.close < pMin || r.close > pMax)) return false
     // 市值缺失（如申万模式部分股票）不参与过滤，避免误删
@@ -243,8 +284,8 @@ export default function AStockTracker() {
     return true
   })
   const hiddenByEma = emaFilter === 'all' ? 0
-    : rows.filter(r => groupFilter === 'all' || r.group === groupFilter).length
-      - rows.filter(r => (groupFilter === 'all' || r.group === groupFilter) && (emaFilter === 'ema7' ? r.above_ema7 : r.above_ema21)).length
+    : rows.filter(inActiveGroup).length
+      - rows.filter(r => inActiveGroup(r) && (emaFilter === 'ema7' ? r.above_ema7 : r.above_ema21)).length
   const filtersActive = priceMin !== '' || priceMax !== '' || capMin !== '' || capMax !== '' || minTrend !== ''
   const fmtCap = (v: number | null | undefined) =>
     v == null ? '—' : v >= 10000 ? (v / 10000).toFixed(2) + '万亿' : Math.round(v) + '亿'
@@ -330,7 +371,7 @@ export default function AStockTracker() {
       ) : (
         <div className="space-y-4">
           <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2">
-            {groups.map((g: any) => (
+            {displayGroups.map((g: any) => (
               <GroupCard key={g.key} g={g} active={groupFilter === g.key}
                 onClick={() => setGroupFilter(f => f === g.key ? 'all' : g.key)} />
             ))}
@@ -342,15 +383,17 @@ export default function AStockTracker() {
               className={`px-3 py-1 text-xs rounded ${groupFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
               全部板块
             </button>
-            {groupFilter !== 'all' && (
-              <span className="text-xs text-slate-400 inline-flex items-center gap-1">
-                已选
-                <span className="px-2 py-0.5 rounded text-white"
-                  style={{ background: groups.find((g: any) => g.key === groupFilter)?.color }}>
-                  {groupOptions.find(g => g.key === groupFilter)?.label ?? groupFilter}
+            {groupFilter !== 'all' && (() => {
+              const dg = displayGroups.find((g: any) => g.key === groupFilter)
+              return (
+                <span className="text-xs text-slate-400 inline-flex items-center gap-1">
+                  已选
+                  <span className="px-2 py-0.5 rounded text-white" style={{ background: dg?.color }}>
+                    {dg?.label ?? groupFilter}
+                  </span>
                 </span>
-              </span>
-            )}
+              )
+            })()}
             <div className="ml-auto flex items-center gap-2">
               <span className="text-xs text-slate-500">均线：</span>
               {([['ema21','站上EMA21'],['ema7','站上EMA7'],['all','全部']] as const).map(([k, l]) => (
@@ -455,7 +498,12 @@ export default function AStockTracker() {
                       <SymbolLink symbol={r.symbol} market="a"
                         className="ml-1.5 font-mono font-medium text-white text-sm" />
                     </td>
-                    <td className="px-3 py-1.5 text-xs text-slate-400 max-w-[80px] truncate">{r.name}</td>
+                    <td className="px-3 py-1.5 text-xs text-slate-400 max-w-[120px]">
+                      <div className="truncate">{r.name}</div>
+                      {isTheme && r.group && groupLabelMap[r.group] && (
+                        <span className="inline-block mt-0.5 text-[9px] px-1 rounded bg-slate-700/60 text-slate-400 leading-tight">{groupLabelMap[r.group]}</span>
+                      )}
+                    </td>
                     <td className="px-2 py-1.5 text-right font-mono text-xs text-slate-300">{r.close != null ? r.close.toFixed(2) : '—'}</td>
                     <td className="px-2 py-1.5 text-right font-mono text-xs text-slate-400">{fmtCap(r.market_cap)}</td>
                     <td className="px-2 py-1.5 text-center"><CompositeBadge score={r.composite} /></td>

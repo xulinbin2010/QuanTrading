@@ -34,7 +34,7 @@ export const AI_COMPANY_META: Record<string, { name: string; desc: string }> = {
   WDC:  { name: '西部数据', desc: '硬盘/存储' },
   STX:  { name: '希捷', desc: '大容量硬盘' },
   RMBS: { name: 'Rambus', desc: '内存接口IP' },
-  DRAM: { name: 'DRAM', desc: '内存相关' },
+  DRAM: { name: 'DRAM ETF', desc: '存储ETF(海力士/三星/美光)' },
   SIMO: { name: 'Silicon Motion', desc: 'SSD主控芯片' },
 
   // ── 半导体设备/材料 ──

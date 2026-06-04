@@ -5,7 +5,8 @@
    "color": "#6366f1",
    "symbols": [
     "AMZN",
-    "GOOGL"
+    "GOOGL",
+    "IBM"
    ]
   },
   "gpu_compute": {
@@ -59,7 +60,6 @@
     "ENTG",
     "AEHR",
     "AXTI",
-    "Q",
     "TSEM",
     "CAMT",
     "GFS"
@@ -81,7 +81,8 @@
     "CLS",
     "IONQ",
     "TTMI",
-    "TEL"
+    "TEL",
+    "HPQ"
    ]
   },
   "ai_networking": {
@@ -122,7 +123,8 @@
     "CIFR",
     "POWL",
     "AGX",
-    "HUT"
+    "HUT",
+    "BB"
    ]
   },
   "power_cooling": {
@@ -137,7 +139,6 @@
     "AES",
     "GEV",
     "GTLS",
-    "TDW",
     "ETN",
     "GNRC",
     "PWR",
@@ -152,7 +153,8 @@
     "DGXX",
     "MOD",
     "AAON",
-    "VICR"
+    "VICR",
+    "TE"
    ]
   }
  },
@@ -328,36 +330,6 @@
    "revenue_growth": null
   },
   {
-   "symbol": "IBM",
-   "name": "IBM",
-   "suggest_group": "hyperscalers",
-   "note": "C·综合偏软件",
-   "industry": null,
-   "sector": null,
-   "market_cap_b": null,
-   "revenue_growth": null
-  },
-  {
-   "symbol": "HPQ",
-   "name": "HP Inc",
-   "suggest_group": "datacenter_infra",
-   "note": "C·PC/打印,非AI",
-   "industry": null,
-   "sector": null,
-   "market_cap_b": null,
-   "revenue_growth": null
-  },
-  {
-   "symbol": "BB",
-   "name": "BlackBerry",
-   "suggest_group": "ai_infra_build",
-   "note": "C·软件",
-   "industry": null,
-   "sector": null,
-   "market_cap_b": null,
-   "revenue_growth": null
-  },
-  {
    "symbol": "CAT",
    "name": "Caterpillar",
    "suggest_group": "power_cooling",
@@ -398,10 +370,20 @@
    "revenue_growth": null
   },
   {
-   "symbol": "TE",
-   "name": "T1 Energy",
+   "symbol": "Q",
+   "name": "Q",
+   "suggest_group": "semicon_equip",
+   "note": "D·业务待确认",
+   "industry": null,
+   "sector": null,
+   "market_cap_b": null,
+   "revenue_growth": null
+  },
+  {
+   "symbol": "TDW",
+   "name": "TDW",
    "suggest_group": "power_cooling",
-   "note": "D·太阳能/储能,关联弱",
+   "note": "海上能源服务,与AI关联弱",
    "industry": null,
    "sector": null,
    "market_cap_b": null,
@@ -415,7 +397,6 @@
   "ORCL",
   "GTLB",
   "NTNX",
-  "IBM",
   "PLTR",
   "SNPS",
   "CDNS",
@@ -424,7 +405,6 @@
   "ON",
   "MSI",
   "HUBB",
-  "HPQ",
   "ZBRA"
  ]
 }

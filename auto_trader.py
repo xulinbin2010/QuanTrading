@@ -543,6 +543,12 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
     # 分离现金等价 ETF（SGOV 等）：市值计入现金，不占槽位
     cash_equiv_pos  = {s: p for s, p in positions.items() if s in CASH_EQUIV}
     stock_positions = {s: p for s, p in positions.items() if s not in CASH_EQUIV}
+    # ── 实仓基线（买入端硬闸用）──────────────────────────────────
+    # IB 真实持有的非现金等价股票数，未被 pending_sell_exits / exiting_syms 乐观扣减。
+    # 下方槽位计算会按"预期卖出"提前腾槽，但 OPG 出场单是 LMT、可能不成交（如 DELL 连日挂
+    # 全平单却始终未成交），导致仓位没真退却已补新仓 → 超过 MAX_POSITIONS。买入循环以本基线
+    # 做硬上限：真实持仓 + 本轮已买 ≥ 上限即停，不信任"预期会卖出"，宁可补仓延后一天。
+    real_held_count = len(stock_positions)
     if cash_equiv_pos:
         sgov_value = sum(abs(p.position) * p.avgCost for p in cash_equiv_pos.values())
         cash += sgov_value
@@ -935,6 +941,12 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
         opg_buy_trades: list = []   # [(symbol, orig_qty, limit_price, trade)] 供补单监控用
         for sig in buy_list:
             if executed >= slots:
+                break
+            # 实仓硬闸：以 IB 实际持仓为准，不信任"预期卖出会成交"（OPG LMT 出场可能不成交）。
+            # 即便 slots 因预期卖出腾出，真实持仓 + 本轮已买达上限就停，从根上杜绝超仓。
+            if real_held_count + executed >= eff_max_pos:
+                print(f"  [实仓硬闸] IB 实际持仓 {real_held_count} + 本轮已买 {executed} "
+                      f"已达上限 {eff_max_pos} → 停止买入（预期卖出未成交不腾槽，防超仓）")
                 break
             symbol = sig['symbol']
             if symbol in stock_positions:

@@ -487,14 +487,14 @@ def _handle_opg_partial_fills(ib, trader, opg_buy_trades: list):
         print(f"[补单监控] 已补挂 {补单_count} 笔 DAY 限价单")
 
 
-def execute(signals: dict, dry_run: bool = True):
+def execute(signals: dict, dry_run: bool = True, exits_only: bool = False):
     """连接 IB Gateway，根据信号执行买卖单"""
     db   = Database()
     db.connect()
     conn = IBConnection()
     ib   = conn.connect()
     try:
-        _execute_inner(signals, dry_run, db, conn, ib)
+        _execute_inner(signals, dry_run, db, conn, ib, exits_only=exits_only)
     finally:
         try:
             conn.disconnect()
@@ -503,12 +503,15 @@ def execute(signals: dict, dry_run: bool = True):
         db.close()
 
 
-def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
+def _execute_inner(signals: dict, dry_run: bool, db, conn, ib, exits_only: bool = False):
 
     account   = Account(ib, db=db)
     trader    = Trading(ib, db=db)
     tif       = get_order_tif(ib)
     tif_label = {'DAY': '盘中市价单', 'OPG': '开盘集合竞价单(OPG)'}[tif]
+    if exits_only:
+        print(f"  [仅出场模式] 只执行止损/卖出，不买入"
+              f"{'（盘中 DAY 单，开盘后运行可即时成交）' if tif == 'DAY' else '（当前非盘中，出场单仍走 OPG，建议开盘后运行）'}")
     print(f"  订单类型：{tif_label}")
 
     # ── MSS 自适应：根据市场强度动态覆盖止损/仓位参数 ────────────────────────
@@ -599,7 +602,19 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
         print(f"  检测到今日 {tif} 挂单：{summary}（重复信号将撤旧换新）")
 
     def _cancel_existing(sym: str, action: str):
-        """撤销同方向已有挂单，为新单让路；无挂单则静默返回"""
+        """撤销同方向已有挂单，为新单让路；无挂单则静默返回。
+        SELL 跨 tif 全撤：开盘后下 DAY 出场单前，必须清掉盘前残留、未成交的 OPG 卖单，
+        否则两张卖单并存会重复卖出（OPG 若在实盘开盘已成交则本就不在挂单里，不受影响）。"""
+        if action == 'SELL':
+            cancelled = 0
+            for _t in ib.openTrades():
+                if _t.contract.symbol == sym and _t.order.action == 'SELL':
+                    ib.cancelOrder(_t.order)
+                    cancelled += 1
+            if cancelled:
+                ib.sleep(1)
+                print(f"  [{sym}] 已撤销 {cancelled} 笔旧 SELL 挂单（跨 OPG/DAY）")
+            return
         entry = existing_orders.get(sym, {}).get(action)
         if entry is None:
             return
@@ -896,6 +911,10 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib):
         print(f"\n  [仓位更新] 本次卖出 {len(exiting_syms)} 只 → 有效持仓 {effective_held} 只"
               f"  回笼资金 ${freed_cash:,.0f}  可用槽位 {slots} 个")
 
+    if exits_only:
+        print(f"\n  [仅出场模式] 已处理全部止损/卖出共 {len(exiting_syms)} 只，跳过买入段。")
+        return
+
     # ── 买入信号 ──────────────────────────────────────────────
     buy_list = signals.get('buy', [])
 
@@ -1041,6 +1060,8 @@ def main():
     parser = argparse.ArgumentParser(description='RS 动量策略自动交易')
     parser.add_argument('--run',      action='store_true', help='正式下单（默认 dry-run）')
     parser.add_argument('--dry-run',  action='store_true', help='只显示信号，不下单')
+    parser.add_argument('--exits-only', action='store_true',
+                        help='只执行止损/卖出出场（不买入）。开盘后(9:35 ET)运行以 DAY 单可即时成交，替代不成交的盘前 OPG 出场')
     parser.add_argument('--held',     nargs='+', default=[], help='当前持仓（用于卖出报警）')
     parser.add_argument('--extra',    nargs='+', default=[], help='追加股票（如 SNDK TSM）')
     parser.add_argument('--min-cap',  type=float, default=config.MIN_CAP_B,
@@ -1059,6 +1080,8 @@ def main():
     deny_industries = args.deny_industry or []
     now_bj          = datetime.now().strftime('%Y-%m-%d %H:%M')
     mode            = "dry-run（不下单）" if dry_run else "正式执行（将下单）"
+    if args.exits_only:
+        mode += " · 仅出场"
 
     print(f"\n{'='*54}")
     print(f"  RS 动量自动交易  [{mode}]")
@@ -1094,7 +1117,7 @@ def main():
     _db.close()
 
     print("\n第二步：执行交易")
-    execute(signals, dry_run=dry_run)
+    execute(signals, dry_run=dry_run, exits_only=args.exits_only)
 
     # 发送信号通知（若已配置 NOTIFY_EMAIL_TO）
     try:

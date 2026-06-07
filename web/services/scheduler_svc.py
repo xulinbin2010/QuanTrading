@@ -35,6 +35,14 @@ DEFAULT_TASKS = [
         'enabled':  False,
     },
     {
+        'task_id':  'stop_exits',
+        'name':     '止损出场（开盘后 DAY 单）',
+        'command':  f'{PYTHON} auto_trader.py --run --exits-only',
+        'cron_expr': '35 21 * * 1-5',  # 北京 21:35 = 美东 9:35（夏令时）开盘后5分钟
+        'enabled':  True,
+        'description': '开盘后用 DAY 市价单执行止损/卖出出场（不买入）。盘前 OPG 出场单在模拟盘不撮合、易漏卖，此任务确保止损真正成交。注：cron 按美东夏令时设定，冬令时需后移1小时。',
+    },
+    {
         'task_id':  'confirm_fills',
         'name':     '成交确认（OPG 回报）',
         'command':  f'{PYTHON} confirm_fills.py',

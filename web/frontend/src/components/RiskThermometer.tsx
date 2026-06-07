@@ -86,6 +86,40 @@ export default function RiskThermometer() {
     }],
   }
 
+  const breadth = t.breadth || {}
+  const leadership = t.leadership || {}
+  const pct = (x: number) => `${Math.round(x * 100)}%`
+
+  const bdOption = breadth.available && {
+    backgroundColor: 'transparent',
+    grid: { left: 40, right: 16, top: 16, bottom: 28 },
+    tooltip: { trigger: 'axis', valueFormatter: (v: number) => pct(v) },
+    xAxis: {
+      type: 'category',
+      data: (breadth.history || []).map((h: any) => h.date),
+      axisLabel: { color: AX, fontSize: 10, showMaxLabel: true },
+      axisLine: { lineStyle: { color: '#475569' } },
+    },
+    yAxis: {
+      type: 'value', min: 0, max: 1,
+      axisLabel: { color: AX, fontSize: 10, formatter: (v: number) => pct(v) },
+      splitLine: { lineStyle: { color: '#33415555' } },
+    },
+    series: [{
+      type: 'line', smooth: true, showSymbol: false,
+      data: (breadth.history || []).map((h: any) => h.ma50),
+      lineStyle: { color: '#34d399', width: 2 },
+      areaStyle: { color: 'rgba(52,211,153,0.08)' },
+      markLine: {
+        symbol: 'none', silent: true,
+        data: [
+          { yAxis: 0.6, lineStyle: { color: '#f59e0b', type: 'dashed' }, label: { formatter: '转弱 60%', color: '#f59e0b', fontSize: 10 } },
+          { yAxis: 0.4, lineStyle: { color: '#ef4444', type: 'dashed' }, label: { formatter: '走弱 40%', color: '#ef4444', fontSize: 10 } },
+        ],
+      },
+    }],
+  }
+
   return (
     <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
       {/* 温度总览条 */}
@@ -159,6 +193,70 @@ export default function RiskThermometer() {
               </p>
             </>
           ) : <div className="text-xs text-slate-500 py-6 text-center">相关性不可用：{corr.error}</div>}
+        </div>
+
+        {/* 板块广度 */}
+        <div className="bg-slate-800 p-3">
+          <div className="flex items-center justify-between mb-1.5">
+            <h3 className="text-xs font-semibold text-slate-300">③ 板块广度（站上均线占比）</h3>
+            {breadth.available && (
+              <span className={`text-[11px] px-2 py-0.5 rounded ${
+                breadth.score === 2 ? 'bg-red-900/50 text-red-300' : breadth.score === 1 ? 'bg-amber-900/50 text-amber-300' : 'bg-emerald-900/50 text-emerald-300'}`}>
+                {breadth.label}
+              </span>
+            )}
+          </div>
+          {breadth.available ? (
+            <>
+              <div className="flex items-center gap-3 mb-1 flex-wrap text-[11px]">
+                <span className="text-slate-400">&gt;MA50 <b className="text-emerald-300 text-sm">{pct(breadth.above_ma50)}</b>
+                  <span className="text-slate-500"> (5日前 {pct(breadth.above_ma50_prev5)})</span></span>
+                <span className="text-slate-400">&gt;MA20 <b className="text-slate-200">{pct(breadth.above_ma20)}</b>
+                  <span className="text-slate-500"> (5日前 {pct(breadth.above_ma20_prev5)})</span></span>
+                <span className="text-[10px] px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-400">AI池 {breadth.n} 只</span>
+              </div>
+              <ReactECharts option={bdOption} style={{ height: 170 }} notMerge />
+              <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                板块内站上 MA50 的占比，越低=内部越烂。从高位快速回落=顶部派发预警（即便指数还没跌）。
+              </p>
+            </>
+          ) : <div className="text-xs text-slate-500 py-6 text-center">广度不可用：{breadth.error}</div>}
+        </div>
+
+        {/* 龙头 RS 掉头 */}
+        <div className="bg-slate-800 p-3">
+          <div className="flex items-center justify-between mb-1.5">
+            <h3 className="text-xs font-semibold text-slate-300">④ 龙头 RS 掉头（领涨股转弱）</h3>
+            {leadership.available && (
+              <span className={`text-[11px] px-2 py-0.5 rounded ${
+                leadership.score === 2 ? 'bg-red-900/50 text-red-300' : leadership.score === 1 ? 'bg-amber-900/50 text-amber-300' : 'bg-emerald-900/50 text-emerald-300'}`}>
+                {leadership.label}
+              </span>
+            )}
+          </div>
+          {leadership.available ? (
+            <>
+              <div className="flex items-baseline gap-3 mb-2">
+                <span className="text-xl font-bold text-amber-300">{pct(leadership.frac)}</span>
+                <span className="text-[11px] text-slate-400">
+                  龙头 {leadership.n_leaders} 只中 <b className="text-slate-200">{leadership.rolled_over}</b> 只近 10 日跑输 SPY
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-400 mb-1">掉头的龙头：</div>
+              <div className="flex flex-wrap gap-1.5">
+                {(leadership.rolled_symbols || []).length
+                  ? (leadership.rolled_symbols || []).map((s: string) => (
+                      <span key={s} className="text-[11px] px-1.5 py-0.5 rounded bg-red-900/30 text-red-300 border border-red-800/40">
+                        <SymbolLink symbol={s} />
+                      </span>
+                    ))
+                  : <span className="text-[11px] text-slate-500">无 —— 龙头仍在领涨</span>}
+              </div>
+              <p className="text-[10px] text-slate-500 mt-2 leading-relaxed">
+                龙头=63 日相对 SPY 最强的前 1/3。最强的票开始跑输 = 资金撤离领涨股，常领先大盘见顶。
+              </p>
+            </>
+          ) : <div className="text-xs text-slate-500 py-6 text-center">龙头 RS 不可用：{leadership.error}</div>}
         </div>
       </div>
     </div>

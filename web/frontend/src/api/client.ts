@@ -269,3 +269,7 @@ export const getSingleBtResult    = (task_id: string) =>
   api.get(`/single-bt/result/${task_id}`).then(r => r.data)
 export const getSingleBtHistory   = (limit = 30) =>
   api.get('/single-bt/history', { params: { limit } }).then(r => r.data as { items: any[] })
+
+// ── 风险温度计 ──────────────────────────────────────────────
+export const getRiskThermometer = (force = false) =>
+  api.get('/risk/thermometer', { params: force ? { force: true } : {} }).then(r => r.data)

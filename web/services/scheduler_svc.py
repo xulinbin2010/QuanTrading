@@ -46,8 +46,8 @@ DEFAULT_TASKS = [
         'task_id':  'confirm_fills',
         'name':     '成交确认（OPG 回报）',
         'command':  f'{PYTHON} confirm_fills.py',
-        'cron_expr': '35 22 * * 1-5',  # 北京 22:35
-        'enabled':  False,
+        'cron_expr': '35 22 * * 1-5',  # 北京 22:35 = 美东 10:35（夏令时），开盘1小时后对账
+        'enabled':  True,              # 与 stop_exits 配套：买单+DAY出场单成交后回写 DB，避免订单状态长期失真
     },
     {
         'task_id':  'sp500_scanner',

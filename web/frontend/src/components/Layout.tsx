@@ -6,7 +6,6 @@ import { useAccount } from '../App'
 
 const NAV = [
   { to: '/',          label: '持仓总览', icon: '📊' },
-  { to: '/risk',      label: '风险温度', icon: '🌡️' },
   { to: '/factors',   label: '因子看板', icon: '🔬' },
   { to: '/scanner',   label: '市场扫描', icon: '🔭' },
   { to: '/optimizer', label: '因子优化', icon: '⚗️'  },

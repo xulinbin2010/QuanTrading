@@ -11,7 +11,6 @@ import Optimizer from './pages/Optimizer'
 import BacktestHub from './pages/BacktestHub'
 import AITracker from './pages/AITracker'
 import AStockTracker from './pages/AStockTracker'
-import RiskDashboard from './pages/RiskDashboard'
 import Scheduler from './pages/Scheduler'
 import Config from './pages/Config'
 
@@ -45,7 +44,6 @@ export default function App() {
               <Route path="comparison"  element={<Navigate to="/backtest?tab=compare" replace />} />
               <Route path="ai"          element={<AITracker />} />
               <Route path="astock"      element={<AStockTracker />} />
-              <Route path="risk"        element={<RiskDashboard />} />
               <Route path="scheduler" element={<Scheduler />} />
               <Route path="config"    element={<Config />} />
             </Route>

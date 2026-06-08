@@ -119,7 +119,7 @@ cd web/frontend && npm install && npm run build && cd ../..
 | 市场扫描 | `/#/scanner` | 否 | 全股票池因子扫描 + 内幕买入面板，缓存1小时，点行展开K线详情 |
 | 因子优化 | `/#/optimizer` | 否 | 穷举因子组合 × 参数网格，按 Sharpe 排名，含预计算加速 |
 | 策略回测 | `/#/backtest` | 否 | 4 tab：策略回测 / 单股回测 / 收益对比 / **A 股动能轮动**(每周一 rebalance,4 个策略可选) |
-| AI 追踪 | `/#/ai` | 否 | AI 基建产业链 universe 策展(GPU/网络/电力);成员自动获得 `auto_trader` 优先池待遇 |
+| AI 追踪 | `/#/ai` | 否 | 3 tab：产业图谱(universe 策展,GPU/网络/电力) / 动能轮动 / **财报对比**(最多3只横向比营收/净利/EPS);成员自动获得 `auto_trader` 优先池待遇 |
 | A 股追踪 | `/#/astock` | 否 | A 股动能扫描(主题板块/申万行业),188 只 AI 硬件,含板块强度排名 |
 | 任务调度 | `/#/scheduler` | 否 | 管理定时任务，查看执行日志 |
 | 系统配置 | `/#/config` | 否 | 风控/策略参数实时修改，持久化到 DB |
@@ -129,6 +129,14 @@ cd web/frontend && npm install && npm run build && cd ../..
 - 期权垂直价差自动识别：数量匹配（+N/-N）为一组，显示为 `GOOGL C325/340`；余下单腿单独显示
 - 价格获取用 `reqHistoricalData`（不依赖 Level 1 行情订阅），盘中/盘后均可用
 - ib_insync 在 FastAPI AnyIO 线程中通过 `ThreadPoolExecutor` + 固定 event loop 调用
+
+**AI 追踪页「财报对比」tab 关键实现：**
+- 后端 `ai_momentum_svc.get_earnings_compare(symbols)` → `GET /api/ai/earnings-compare`，最多 3 只
+- 数据：快照(营收/盈利 YoY、PE/PS/毛利/市值，复用 `get_stock_info`) + 最近 5 季营收/净利/EPS(yfinance `quarterly_income_stmt`，pickle 缓存 24h `data/.earnings_compare_cache.pkl`)
+- 三列独立卡片(各公司营收/净利柱状 + EPS 行) + 下方三股合并图(营收/净利各一张折线，蓝/绿/橙固定配色)
+- **财季不对齐**：各公司财年截止月不同(MU 8 月底)，合并图横轴取真实财季日期(`2025.7` 格式)并集排序，缺失点 `connectNulls` 连，**不按日历强行对齐**；以趋势 + YoY 增速为主轴
+- 合并图「绝对值/增长指数(首季=100)」切换：绝对值下营收用对数轴(大小盘同框可见)；指数模式比增长斜率，净利负/零基准无法指数化显示为空
+- yfinance 季度数据可能混入 TTM/重述值(单季异常跳变)，前端标注「异常以官方财报为准」，不做静默修正
 
 **Web 模块目录结构：**
 ```

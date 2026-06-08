@@ -25,7 +25,7 @@ export default function AStockMomentumBacktest() {
   const [end, setEnd] = useState(today)
   const [initialCash, setInitialCash] = useState(100_000)
   const [topN, setTopN] = useState(4)
-  const [strategy, setStrategy] = useState<'momentum' | 'momentum_filtered' | 'sector_rotation' | 'quality_momentum'>('momentum_filtered')
+  const [strategy, setStrategy] = useState<'momentum' | 'momentum_filtered' | 'momentum_trend' | 'sector_rotation' | 'quality_momentum'>('momentum_filtered')
   const [rebalanceFreq, setRebalanceFreq] = useState<'daily' | 'weekly' | 'biweekly' | 'monthly'>('weekly')
   const [applyCosts, setApplyCosts] = useState(false)
   const [stopLoss, setStopLoss] = useState<'none' | 'ema21' | 'fixed_pct'>('none')
@@ -136,6 +136,7 @@ export default function AStockMomentumBacktest() {
               className="bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-white w-56">
               <option value="momentum">纯动能(基线,顶部易翻车)</option>
               <option value="momentum_filtered">动能 + EMA21 过滤 ⭐</option>
+              <option value="momentum_trend">动能 + 趋势质量过滤(新高新鲜度)</option>
               <option value="sector_rotation">板块轮动(强势板块取龙头)</option>
               <option value="quality_momentum">质量动能(PE 加权)</option>
             </select>

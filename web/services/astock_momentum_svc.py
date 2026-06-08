@@ -22,7 +22,7 @@ import pandas as pd
 # 复用美股动能 svc 的纯算法函数（市场无关）
 from web.services.ai_momentum_svc import (
     _pct_change, _vol_ratio, _flow_metrics, _flow_score_0_10,
-    _zscore_to_0_10, _clean_floats,
+    _zscore_to_0_10, _clean_floats, _trend_quality,
 )
 from core.astock_data_store import AStockDataStore
 from core import astock_universe as _au
@@ -155,35 +155,6 @@ def _run_scan_bg(mode: str) -> None:
             _scan_running.pop(f'astock_{mode}', None)
 
 
-def _trend_quality(close: pd.Series, ema7_s: pd.Series, n: int = 20) -> dict:
-    """趋势质量分（0-10）：站上EMA7占比(持续性) + log价格回归R²(平滑·仅上升) × 暴涨惩罚。
-
-    暴涨不硬删除，而是扣分：单日涨幅 >9.5%（涨停级异动）或近 n 日累计 >50% 时按超出幅度降权。
-    """
-    c = close.tail(n)
-    if len(c) < 8:
-        return {'trend_score': None, 'ema7_hold': None, 'trend_r2': None}
-    e = ema7_s.reindex(c.index)
-    hold = float((c.values >= e.values).mean())          # 收盘站上 EMA7 的天数占比
-    y = np.log(c.values)
-    x = np.arange(len(y), dtype=float)
-    slope, intercept = np.polyfit(x, y, 1)
-    yhat = slope * x + intercept
-    ss_tot = float(((y - y.mean()) ** 2).sum())
-    r2 = (1 - float(((y - yhat) ** 2).sum()) / ss_tot) if ss_tot > 0 else 0.0
-    r2_eff = r2 if slope > 0 else 0.0                    # 必须是上升趋势才算平滑度
-    daily = c.pct_change().dropna()
-    max_1d = float(daily.max()) if len(daily) else 0.0
-    ret_n = float(c.iloc[-1] / c.iloc[0] - 1)
-    pen = 1.0
-    if max_1d > 0.095:
-        pen *= max(0.4, 1 - (max_1d - 0.095) * 5)
-    if ret_n > 0.5:
-        pen *= max(0.3, 1 - (ret_n - 0.5))
-    score = (0.5 * hold + 0.5 * r2_eff) * 10 * pen
-    return {'trend_score': round(score, 2), 'ema7_hold': round(hold, 2), 'trend_r2': round(r2_eff, 2)}
-
-
 def _do_scan(mode: str, refresh: bool = False) -> dict:
     groups_cfg, sym_to_group, code_names = _build_groups(mode)
     all_syms = list(sym_to_group.keys())
@@ -240,7 +211,7 @@ def _do_scan(mode: str, refresh: bool = False) -> dict:
         above_ema7 = last_close >= ema7
         above_ema21 = last_close >= ema21
         ema_state = 'strong' if above_ema7 and above_ema21 else ('weak' if above_ema21 else 'broken')
-        tq = _trend_quality(close, ema7_s, n=20)
+        tq = _trend_quality(df, n=20)
         # 流通市值（亿元）= 收盘价 × 流通股本；无股本数据时为 None
         shares = df['shares'].iloc[-1] if 'shares' in df.columns else None
         market_cap = (last_close * float(shares) / 1e8) if (shares is not None and not pd.isna(shares)) else None
@@ -257,7 +228,8 @@ def _do_scan(mode: str, refresh: bool = False) -> dict:
             'accel': accel,
             'ema7': ema7, 'ema21': ema21,
             'above_ema7': above_ema7, 'above_ema21': above_ema21, 'ema_state': ema_state,
-            'trend_score': tq['trend_score'], 'ema7_hold': tq['ema7_hold'], 'trend_r2': tq['trend_r2'],
+            'trend_score': tq['trend_score'], 'ema7_hold': tq['ema7_hold'],
+            'trend_r2': tq['trend_r2'], 'freshness': tq['freshness'],
         })
 
     # 组内中位（rs_vs_group_5d）
@@ -432,7 +404,7 @@ def get_astock_detail(code: str, days: int = 120) -> dict:
     _, group_label = _au.theme_group_of(code)
     shares = df['shares'].iloc[-1] if 'shares' in df.columns else None
     market_cap = (last_close * float(shares) / 1e8) if (shares is not None and not pd.isna(shares)) else None
-    tq = _trend_quality(close, close.ewm(span=7, adjust=False).mean(), n=20)
+    tq = _trend_quality(df, n=20)
     info = {
         'name': _au.get_astock_names([code]).get(code, code),
         'group_label': group_label,
@@ -441,7 +413,7 @@ def get_astock_detail(code: str, days: int = 120) -> dict:
         'mom_5d': mom_5d, 'mom_20d': mom_20d,
         'vol_ratio': _vol_ratio(df, short=3, long=20),
         'rs_5d': rs_5d, 'close': last_close, 'market_cap': market_cap,
-        'trend_score': tq['trend_score'], 'ema7_hold': tq['ema7_hold'],
+        'trend_score': tq['trend_score'], 'ema7_hold': tq['ema7_hold'], 'freshness': tq['freshness'],
         'turnover': float(turn.iloc[-1]) if (turn is not None and not pd.isna(turn.iloc[-1])) else None,
         'turnover_5d': float(turn.tail(5).mean()) if (turn is not None and turn.tail(5).notna().any()) else None,
     }

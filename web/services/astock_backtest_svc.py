@@ -22,7 +22,7 @@ _PE_CACHE_TTL_HOURS = 24
 
 from web.services.ai_momentum_svc import (
     _pct_change, _vol_ratio, _flow_metrics, _flow_score_0_10,
-    _zscore_to_0_10, _clean_floats,
+    _zscore_to_0_10, _clean_floats, _trend_quality,
 )
 from core.astock_data_store import AStockDataStore
 from core import astock_universe as _au
@@ -63,11 +63,13 @@ def _compute_composite_for_date(
         flow = _flow_metrics(df_cut)
         flow_score = _flow_score_0_10(flow['obv_slope'], flow['up_vol_ratio'])
         accel = (mom_3d / 3.0 > mom_5d / 5.0) if (mom_3d is not None and mom_5d is not None) else False
+        trend_score = _trend_quality(df_cut, n=20)['trend_score']
         raw_rows.append({
             'symbol': sym, 'group': sym_to_group.get(sym),
             'mom_3d': mom_3d, 'mom_5d': mom_5d, 'mom_10d': mom_10d,
             'rs_3d': rs_3d, 'rs_5d': rs_5d, 'rs_10d': rs_10d,
             'vol_ratio': vr, 'flow_score': flow_score, 'accel': accel,
+            'trend_score': trend_score,
         })
 
     # 组内中位 → rs_vs_group_5d
@@ -120,6 +122,25 @@ def _select_momentum_filtered(scored_rows: list[dict], top_n: int,
         ema21 = float(close.ewm(span=21, adjust=False).mean().iloc[-1])
         if float(close.iloc[-1]) >= ema21:
             out.append(sym)
+    return out
+
+
+def _select_momentum_trend(scored_rows: list[dict], top_n: int,
+                           trend_min: float = 4.0, **_) -> list[str]:
+    """动能 + 趋势质量过滤:composite 前 N 且 trend_score ≥ trend_min。
+
+    比 momentum_filtered(仅 close≥EMA21)更严:要求持续性+平滑上升+最近仍在创新高
+    的综合趋势分达标,过滤冲高回落/横盘失速的票。
+    trend_min=4.0 为 2025-04~2026-05 牛市样本回测甜点(收益/Sharpe/回撤均优于 EMA21
+    基线);但阈值附近非单调(4.5 骤降),样本敏感,实盘别死信此值。
+    """
+    out: list[str] = []
+    for r in scored_rows:
+        if len(out) >= top_n:
+            break
+        ts = r.get('trend_score')
+        if ts is not None and ts >= trend_min:
+            out.append(r['symbol'])
     return out
 
 
@@ -177,6 +198,7 @@ def _select_quality_momentum(scored_rows: list[dict], top_n: int,
 _STRATEGIES = {
     'momentum':           _select_momentum,
     'momentum_filtered':  _select_momentum_filtered,
+    'momentum_trend':     _select_momentum_trend,
     'sector_rotation':    _select_sector_rotation,
     'quality_momentum':   _select_quality_momentum,
 }

@@ -149,6 +149,61 @@ def _zscore_to_0_10(values: list[float | None]) -> list[float]:
     return out
 
 
+# ── 趋势质量分（市场无关纯算法） ───────────────────────────
+
+def _freshness(high: pd.Series, low: pd.Series, close: pd.Series,
+               m: int = 10, w: int = 20) -> float:
+    """新高新鲜度 0-1：近 m 日内盘中创 w 日新高的天数占比，按当日收盘兑现度打折。
+
+    冲高回落（盘中破新高但收在最低）只拿 0.4×，防长上影/出货日被当成趋势分加分项。
+    收在最高 → 满分；介于两者按收盘在当日振幅中的位置线性插值。
+    """
+    if len(close) < w + 1:
+        return 0.0
+    roll_hi = high.shift(1).rolling(w).max()          # 截至前一日的 w 日最高
+    push = (high.values[-m:] >= roll_hi.values[-m:]).astype(float)  # 盘中创新高=1
+    rng = (high - low).clip(lower=1e-9)
+    hold = ((close - low) / rng).clip(0, 1).values[-m:]            # 收盘在振幅中的位置
+    valid = ~np.isnan(roll_hi.values[-m:])
+    if not valid.any():
+        return 0.0
+    return float((push * (0.4 + 0.6 * hold))[valid].mean())
+
+
+def _trend_quality(df: pd.DataFrame, n: int = 20) -> dict:
+    """趋势质量分（0-10）：站上 EMA7 占比(持续性) + log价格回归 R²(平滑·仅上升)
+    + 新高新鲜度(动能),再乘暴涨惩罚。
+
+    三项各测一面：ema7_hold=趋势没坏；trend_r2=上升平滑；freshness=最近还在创新高。
+    暴涨不硬删除而是扣分：单日涨幅 >9.5%（涨停级）或近 n 日累计 >50% 时按超出幅度降权。
+    """
+    close = df['close']
+    c = close.tail(n)
+    if len(c) < 8:
+        return {'trend_score': None, 'ema7_hold': None, 'trend_r2': None, 'freshness': None}
+    e = close.ewm(span=7, adjust=False).mean().reindex(c.index)
+    hold = float((c.values >= e.values).mean())          # 收盘站上 EMA7 的天数占比
+    y = np.log(c.values)
+    x = np.arange(len(y), dtype=float)
+    slope, intercept = np.polyfit(x, y, 1)
+    yhat = slope * x + intercept
+    ss_tot = float(((y - y.mean()) ** 2).sum())
+    r2 = (1 - float(((y - yhat) ** 2).sum()) / ss_tot) if ss_tot > 0 else 0.0
+    r2_eff = r2 if slope > 0 else 0.0                    # 必须是上升趋势才算平滑度
+    fresh = _freshness(df['high'], df['low'], close, m=10, w=20) if 'high' in df.columns else 0.0
+    daily = c.pct_change().dropna()
+    max_1d = float(daily.max()) if len(daily) else 0.0
+    ret_n = float(c.iloc[-1] / c.iloc[0] - 1)
+    pen = 1.0
+    if max_1d > 0.095:
+        pen *= max(0.4, 1 - (max_1d - 0.095) * 5)
+    if ret_n > 0.5:
+        pen *= max(0.3, 1 - (ret_n - 0.5))
+    score = (0.40 * hold + 0.35 * r2_eff + 0.25 * fresh) * 10 * pen
+    return {'trend_score': round(score, 2), 'ema7_hold': round(hold, 2),
+            'trend_r2': round(r2_eff, 2), 'freshness': round(fresh, 2)}
+
+
 # ── 主扫描 ────────────────────────────────────────────────
 
 def _read_cache() -> dict | None:

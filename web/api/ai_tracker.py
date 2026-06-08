@@ -15,6 +15,18 @@ def scan(force: bool = Query(False)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get('/earnings-compare')
+def earnings_compare(symbols: str = Query(..., description='逗号分隔,最多3只,如 MU,LITE,MRVL'),
+                     force: bool = Query(False)):
+    """最多 3 只 AI 标的财报横向对比:快照(YoY增速/估值/市值)+ 最近5季营收/净利/EPS(24h缓存)"""
+    try:
+        from web.services.ai_momentum_svc import get_earnings_compare
+        syms = [s for s in symbols.split(',') if s.strip()]
+        return get_earnings_compare(syms, force=force)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get('/momentum')
 def momentum(force: bool = Query(False)):
     """AI 篮子短期动能 + 资金流扫描（30 分钟缓存，force=true 强制刷新）

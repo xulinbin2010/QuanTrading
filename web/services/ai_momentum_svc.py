@@ -486,3 +486,122 @@ def _compute_basket_flow(price_map: dict, syms: list[str]) -> dict:
         'advance_5d':      int(ad_daily.iloc[-5:].sum()) if len(ad_daily) >= 5 else int(ad_daily.sum()),
         'money_flow_5d_b': float(money_flow_daily.iloc[-5:].sum() / 1e9) if len(money_flow_daily) >= 5 else float(money_flow_daily.sum() / 1e9),
     }
+
+
+# ── 财报对比(AI 追踪器「财报对比」tab)──────────────────────────────────────
+
+_EARNINGS_CACHE     = ROOT / 'data' / '.earnings_compare_cache.pkl'
+_EARNINGS_TTL_HOURS = 24
+
+
+def _load_earnings_cache() -> dict:
+    import pickle
+    if not _EARNINGS_CACHE.exists():
+        return {}
+    try:
+        with open(_EARNINGS_CACHE, 'rb') as f:
+            return pickle.load(f)
+    except Exception:
+        return {}
+
+
+def _save_earnings_cache(data: dict) -> None:
+    import pickle
+    try:
+        _EARNINGS_CACHE.parent.mkdir(parents=True, exist_ok=True)
+        with open(_EARNINGS_CACHE, 'wb') as f:
+            pickle.dump(data, f)
+    except Exception:
+        pass
+
+
+def _fetch_quarters(sym: str, n: int = 5) -> list[dict]:
+    """最近 n 季 {quarter, revenue_b, net_income_b, eps},来自 yfinance 季度利润表。
+    yfinance 季度数据通常只给 4-5 季,缺失字段优雅置 None。"""
+    import yfinance as yf
+    try:
+        q = yf.Ticker(sym).quarterly_income_stmt
+    except Exception:
+        return []
+    if q is None or getattr(q, 'empty', True):
+        return []
+
+    def _row(labels):
+        for lb in labels:
+            if lb in q.index:
+                return q.loc[lb]
+        return None
+
+    rev = _row(['Total Revenue', 'Operating Revenue', 'Revenue'])
+    ni  = _row(['Net Income', 'Net Income Common Stockholders',
+                'Net Income From Continuing Operation Net Minority Interest'])
+    eps = _row(['Diluted EPS', 'Basic EPS'])
+    # 列 = 财季日期,降序(最新在前)
+    cols = list(q.columns)[:n]
+    out = []
+    for c in cols:
+        def _g(series, scale=1.0):
+            if series is None or c not in series.index:
+                return None
+            v = series.get(c)
+            try:
+                v = float(v)
+            except (TypeError, ValueError):
+                return None
+            if v != v:  # NaN
+                return None
+            return round(v / scale, 2)
+        out.append({
+            'quarter':      str(c)[:7],          # 2025-10
+            'revenue_b':    _g(rev, 1e9),
+            'net_income_b': _g(ni, 1e9),
+            'eps':          _g(eps, 1.0),
+        })
+    out.reverse()   # 改为时间升序,前端从左到右读
+    return out
+
+
+def get_earnings_compare(symbols: list[str], force: bool = False) -> dict:
+    """最多 3 只 AI 标的的财报横向对比:快照(YoY 增速/估值/市值)+ 最近 5 季营收/净利/EPS。
+    单股季度数据 24h 缓存(yfinance 慢且限流)。"""
+    from datetime import datetime, timedelta
+    from core.universe import get_stock_info
+
+    syms = [s.strip().upper() for s in symbols if s and s.strip()][:3]
+    if not syms:
+        return {'companies': []}
+
+    info_map = get_stock_info(syms)
+    cache = _load_earnings_cache()
+    now = datetime.now()
+    dirty = False
+
+    companies = []
+    for s in syms:
+        ent = cache.get(s)
+        if force or not ent or (now - ent.get('_time', now - timedelta(days=999))) > timedelta(hours=_EARNINGS_TTL_HOURS):
+            quarters = _fetch_quarters(s)
+            cache[s] = {'_time': now, 'quarters': quarters}
+            dirty = True
+        else:
+            quarters = ent.get('quarters', [])
+        info = info_map.get(s, {})
+        companies.append({
+            'symbol':          s,
+            'market_cap_b':    info.get('market_cap_b'),
+            'revenue_growth':  info.get('revenue_growth'),    # 最新季 YoY 营收增速
+            'earnings_growth': info.get('earnings_growth'),   # 最新季 YoY 盈利增速
+            'pe_ratio':        info.get('pe_ratio'),
+            'ps_ratio':        info.get('ps_ratio'),
+            'gross_margins':   info.get('gross_margins'),
+            'quarters':        quarters,
+        })
+
+    if dirty:
+        _save_earnings_cache(cache)
+    return _clean_floats({'companies': companies})
+
+
+if __name__ == '__main__':
+    import json as _json
+    print(_json.dumps(get_earnings_compare(['MU', 'LITE', 'MRVL']), ensure_ascii=False, indent=2))

@@ -236,6 +236,8 @@ export const rejectAIPending   = (symbol: string) =>
   api.post('/ai/universe/pending/reject', { symbol }).then(r => r.data)
 export const getAIMomentum     = (force = false) =>
   api.get('/ai/momentum', { params: { force }, timeout: 120_000 }).then(r => r.data)
+export const getEarningsCompare = (symbols: string[], force = false) =>
+  api.get('/ai/earnings-compare', { params: { symbols: symbols.join(','), force }, timeout: 60_000 }).then(r => r.data)
 
 // A 股动能扫描
 export const getAStockMomentum = (mode: 'sw' | 'theme' = 'sw', force = false) =>

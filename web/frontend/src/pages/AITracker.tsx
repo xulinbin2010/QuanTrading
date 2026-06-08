@@ -7,7 +7,7 @@ import {
   scanAITracker, getAIUniverse, getIndexMembership,
   addAISymbol, removeAISymbol,
   approveAIPending, rejectAIPending,
-  getAIMomentum, analyzeAISymbol,
+  getAIMomentum, analyzeAISymbol, getEarningsCompare,
 } from '../api/client'
 
 // ── 工具函数 ──────────────────────────────────────────────────
@@ -35,7 +35,7 @@ function GroupBadge({ label, color }: { label: string; color: string }) {
 
 export default function AITracker() {
   const qc = useQueryClient()
-  const [tab, setTab] = useState<'tracker' | 'momentum'>('tracker')
+  const [tab, setTab] = useState<'tracker' | 'momentum' | 'compare'>('tracker')
   const [showAddTool, setShowAddTool] = useState(false)
   const [forcing, setForcing] = useState(false)
   const [addForm, setAddForm] = useState<{ symbol: string; group: string } | null>(null)
@@ -163,6 +163,7 @@ export default function AITracker() {
         {[
           { key: 'tracker',  label: '产业图谱' },
           { key: 'momentum', label: '动能轮动' },
+          { key: 'compare',  label: '财报对比' },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key as any)}
             className={`px-4 py-2 text-sm border-b-2 transition-colors ${
@@ -365,6 +366,9 @@ export default function AITracker() {
 
       {/* ── Tab: 动能轮动 ─────────────────────────────────────── */}
       {tab === 'momentum' && <MomentumTab />}
+
+      {/* ── Tab: 财报对比 ─────────────────────────────────────── */}
+      {tab === 'compare' && <EarningsCompareTab />}
 
 
       {/* 说明 */}
@@ -756,6 +760,157 @@ function BasketFlowPanel({ basket }: { basket: BasketFlow }) {
         </div>
         <ReactECharts option={flowOption} style={{ height: 110 }} />
       </div>
+    </div>
+  )
+}
+
+
+// ── 财报对比 Tab：最多 3 只 AI 标的横向比营收/净利/EPS ────────────────
+function EarningsCompareTab() {
+  const [input, setInput] = useState('MU, LITE, MRVL')
+  const [symbols, setSymbols] = useState<string[]>(['MU', 'LITE', 'MRVL'])
+
+  const { data: uni } = useQuery({ queryKey: ['ai-universe'], queryFn: getAIUniverse })
+  const allSyms: string[] = uni?.groups
+    ? Array.from(new Set(Object.values(uni.groups as Record<string, any>)
+        .flatMap((g: any) => (g.symbols || [])))).filter(Boolean).sort() as string[]
+    : []
+
+  const { data, isFetching, refetch, error } = useQuery({
+    queryKey: ['earnings-compare', symbols],
+    queryFn: () => getEarningsCompare(symbols),
+    enabled: symbols.length > 0,
+  })
+
+  const apply = () => {
+    const parsed = Array.from(new Set(
+      input.split(/[,\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
+    )).slice(0, 3)
+    setSymbols(parsed)
+  }
+  const toggleChip = (s: string) => {
+    const cur = input.split(/[,\s]+/).map(x => x.trim().toUpperCase()).filter(Boolean)
+    const next = cur.includes(s) ? cur.filter(x => x !== s) : [...cur, s].slice(0, 3)
+    setInput(next.join(', '))
+  }
+
+  const companies: any[] = data?.companies || []
+  // 横向高亮：最高营收YoY / 最高盈利YoY / 最低 PS
+  const best = (key: string, mode: 'max' | 'min') => {
+    const vals = companies.map(c => c[key]).filter((v: any) => v != null)
+    if (!vals.length) return null
+    return mode === 'max' ? Math.max(...vals) : Math.min(...vals)
+  }
+  const bestRevG = best('revenue_growth', 'max')
+  const bestEarnG = best('earnings_growth', 'max')
+  const bestPS = best('ps_ratio', 'min')
+
+  return (
+    <div className="space-y-4">
+      <div className="text-[11px] text-slate-500 bg-slate-900/40 border border-slate-700/50 rounded px-2.5 py-1.5 leading-relaxed">
+        最多 3 只横向对比，数据源 yfinance（季度财报 24h 缓存）。<span className="text-amber-400/80">注意：各公司财季截止月份不同（如 MU 财年 8 月底结束），绝对营收按各自财季并列、不强行对齐，<span className="text-slate-300">看趋势与 YoY 增速</span>为主；个别季度 yfinance 可能混入 TTM/重述值，异常请以官方财报为准。</span>
+      </div>
+
+      {/* 选股 */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <input value={input} onChange={e => setInput(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Enter') apply() }}
+          placeholder="输入代码，逗号/空格分隔，最多 3 只"
+          className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded text-sm text-slate-200 w-72 font-mono" />
+        <button onClick={apply}
+          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-sm text-white transition-colors">对比</button>
+        <button onClick={() => refetch()} disabled={isFetching}
+          className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded text-sm text-slate-300">
+          {isFetching ? '加载中…' : '刷新'}</button>
+      </div>
+
+      {/* AI 库快速选 */}
+      {allSyms.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {allSyms.map(s => {
+            const on = input.split(/[,\s]+/).map(x => x.trim().toUpperCase()).includes(s)
+            return (
+              <button key={s} onClick={() => toggleChip(s)}
+                className={`text-[11px] px-1.5 py-0.5 rounded font-mono transition-colors ${
+                  on ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>{s}</button>
+            )
+          })}
+        </div>
+      )}
+
+      {error && <div className="text-sm text-red-400">加载失败：{String((error as any)?.message || error)}</div>}
+
+      {/* 三列对比卡片 */}
+      {companies.length > 0 && (
+        <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(companies.length, 3)}, minmax(0, 1fr))` }}>
+          {companies.map(c => (
+            <CompanyEarningsCard key={c.symbol} c={c}
+              bestRevG={bestRevG} bestEarnG={bestEarnG} bestPS={bestPS} />
+          ))}
+        </div>
+      )}
+      {!isFetching && companies.length === 0 && (
+        <div className="text-sm text-slate-500">无数据，换个代码试试。</div>
+      )}
+    </div>
+  )
+}
+
+function CompanyEarningsCard({ c, bestRevG, bestEarnG, bestPS }: {
+  c: any; bestRevG: number | null; bestEarnG: number | null; bestPS: number | null
+}) {
+  const qs: any[] = c.quarters || []
+  const labels = qs.map(q => q.quarter)
+  const chartOption = {
+    grid: { left: 38, right: 8, top: 22, bottom: 20 },
+    legend: { data: ['营收', '净利'], textStyle: { color: '#94a3b8', fontSize: 10 }, top: 0, itemHeight: 8 },
+    tooltip: { trigger: 'axis' },
+    xAxis: { type: 'category', data: labels, axisLabel: { color: '#64748b', fontSize: 9 } },
+    yAxis: { type: 'value', axisLabel: { color: '#64748b', fontSize: 9, formatter: '{value}B' }, splitLine: { lineStyle: { color: '#1e293b' } } },
+    series: [
+      { name: '营收', type: 'bar', data: qs.map(q => q.revenue_b), itemStyle: { color: '#3b82f6' } },
+      { name: '净利', type: 'bar', data: qs.map(q => q.net_income_b), itemStyle: { color: '#10b981' } },
+    ],
+  }
+  const hi = (cond: boolean) => cond ? 'text-emerald-400 font-semibold' : 'text-slate-200'
+  return (
+    <div className="bg-slate-900/40 border border-slate-700/50 rounded-lg p-3 space-y-2">
+      <div className="flex items-baseline justify-between">
+        <SymbolLink symbol={c.symbol} className="text-white font-bold text-base" />
+        <span className="text-xs text-slate-400">{fmt(c.market_cap_b)}</span>
+      </div>
+      <div className="grid grid-cols-2 gap-x-3 gap-y-1 text-xs">
+        <Stat label="营收 YoY" val={pct(c.revenue_growth, 0)} cls={hi(bestRevG != null && c.revenue_growth === bestRevG)} />
+        <Stat label="盈利 YoY" val={pct(c.earnings_growth, 0)} cls={hi(bestEarnG != null && c.earnings_growth === bestEarnG)} />
+        <Stat label="PE" val={c.pe_ratio != null ? c.pe_ratio.toFixed(1) : '—'} />
+        <Stat label="PS" val={c.ps_ratio != null ? c.ps_ratio.toFixed(1) : '—'} cls={hi(bestPS != null && c.ps_ratio === bestPS)} />
+        <Stat label="毛利率" val={pct(c.gross_margins, 0)} />
+      </div>
+      {qs.length > 0 ? (
+        <>
+          <ReactECharts option={chartOption} style={{ height: 130 }} />
+          <table className="w-full text-[11px] text-slate-400">
+            <thead><tr className="text-slate-500">
+              <th className="text-left font-normal">财季</th>
+              {labels.map(l => <th key={l} className="text-right font-mono font-normal">{l.slice(2)}</th>)}
+            </tr></thead>
+            <tbody>
+              <tr><td className="text-left">EPS</td>
+                {qs.map((q, i) => <td key={i} className="text-right font-mono">{q.eps != null ? q.eps.toFixed(2) : '—'}</td>)}
+              </tr>
+            </tbody>
+          </table>
+        </>
+      ) : <div className="text-xs text-slate-600 py-4 text-center">无季度财报数据</div>}
+    </div>
+  )
+}
+
+function Stat({ label, val, cls }: { label: string; val: string; cls?: string }) {
+  return (
+    <div className="flex items-center justify-between">
+      <span className="text-slate-500">{label}</span>
+      <span className={`font-mono ${cls || 'text-slate-200'}`}>{val}</span>
     </div>
   )
 }

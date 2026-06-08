@@ -126,13 +126,16 @@ def _select_momentum_filtered(scored_rows: list[dict], top_n: int,
 
 
 def _select_momentum_trend(scored_rows: list[dict], top_n: int,
-                           trend_min: float = 4.0, **_) -> list[str]:
+                           trend_min: float = 3.5, **_) -> list[str]:
     """动能 + 趋势质量过滤:composite 前 N 且 trend_score ≥ trend_min。
 
     比 momentum_filtered(仅 close≥EMA21)更严:要求持续性+平滑上升+最近仍在创新高
     的综合趋势分达标,过滤冲高回落/横盘失速的票。
-    trend_min=4.0 为 2025-04~2026-05 牛市样本回测甜点(收益/Sharpe/回撤均优于 EMA21
-    基线);但阈值附近非单调(4.5 骤降),样本敏感,实盘别死信此值。
+
+    多周期回测(2025H1/H2、2026YTD、全程14M)一致显示:trend_min 3.0~4.0 是稳定平台,
+    ≥4.5 在每个周期都骤降——非样本噪音,而是趋势分分布饱和(能过的票太少→组合凑不满
+    槽位被迫集中到劣质标的),故为结构性悬崖,切勿设 ≥4.5。3.5 取平台内 Sharpe 略优
+    且离悬崖最远的点为默认。注:本策略偏抗回撤/弱市护盘,凌厉单边动量行情下会漏大鱼。
     """
     out: list[str] = []
     for r in scored_rows:

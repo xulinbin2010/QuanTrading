@@ -863,15 +863,21 @@ function EarningsCompareTab() {
 // 公司固定配色（蓝/绿/橙，浅深底都清晰）
 const SERIES_COLORS = ['#2563eb', '#059669', '#f97316']
 
+// 财季标签 "2025-07" → "2025.7"
+function fmtQ(q: string) {
+  const [y, m] = (q || '').split('-')
+  return m ? `${y}.${parseInt(m, 10)}` : q
+}
+
 // ── 合并对比：营收一张图、净利一张图，三只叠加 ──────────────────────
 function CombinedCompareChart({ companies, metric, title, mode }: {
   companies: any[]; metric: 'revenue_b' | 'net_income_b'; title: string; mode: 'abs' | 'index'
 }) {
-  // 按"最近第几季"右对齐（各公司财季截止月不同，不按日历强行对齐）
-  const maxLen = Math.max(...companies.map(c => (c.quarters || []).length), 0)
-  if (maxLen === 0) return null
-  const xLabels = Array.from({ length: maxLen }, (_, i) =>
-    i === maxLen - 1 ? '最新' : `前${maxLen - 1 - i}季`)
+  // 按真实财季日期取并集横排（各公司财季截止月不同→错位是真实情况，缺失断点 connectNulls 连）
+  const allQ = Array.from(new Set(
+    companies.flatMap(c => (c.quarters || []).map((q: any) => q.quarter)))).sort() as string[]
+  if (allQ.length === 0) return null
+  const xLabels = allQ.map(fmtQ)
 
   const rebase = (vals: (number | null)[]) => {
     const base = vals.find(v => v != null && v !== 0)
@@ -880,9 +886,9 @@ function CombinedCompareChart({ companies, metric, title, mode }: {
   }
 
   const series = companies.map((c, i) => {
-    const arr: (number | null)[] = (c.quarters || []).map((q: any) => q[metric])
-    const padded = Array(maxLen - arr.length).fill(null).concat(arr)   // 右对齐
-    const data = mode === 'index' ? rebase(padded) : padded
+    const m = new Map<string, number | null>((c.quarters || []).map((q: any) => [q.quarter, q[metric]]))
+    const vals: (number | null)[] = allQ.map(q => (m.has(q) ? m.get(q)! : null))
+    const data = mode === 'index' ? rebase(vals) : vals
     return {
       name: c.symbol, type: 'line', smooth: true, connectNulls: true,
       symbolSize: 6, data,
@@ -935,7 +941,7 @@ function CombinedCompareCharts({ companies }: { companies: any[] }) {
       </div>
       <div className="text-[11px] text-slate-500">
         {mode === 'abs'
-          ? '按各公司财季右对齐（最新在右），非日历对齐；营收用对数轴让大小盘都可见。'
+          ? '横轴为真实财季（各公司财季截止月不同→点位错开属正常）；营收用对数轴让大小盘都可见。'
           : '各自首季归一到 100，看增长斜率谁更陡（净利负/零基准无法指数化，显示为空）。'}
       </div>
       <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
@@ -950,7 +956,7 @@ function CompanyEarningsCard({ c, bestRevG, bestEarnG, bestPS }: {
   c: any; bestRevG: number | null; bestEarnG: number | null; bestPS: number | null
 }) {
   const qs: any[] = c.quarters || []
-  const labels = qs.map(q => q.quarter)
+  const labels = qs.map(q => fmtQ(q.quarter))
   // 图表文字用中灰 #64748b(slate-500),浅/深底都清晰;柱色用饱和度高的蓝/绿,白底深底均可辨
   const axisGray = '#64748b'
   const chartOption = {
@@ -986,7 +992,7 @@ function CompanyEarningsCard({ c, bestRevG, bestEarnG, bestPS }: {
           <table className="w-full text-[11px] text-slate-400">
             <thead><tr className="text-slate-500">
               <th className="text-left font-normal">财季</th>
-              {labels.map(l => <th key={l} className="text-right font-mono font-normal">{l.slice(2)}</th>)}
+              {labels.map(l => <th key={l} className="text-right font-mono font-normal">{l}</th>)}
             </tr></thead>
             <tbody>
               <tr><td className="text-left">EPS</td>

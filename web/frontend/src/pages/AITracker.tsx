@@ -808,7 +808,7 @@ function EarningsCompareTab() {
   return (
     <div className="space-y-4">
       <div className="text-[11px] text-slate-500 bg-slate-900/40 border border-slate-700/50 rounded px-2.5 py-1.5 leading-relaxed">
-        最多 3 只横向对比，数据源 yfinance（季度财报 24h 缓存）。<span className="text-amber-400/80">注意：各公司财季截止月份不同（如 MU 财年 8 月底结束），绝对营收按各自财季并列、不强行对齐，<span className="text-slate-300">看趋势与 YoY 增速</span>为主；个别季度 yfinance 可能混入 TTM/重述值，异常请以官方财报为准。</span>
+        最多 3 只横向对比，数据源 yfinance（季度财报 24h 缓存）。<span className="text-slate-400">注意：各公司财季截止月份不同（如 MU 财年 8 月底结束），绝对营收按各自财季并列、不强行对齐，<span className="text-slate-200 font-medium">看趋势与 YoY 增速</span>为主；个别季度 yfinance 可能混入 TTM/重述值，异常请以官方财报为准。</span>
       </div>
 
       {/* 选股 */}
@@ -861,18 +861,22 @@ function CompanyEarningsCard({ c, bestRevG, bestEarnG, bestPS }: {
 }) {
   const qs: any[] = c.quarters || []
   const labels = qs.map(q => q.quarter)
+  // 图表文字用中灰 #64748b(slate-500),浅/深底都清晰;柱色用饱和度高的蓝/绿,白底深底均可辨
+  const axisGray = '#64748b'
   const chartOption = {
-    grid: { left: 38, right: 8, top: 22, bottom: 20 },
-    legend: { data: ['营收', '净利'], textStyle: { color: '#94a3b8', fontSize: 10 }, top: 0, itemHeight: 8 },
+    grid: { left: 40, right: 8, top: 22, bottom: 20 },
+    legend: { data: ['营收', '净利'], textStyle: { color: axisGray, fontSize: 10 }, top: 0, itemHeight: 8 },
     tooltip: { trigger: 'axis' },
-    xAxis: { type: 'category', data: labels, axisLabel: { color: '#64748b', fontSize: 9 } },
-    yAxis: { type: 'value', axisLabel: { color: '#64748b', fontSize: 9, formatter: '{value}B' }, splitLine: { lineStyle: { color: '#1e293b' } } },
+    xAxis: { type: 'category', data: labels, axisLabel: { color: axisGray, fontSize: 9 },
+             axisLine: { lineStyle: { color: axisGray } } },
+    yAxis: { type: 'value', axisLabel: { color: axisGray, fontSize: 9, formatter: '{value}B' },
+             splitLine: { lineStyle: { color: 'rgba(100,116,139,0.25)' } } },
     series: [
-      { name: '营收', type: 'bar', data: qs.map(q => q.revenue_b), itemStyle: { color: '#3b82f6' } },
-      { name: '净利', type: 'bar', data: qs.map(q => q.net_income_b), itemStyle: { color: '#10b981' } },
+      { name: '营收', type: 'bar', data: qs.map(q => q.revenue_b), itemStyle: { color: '#2563eb' } },
+      { name: '净利', type: 'bar', data: qs.map(q => q.net_income_b), itemStyle: { color: '#059669' } },
     ],
   }
-  const hi = (cond: boolean) => cond ? 'text-emerald-400 font-semibold' : 'text-slate-200'
+  const hi = (cond: boolean) => cond ? 'text-green-400 font-semibold' : 'text-slate-200'
   return (
     <div className="bg-slate-900/40 border border-slate-700/50 rounded-lg p-3 space-y-2">
       <div className="flex items-baseline justify-between">

@@ -776,7 +776,7 @@ function EarningsCompareTab() {
         .flatMap((g: any) => (g.symbols || [])))).filter(Boolean).sort() as string[]
     : []
 
-  const { data, isFetching, refetch, error } = useQuery({
+  const { data, isFetching, error } = useQuery({
     queryKey: ['earnings-compare', symbols],
     queryFn: () => getEarningsCompare(symbols),
     enabled: symbols.length > 0,
@@ -817,11 +817,9 @@ function EarningsCompareTab() {
           onKeyDown={e => { if (e.key === 'Enter') apply() }}
           placeholder="输入代码，逗号/空格分隔，最多 3 只"
           className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded text-sm text-slate-200 w-72 font-mono" />
-        <button onClick={apply}
-          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded text-sm text-white transition-colors">对比</button>
-        <button onClick={() => refetch()} disabled={isFetching}
-          className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded text-sm text-slate-300">
-          {isFetching ? '加载中…' : '刷新'}</button>
+        <button onClick={apply} disabled={isFetching}
+          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 rounded text-sm text-white transition-colors">
+          {isFetching ? '加载中…' : '对比'}</button>
       </div>
 
       {/* AI 库快速选 */}

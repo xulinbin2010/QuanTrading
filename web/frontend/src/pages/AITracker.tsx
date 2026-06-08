@@ -840,7 +840,7 @@ function EarningsCompareTab() {
 
       {error && <div className="text-sm text-red-400">加载失败：{String((error as any)?.message || error)}</div>}
 
-      {/* 三列对比卡片 */}
+      {/* 三列对比卡片（保留各公司独立卡） */}
       {companies.length > 0 && (
         <div className="grid gap-3" style={{ gridTemplateColumns: `repeat(${Math.min(companies.length, 3)}, minmax(0, 1fr))` }}>
           {companies.map(c => (
@@ -849,9 +849,99 @@ function EarningsCompareTab() {
           ))}
         </div>
       )}
+
+      {/* 合并对比图：三只放一张 */}
+      {companies.length > 1 && <CombinedCompareCharts companies={companies} />}
+
       {!isFetching && companies.length === 0 && (
         <div className="text-sm text-slate-500">无数据，换个代码试试。</div>
       )}
+    </div>
+  )
+}
+
+// 公司固定配色（蓝/绿/橙，浅深底都清晰）
+const SERIES_COLORS = ['#2563eb', '#059669', '#f97316']
+
+// ── 合并对比：营收一张图、净利一张图，三只叠加 ──────────────────────
+function CombinedCompareChart({ companies, metric, title, mode }: {
+  companies: any[]; metric: 'revenue_b' | 'net_income_b'; title: string; mode: 'abs' | 'index'
+}) {
+  // 按"最近第几季"右对齐（各公司财季截止月不同，不按日历强行对齐）
+  const maxLen = Math.max(...companies.map(c => (c.quarters || []).length), 0)
+  if (maxLen === 0) return null
+  const xLabels = Array.from({ length: maxLen }, (_, i) =>
+    i === maxLen - 1 ? '最新' : `前${maxLen - 1 - i}季`)
+
+  const rebase = (vals: (number | null)[]) => {
+    const base = vals.find(v => v != null && v !== 0)
+    if (base == null || base <= 0) return vals.map(() => null)  // 负/零基准无法指数化
+    return vals.map(v => (v == null ? null : (v / base) * 100))
+  }
+
+  const series = companies.map((c, i) => {
+    const arr: (number | null)[] = (c.quarters || []).map((q: any) => q[metric])
+    const padded = Array(maxLen - arr.length).fill(null).concat(arr)   // 右对齐
+    const data = mode === 'index' ? rebase(padded) : padded
+    return {
+      name: c.symbol, type: 'line', smooth: true, connectNulls: true,
+      symbolSize: 6, data,
+      lineStyle: { width: 2 }, itemStyle: { color: SERIES_COLORS[i % 3] },
+    }
+  })
+
+  const logForRevAbs = mode === 'abs' && metric === 'revenue_b'
+  const axisGray = '#64748b'
+  const unit = mode === 'index' ? '' : 'B'
+  const option = {
+    grid: { left: 46, right: 12, top: 30, bottom: 24 },
+    legend: { data: companies.map(c => c.symbol), textStyle: { color: axisGray, fontSize: 11 }, top: 2, itemHeight: 8 },
+    tooltip: {
+      trigger: 'axis',
+      valueFormatter: (v: any) => v == null ? '—' : (mode === 'index' ? Math.round(v) : `${v}B`),
+    },
+    xAxis: { type: 'category', data: xLabels, axisLabel: { color: axisGray, fontSize: 10 },
+             axisLine: { lineStyle: { color: axisGray } } },
+    yAxis: {
+      type: logForRevAbs ? 'log' : 'value',
+      axisLabel: { color: axisGray, fontSize: 10, formatter: `{value}${unit}` },
+      splitLine: { lineStyle: { color: 'rgba(100,116,139,0.25)' } },
+    },
+    series,
+  }
+  return (
+    <div className="bg-slate-900/40 border border-slate-700/50 rounded-lg p-3">
+      <div className="text-sm font-medium text-slate-300 mb-1">{title}
+        {logForRevAbs && <span className="text-[11px] text-slate-500 ml-1.5">（对数轴，便于跨规模看）</span>}
+      </div>
+      <ReactECharts option={option} style={{ height: 220 }} />
+    </div>
+  )
+}
+
+function CombinedCompareCharts({ companies }: { companies: any[] }) {
+  const [mode, setMode] = useState<'abs' | 'index'>('abs')
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between flex-wrap gap-2">
+        <div className="text-sm font-semibold text-slate-200">三股合并对比</div>
+        <div className="flex rounded overflow-hidden border border-slate-700 text-xs">
+          {([['abs', '绝对值'], ['index', '增长指数(首季=100)']] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setMode(k)}
+              className={`px-2.5 py-1 transition-colors ${mode === k
+                ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>{label}</button>
+          ))}
+        </div>
+      </div>
+      <div className="text-[11px] text-slate-500">
+        {mode === 'abs'
+          ? '按各公司财季右对齐（最新在右），非日历对齐；营收用对数轴让大小盘都可见。'
+          : '各自首季归一到 100，看增长斜率谁更陡（净利负/零基准无法指数化，显示为空）。'}
+      </div>
+      <div className="grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+        <CombinedCompareChart companies={companies} metric="revenue_b" title="营收对比" mode={mode} />
+        <CombinedCompareChart companies={companies} metric="net_income_b" title="净利润对比" mode={mode} />
+      </div>
     </div>
   )
 }

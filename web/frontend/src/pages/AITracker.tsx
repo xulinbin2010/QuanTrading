@@ -28,6 +28,15 @@ function fmt(v: number | null | undefined) {
   return v >= 1000 ? `$${(v / 1000).toFixed(1)}T` : `$${v.toFixed(1)}B`
 }
 
+// 市值紧凑显示（输入单位：十亿美元）：≥1T→$X.XT，≥1B→$XB，<1B→$XXXM
+function fmtCap(b: number | null | undefined) {
+  if (b == null) return ''
+  if (b >= 1000) return `$${(b / 1000).toFixed(1)}T`
+  if (b >= 10) return `$${Math.round(b)}B`
+  if (b >= 1) return `$${b.toFixed(1)}B`
+  return `$${Math.round(b * 1000)}M`
+}
+
 function GroupBadge({ label, color }: { label: string; color: string }) {
   return (
     <span className="text-[11px] px-1.5 py-0.5 rounded font-medium"
@@ -137,6 +146,11 @@ export default function AITracker() {
   })
 
   const hiddenGroups = hiddenGroupKeys(universe)
+  // symbol → 市值(十亿美元)，取自扫描结果(4h缓存)；扫描未就绪时为空，卡片市值显示空白
+  const capMap: Record<string, number> = {}
+  for (const r of (scanData?.rows ?? [])) {
+    if (r?.market_cap_b != null) capMap[r.symbol] = r.market_cap_b
+  }
   // 子主题 label/color 直接取自 universe（ai_universe.json），不依赖 scan，图谱秒开；隐藏组不展示
   const groups: Record<string, { label: string; color: string }> = universe?.groups
     ? Object.fromEntries(
@@ -297,7 +311,8 @@ export default function AITracker() {
                                 <span className="text-[10px] text-slate-500 leading-snug truncate" title={meta?.desc || ''}>
                                   {meta?.desc || '—'}
                                 </span>
-                                <span className="flex gap-0.5 shrink-0">
+                                <span className="flex gap-0.5 shrink-0 items-center">
+                                  {capMap[sym] != null && <span title="流通市值(约)" className="text-[9px] leading-tight text-slate-400 font-mono mr-0.5">{fmtCap(capMap[sym])}</span>}
                                   {sp500Set.has(sym) && <span title="S&P 500 成分" className="text-[8px] leading-tight px-1 rounded bg-blue-900/50 text-blue-300">S&P</span>}
                                   {ndxSet.has(sym) && <span title="Nasdaq 100 成分" className="text-[8px] leading-tight px-1 rounded bg-purple-900/50 text-purple-300">100</span>}
                                 </span>

@@ -12,6 +12,12 @@ import {
 
 // ── 工具函数 ──────────────────────────────────────────────────
 
+// 隐藏分组（ai_universe.json 中 group.hidden===true）：仅 UI 不展示，symbols 仍在库内，auto_trader 优先池待遇不变
+function hiddenGroupKeys(uni: any): Set<string> {
+  return new Set(Object.entries(uni?.groups ?? {})
+    .filter(([, v]: any) => v?.hidden).map(([k]) => k))
+}
+
 function pct(v: number | null | undefined, digits = 0) {
   if (v == null) return '—'
   return (v >= 0 ? '+' : '') + (v * 100).toFixed(digits) + '%'
@@ -130,12 +136,13 @@ export default function AITracker() {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ai-universe'] }),
   })
 
-  // 子主题 label/color 直接取自 universe（ai_universe.json），不依赖 scan，图谱秒开
+  const hiddenGroups = hiddenGroupKeys(universe)
+  // 子主题 label/color 直接取自 universe（ai_universe.json），不依赖 scan，图谱秒开；隐藏组不展示
   const groups: Record<string, { label: string; color: string }> = universe?.groups
     ? Object.fromEntries(
-        Object.entries(universe.groups as Record<string, any>).map(([k, v]) => [
-          k, { label: v.label, color: v.color ?? '#94a3b8' }
-        ])
+        Object.entries(universe.groups as Record<string, any>)
+          .filter(([k]) => !hiddenGroups.has(k))
+          .map(([k, v]) => [k, { label: v.label, color: v.color ?? '#94a3b8' }])
       )
     : {}
 
@@ -252,7 +259,7 @@ export default function AITracker() {
               <div className="space-y-3 pl-3 border-l-2 border-slate-700/60">
                 {layer.groups.map(gk => {
                   const gnode: any = universe?.groups?.[gk]
-                  if (!gnode) return null
+                  if (!gnode || hiddenGroups.has(gk)) return null
                   const color = gnode.color ?? '#94a3b8'
                   const syms: string[] = gnode.symbols ?? []
                   return (
@@ -428,6 +435,8 @@ function MomentumTab() {
     staleTime: 30 * 60_000,
     retry: false,
   })
+  const { data: uni } = useQuery({ queryKey: ['ai-universe'], queryFn: getAIUniverse, staleTime: 60_000 })
+  const hidden = hiddenGroupKeys(uni)
 
   const refresh = () => {
     setForcing(true)
@@ -440,8 +449,9 @@ function MomentumTab() {
     return <div className="text-center py-12 text-slate-500 text-sm">动能数据计算中…</div>
   }
 
-  const rows: MomentumRow[] = data?.rows ?? []
-  const groups: GroupSummary[] = data?.groups ?? []
+  // 隐藏组的票/板块不进动能轮动
+  const rows: MomentumRow[] = (data?.rows ?? []).filter((r: MomentumRow) => !hidden.has(r.group))
+  const groups: GroupSummary[] = (data?.groups ?? []).filter((g: GroupSummary) => !hidden.has(g.key))
   const basket: BasketFlow | null = data?.basket ?? null
   const top4: string[] = data?.top4 ?? []
 
@@ -773,6 +783,7 @@ function EarningsCompareTab() {
   const { data: uni } = useQuery({ queryKey: ['ai-universe'], queryFn: getAIUniverse })
   const allSyms: string[] = uni?.groups
     ? Array.from(new Set(Object.values(uni.groups as Record<string, any>)
+        .filter((g: any) => !g.hidden)
         .flatMap((g: any) => (g.symbols || [])))).filter(Boolean).sort() as string[]
     : []
 

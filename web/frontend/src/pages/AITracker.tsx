@@ -308,7 +308,7 @@ export default function AITracker() {
                                   <SymbolLink symbol={sym} className={`${isMega ? 'font-bold' : 'font-semibold'} text-white text-sm`} />
                                   {meta?.name && <span className="text-[11px] text-slate-400 truncate">{meta.name}</span>}
                                 </div>
-                                {capMap[sym] != null && <span title="流通市值(约)" className="text-xs font-bold text-slate-200 font-mono shrink-0">{fmtCap(capMap[sym])}</span>}
+                                {capMap[sym] != null && <span title="流通市值(约)" className="text-xs font-bold text-slate-400 font-mono shrink-0">{fmtCap(capMap[sym])}</span>}
                               </div>
                               <div className="flex items-end justify-between gap-1 mt-0.5">
                                 <span className="text-[10px] text-slate-500 leading-snug truncate" title={meta?.desc || ''}>

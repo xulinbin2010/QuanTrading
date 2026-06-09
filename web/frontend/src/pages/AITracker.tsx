@@ -302,17 +302,19 @@ export default function AITracker() {
                               style={{ borderLeftColor: color, borderLeftWidth: 3 }}>
                               <button onClick={() => removeMutation.mutate(sym)} title="从池中移除"
                                 className="absolute top-1 right-1 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity text-xs leading-none">✕</button>
-                              <div className="flex items-baseline gap-1">
-                                {isMega && <span title="大盘龙头" className="text-[11px] leading-none">👑</span>}
-                                <SymbolLink symbol={sym} className={`${isMega ? 'font-bold' : 'font-semibold'} text-white text-sm`} />
-                                {meta?.name && <span className="text-[11px] text-slate-400 truncate">{meta.name}</span>}
+                              <div className="flex items-baseline justify-between gap-1 pr-4">
+                                <div className="flex items-baseline gap-1 min-w-0">
+                                  {isMega && <span title="大盘龙头" className="text-[11px] leading-none">👑</span>}
+                                  <SymbolLink symbol={sym} className={`${isMega ? 'font-bold' : 'font-semibold'} text-white text-sm`} />
+                                  {meta?.name && <span className="text-[11px] text-slate-400 truncate">{meta.name}</span>}
+                                </div>
+                                {capMap[sym] != null && <span title="流通市值(约)" className="text-xs font-bold text-slate-200 font-mono shrink-0">{fmtCap(capMap[sym])}</span>}
                               </div>
                               <div className="flex items-end justify-between gap-1 mt-0.5">
                                 <span className="text-[10px] text-slate-500 leading-snug truncate" title={meta?.desc || ''}>
                                   {meta?.desc || '—'}
                                 </span>
                                 <span className="flex gap-0.5 shrink-0 items-center">
-                                  {capMap[sym] != null && <span title="流通市值(约)" className="text-[9px] leading-tight text-slate-400 font-mono mr-0.5">{fmtCap(capMap[sym])}</span>}
                                   {sp500Set.has(sym) && <span title="S&P 500 成分" className="text-[8px] leading-tight px-1 rounded bg-blue-900/50 text-blue-300">S&P</span>}
                                   {ndxSet.has(sym) && <span title="Nasdaq 100 成分" className="text-[8px] leading-tight px-1 rounded bg-purple-900/50 text-purple-300">100</span>}
                                 </span>

@@ -31,7 +31,7 @@ const ASTOCK_CHAIN_LAYERS: { title: string; flow: string; groups: string[] }[] =
   { title: '上游 · 材料 / 设备', flow: '芯片与电路板的原料、造芯片的工具',
     groups: ['semi_material', 'semi_equip', 'glass_fiber', 'ccl', 'copper_foil', 'resin', 'passive'] },
   { title: '上游 · 芯片设计', flow: 'GPU / 存储 / 模拟 / 功率 / 光芯片',
-    groups: ['chip_compute', 'chip_design', 'storage', 'analog_chip', 'power_semi', 'optical_chip'] },
+    groups: ['chip_compute', 'storage', 'analog_chip', 'power_semi', 'optical_chip'] },
   { title: '中游 · 制造封测', flow: '晶圆代工与封装测试',
     groups: ['foundry', 'packaging'] },
   { title: '中游 · 光互连 / 连接 / PCB', flow: '光模块·光纤·高速铜缆·算力载板',

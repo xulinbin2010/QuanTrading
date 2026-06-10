@@ -26,20 +26,23 @@ function pctColor(v: number | null | undefined): string {
 
 // 30 个细分主题归并为 10 个中类（板块卡 + 过滤用；细分降为股票上的标签）。
 // 仅 theme 模式生效；sw（申万行业）模式保持原行业分组不变。
-const ASTOCK_CATEGORIES: { key: string; label: string; color: string; groups: string[] }[] = [
-  { key: 'cat_optics',  label: '🔦 光通信/网络',   color: '#22c55e', groups: ['optical', 'ocs', 'optical_chip', 'fiber_cable', 'connector'] },
-  { key: 'cat_storage', label: '💾 存储',          color: '#06b6d4', groups: ['storage'] },
-  { key: 'cat_pcb',     label: '🟫 PCB/载板',      color: '#f97316', groups: ['pcb', 'ccl', 'glass_fiber', 'resin', 'copper_foil'] },
-  { key: 'cat_aichip',  label: '🧠 算力/AI芯片',   color: '#ef4444', groups: ['chip_compute', 'chip_design'] },
-  { key: 'cat_semimfg', label: '🏭 半导体制造',    color: '#eab308', groups: ['semi_material', 'semi_equip', 'foundry', 'packaging'] },
-  { key: 'cat_analog',  label: '🔌 模拟/功率/被动', color: '#d946ef', groups: ['analog_chip', 'power_semi', 'passive'] },
-  { key: 'cat_server',  label: '🖥 服务器/数据中心', color: '#3b82f6', groups: ['server', 'idc', 'compute_lease'] },
-  { key: 'cat_power',   label: '⚡ 电力/供电',     color: '#84cc16', groups: ['power_supply', 'sst', 'power_grid', 'power_compute', 'gas_turbine'] },
-  { key: 'cat_cooling', label: '❄️ 液冷/散热',     color: '#fb923c', groups: ['cooling'] },
-  { key: 'cat_display', label: '🖼 显示面板',      color: '#8b5cf6', groups: ['display_panel'] },
+// AI 硬件产业链分层（上游→中游→下游→配套），每层挂其子主题；覆盖全部 30 主题
+const ASTOCK_CHAIN_LAYERS: { title: string; flow: string; groups: string[] }[] = [
+  { title: '上游 · 材料 / 设备', flow: '芯片与电路板的原料、造芯片的工具',
+    groups: ['semi_material', 'semi_equip', 'glass_fiber', 'ccl', 'copper_foil', 'resin', 'passive'] },
+  { title: '上游 · 芯片设计', flow: 'GPU / 存储 / 模拟 / 功率 / 光芯片',
+    groups: ['chip_compute', 'chip_design', 'storage', 'analog_chip', 'power_semi', 'optical_chip'] },
+  { title: '中游 · 制造封测', flow: '晶圆代工与封装测试',
+    groups: ['foundry', 'packaging'] },
+  { title: '中游 · 光互连 / 连接 / PCB', flow: '光模块·光纤·高速铜缆·算力载板',
+    groups: ['optical', 'fiber_cable', 'ocs', 'connector', 'pcb'] },
+  { title: '下游 · 服务器 / 数据中心', flow: '整机·散热·配电·运营·租赁',
+    groups: ['server', 'idc', 'cooling', 'power_supply', 'display_panel', 'compute_lease'] },
+  { title: '配套 · 电力', flow: '电网·变压·燃机·算电协同，贯穿全链',
+    groups: ['power_grid', 'sst', 'gas_turbine', 'power_compute'] },
 ]
-const CAT_BY_KEY: Record<string, { key: string; label: string; color: string; groups: string[] }> =
-  Object.fromEntries(ASTOCK_CATEGORIES.map(c => [c.key, c]))
+// 所有已分层的主题 key（用于兜底：未分层的新主题进「其他」）
+const LAYERED_GROUP_KEYS = new Set(ASTOCK_CHAIN_LAYERS.flatMap(l => l.groups))
 
 // ── 辅助组件（A 股版，与 AITracker 同款）────────────────────────
 
@@ -208,27 +211,28 @@ export default function AStockTracker() {
   const benchmark = data?.benchmark
   const groupOptions: { key: string; label: string }[] = groups.map((g: any) => ({ key: g.key, label: g.label }))
 
-  // 板块卡：theme 模式把 30 小类聚合成 10 中类；sw 模式用原申万行业组
+  // theme 模式：30 子主题按产业链分层展示；sw 模式：原申万行业组平铺
   const isTheme = mode === 'theme'
   const groupLabelMap: Record<string, string> = Object.fromEntries(groups.map((g: any) => [g.key, g.label]))
-  const displayGroups: any[] = isTheme
-    ? ASTOCK_CATEGORIES.map(cat => {
-        const subs = groups.filter((g: any) => cat.groups.includes(g.key))
-        if (!subs.length) return null
-        const catRows = rows.filter((r: any) => cat.groups.includes(r.group))
-        const rsList = catRows.map((r: any) => r.rs_5d).filter((v: any) => v != null).sort((a: number, b: number) => a - b)
-        return {
-          key: cat.key, label: cat.label, color: cat.color,
-          median_rs_5d: rsList.length ? rsList[Math.floor(rsList.length / 2)] : 0,
-          advance: subs.reduce((s: number, g: any) => s + (g.advance || 0), 0),
-          decline: subs.reduce((s: number, g: any) => s + (g.decline || 0), 0),
-        }
-      }).filter(Boolean)
-    : groups
-  // 当前选中（中类 key 或 sw 小类 key）下，某只股票是否命中
+  const groupByKey: Record<string, any> = Object.fromEntries(groups.map((g: any) => [g.key, g]))
+  // theme 模式下的分层结构：每层带上有数据的子主题卡；未分层主题归「其他」
+  const chainLayers = isTheme
+    ? [
+        ...ASTOCK_CHAIN_LAYERS.map(l => ({
+          title: l.title, flow: l.flow,
+          cards: l.groups.map(k => groupByKey[k]).filter(Boolean),
+        })),
+        {
+          title: '其他', flow: '尚未归入产业链分层的主题',
+          cards: groups.filter((g: any) => !LAYERED_GROUP_KEYS.has(g.key)),
+        },
+      ].filter(layer => layer.cards.length > 0)
+    : []
+  // 选中标签查找（theme=子主题 key，sw=申万小类 key，都直接取 groups）
+  const displayGroups: any[] = groups
+  // 某只股票是否命中当前选中板块（theme/sw 都按子主题 key 精确匹配）
   const inActiveGroup = (r: any) => {
     if (groupFilter === 'all') return true
-    if (isTheme) return (CAT_BY_KEY[groupFilter]?.groups ?? []).includes(r.group)
     return r.group === groupFilter
   }
 
@@ -371,12 +375,33 @@ export default function AStockTracker() {
         <div className="text-center py-12 text-slate-500 text-sm">加载中，首次约需 1-2 分钟（下载行业成分数据）…</div>
       ) : (
         <div className="space-y-4">
-          <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2">
-            {displayGroups.map((g: any) => (
-              <GroupCard key={g.key} g={g} active={groupFilter === g.key}
-                onClick={() => setGroupFilter(f => f === g.key ? 'all' : g.key)} />
-            ))}
-          </div>
+          {isTheme ? (
+            // 产业链分层：每层一个标题区，下挂该层子主题卡
+            <div className="space-y-3">
+              {chainLayers.map(layer => (
+                <div key={layer.title}>
+                  <div className="flex items-baseline gap-2 mb-1.5">
+                    <span className="text-xs font-semibold text-slate-300">{layer.title}</span>
+                    <span className="text-[11px] text-slate-500">— {layer.flow}</span>
+                    <span className="text-[10px] text-slate-600">{layer.cards.length} 个板块</span>
+                  </div>
+                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2 pl-3 border-l-2 border-slate-700/60">
+                    {layer.cards.map((g: any) => (
+                      <GroupCard key={g.key} g={g} active={groupFilter === g.key}
+                        onClick={() => setGroupFilter(f => f === g.key ? 'all' : g.key)} />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2">
+              {displayGroups.map((g: any) => (
+                <GroupCard key={g.key} g={g} active={groupFilter === g.key}
+                  onClick={() => setGroupFilter(f => f === g.key ? 'all' : g.key)} />
+              ))}
+            </div>
+          )}
 
           {/* 筛选 + 窗口切换（板块筛选靠上方热力方块点击，此处不再重复列板块按钮） */}
           <div className="flex items-center gap-2 flex-wrap">

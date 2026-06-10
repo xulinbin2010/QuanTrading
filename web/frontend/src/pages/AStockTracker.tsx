@@ -39,7 +39,7 @@ const ASTOCK_CHAIN_LAYERS: { title: string; flow: string; groups: string[] }[] =
   { title: '下游 · 服务器 / 数据中心', flow: '整机·散热·配电·运营·租赁',
     groups: ['server', 'idc', 'cooling', 'power_supply', 'display_panel', 'compute_lease'] },
   { title: '配套 · 电力', flow: '电网·变压·燃机·算电协同，贯穿全链',
-    groups: ['power_grid', 'sst', 'gas_turbine', 'power_compute'] },
+    groups: ['power_grid', 'gas_turbine', 'power_compute'] },
 ]
 // 所有已分层的主题 key（用于兜底：未分层的新主题进「其他」）
 const LAYERED_GROUP_KEYS = new Set(ASTOCK_CHAIN_LAYERS.flatMap(l => l.groups))

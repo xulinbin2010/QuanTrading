@@ -95,66 +95,16 @@ CASH_EQUIV = {'SGOV', 'BIL', 'USFR'}
 
 # ══════════════════════════════════════════════════════
 
-def _load_ai_priority_set() -> set[str]:
-    """ai_universe.json 中所有 symbol 的大写集合。AI 优先池成员走宽松扫描参数 + 行业去重豁免。"""
-    import json
-    from pathlib import Path
-    f = Path(__file__).parent / 'data' / 'ai_universe.json'
-    if not f.exists():
-        return set()
-    try:
-        u = json.loads(f.read_text(encoding='utf-8'))
-        return {str(s).upper() for gv in u.get('groups', {}).values() for s in gv.get('symbols', [])}
-    except Exception:
-        return set()
-
-
-def _load_ai_boost_map() -> dict[str, float]:
-    """
-    返回 {symbol: ai_boost} 供 _entry_score 使用。
-
-    boost 计算规则：
-      - 在 ai_universe.json 中且有 AI 追踪器评分（0–15）：boost = (score/15) * 0.20
-      - 在 ai_universe.json 中但无评分缓存：                boost = 0.10（基础加成）
-      - 不在 AI 股票池：                                     boost = 0.0
-
-    最终对 rs_score 乘数项加成，最高 +20%。
-    """
-    import json
-    from pathlib import Path
-    root = Path(__file__).parent
-    boost_map: dict[str, float] = {}
-
-    # 读取 AI 股票池（确定成员资格）
-    universe_file = root / 'data' / 'ai_universe.json'
-    if not universe_file.exists():
-        return boost_map
-    try:
-        u = json.loads(universe_file.read_text(encoding='utf-8'))
-        for gv in u.get('groups', {}).values():
-            for s in gv.get('symbols', []):
-                boost_map[s.upper()] = 0.10   # 基础加成
-    except Exception:
-        return boost_map
-
-    if not boost_map:
-        return boost_map
-
-    # 叠加 AI 追踪器评分（有缓存则用，无则保持基础值）
-    cache_file = root / 'data' / 'ai_tracker_cache.json'
-    if cache_file.exists():
-        try:
-            cached = json.loads(cache_file.read_text(encoding='utf-8'))
-            score_max = 15
-            for row in cached.get('rows', []):
-                sym   = row.get('symbol', '').upper()
-                score = row.get('score')
-                if sym in boost_map and score is not None:
-                    boost_map[sym] = min((score / score_max) * 0.20, 0.20)
-        except Exception:
-            pass
-
-    return boost_map
+# AI 优先池成员加载 + 入场得分 + 槽位分配统一收敛到 core/pool_policy。
+# 此处重新导出 _load_ai_priority_set，保持 production_signal_svc / backtest_rs 旧 import 不破。
+from core.pool_policy import (
+    load_ai_priority_set as _load_ai_priority_set,
+    load_ai_tracker_boost_map,
+    build_pool_policies,
+    classify as _classify_pool,
+    sort_key as _pool_sort_key,
+    PoolAllocator,
+)
 
 
 def scan_signals(
@@ -219,16 +169,19 @@ def scan_signals(
     # 双路扫描:SP500 普通票走严格(默认 5 条件) / AI 优先池走宽松(近高点-15%, 放量条件取消)
     from web.services.factor_svc import get_factor_params_from_db
     rs_params = get_factor_params_from_db('rs_score')
-    ai_set = _load_ai_priority_set()
     common_kw = dict(
         rs_period=int(rs_params.get('period', 63)),
         rs_weights=str(rs_params.get('weights', '') or ''),
         vol_shrink_ratio=config.VOL_SHRINK_RATIO,
     )
-    strategy_strict = RSMomentum(**common_kw)
-    strategy_strict.set_spy(spy_close)
-    strategy_relaxed = RSMomentum(**common_kw, breakout_proximity_pct=0.15, vol_multiplier=0.0)
-    strategy_relaxed.set_spy(spy_close)
+    # PoolPolicy 驱动:每池一套扫描参数,候选按所属池打 pool/rank_tier 标签。
+    policies = build_pool_policies()
+    ai_set   = next((p.members for p in policies if p.name == 'ai_priority'), set()) or set()
+    pool_strategies: dict[str, RSMomentum] = {}
+    for p in policies:
+        strat = RSMomentum(**common_kw, **p.signal_params)
+        strat.set_spy(spy_close)
+        pool_strategies[p.name] = strat
     if ai_set:
         print(f"  [AI优先池] 加载 {len(ai_set)} 只,走宽松扫描(近高点-15%、不要求放量)")
 
@@ -245,9 +198,10 @@ def scan_signals(
         try:
             if len(df) < 80:
                 continue
-            is_ai_priority = symbol.upper() in ai_set
-            strat     = strategy_relaxed if is_ai_priority else strategy_strict
-            result    = strat.generate_signals(df)
+            pol            = _classify_pool(symbol, policies)
+            is_ai_priority = pol.name == 'ai_priority'
+            strat          = pool_strategies[pol.name]
+            result         = strat.generate_signals(df)
             latest    = result.iloc[-1]
             sig       = latest['signal']
             rs        = latest['rs_score']
@@ -268,7 +222,9 @@ def scan_signals(
                     'close':            latest['close'],
                     'vol_ratio':        vol_ratio,
                     'drawdown_from_high': float(latest.get('drawdown_from_high', -0.15)),
-                    'ai_priority':      is_ai_priority,
+                    'pool':             pol.name,
+                    'rank_tier':        pol.rank_tier,
+                    'ai_priority':      is_ai_priority,   # = (rank_tier==0)，保留供 execute 豁免/前端用
                 })
             if symbol in held_symbols and sig == -1:
                 sell_alerts.append({
@@ -357,36 +313,21 @@ def scan_signals(
             print(f"  [过滤] 市值/行业过滤移除 {n_removed} 只，剩余 {len(filtered)} 只买入候选")
         buy_signals = filtered
 
-    # ── AI 关联度加成（一次性加载，后续 _entry_score 直接读 sig['ai_boost']）──
-    ai_boost_map = _load_ai_boost_map()
+    # ── AI 追踪器加成（保留为 config 可调项，仅影响 AI 池内次序）──────────────────
+    ai_boost_map = load_ai_tracker_boost_map()
     if ai_boost_map:
         ai_cnt = sum(1 for s in buy_signals if s['symbol'] in ai_boost_map)
         if ai_cnt:
-            print(f"  [AI关联] {ai_cnt} 只候选在 AI 股票池，入场优先级加成最高 +20%")
+            _bmax = getattr(config, 'ENTRY_AI_TRACKER_BOOST_MAX', 0.20)
+            print(f"  [AI关联] {ai_cnt} 只候选在 AI 股票池，AI 池内排序加成最高 +{_bmax*100:.0f}%")
     for sig in buy_signals:
-        sig['ai_boost'] = ai_boost_map.get(sig['symbol'], 0.0)
+        sig['ai_tracker_boost'] = ai_boost_map.get(sig['symbol'], 0.0)
 
     # ── 复合入场得分排序（过滤后执行，insider_score / sector 已就位）────────────
-    def _entry_score(sig: dict) -> float:
-        rs       = sig.get('rs_score', 0)
-        vol      = sig.get('vol_ratio', 1.0)
-        drawdown = sig.get('drawdown_from_high', -0.15)   # 负数，越接近 0 越强
-        insider  = sig.get('insider_score', 0)
-        ai       = sig.get('ai_boost', 0.0)
-        # 量比加成：最高 +15%，3x 以上不再加分（避免一次性暴量失真）
-        vol_boost       = min(vol / 3.0, 1.0) * 0.15
-        # 近高点加成：drawdown=0% → +10%；drawdown=-30% → +0%
-        proximity_boost = max(0.0, (drawdown + 0.30) / 0.30) * 0.10
-        # 内幕加成：有内幕买入 → +10%（上限）
-        insider_boost   = min(insider / 10.0, 1.0) * 0.10
-        # AI 关联加成：在 AI 池中基础 +10%，有追踪器评分最高 +20%
-        base = rs * (1 + vol_boost + proximity_boost + insider_boost + ai)
-        # AI 优先成员绝对置顶:+0.5 直接加到 score,保证 SP500 普通票之上(rs 通常 [-0.3, 0.5])
-        if sig.get('ai_priority'):
-            base += 0.5
-        return base
-
-    buy_signals.sort(key=_entry_score, reverse=True)
+    # 排序 key = (rank_tier 升序, entry_score 降序):
+    #   - 跨池次序由 rank_tier 承载(AI 池 tier=0 绝对置顶,替代旧 ai_priority_bonus +0.5)
+    #   - 同池内按 entry_score = rs × (1+量比+近高点+内幕+AI追踪器加成) 排(权重从 config 读)
+    buy_signals.sort(key=_pool_sort_key)
 
     # ── 财报日期预取（批量缓存，execute 阶段直接用缓存）────────────────────────
     if buy_signals and config.EARNINGS_AVOID_DAYS > 0:
@@ -940,12 +881,15 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib, exits_only: bool 
     elif not buy_list:
         print(f"  今日无买入信号")
     else:
-        # 统计当前持仓的行业分布 + 非 AI 票数量（含存量口径，AI 优先池不计入）
+        # ── PoolAllocator 统一槽位分配 ──────────────────────────────
+        # 结构性决策(全局上限/实仓硬闸/行业上限/池配额)交给 allocator;执行特定检查
+        # (已持仓/待卖/财报/qty)留在本循环——后者跳过的候选不消耗行业/池配额,故仅
+        # 真正下单后才 commit。MAX_NON_AI_POS 语义已迁移为 sp500_base 池配额(在 policy 内)。
+        policies = build_pool_policies()
+        ai_set   = next((p.members for p in policies if p.name == 'ai_priority'), set()) or set()
+        # 预播：当前持仓的行业分布(含 AI,与历史口径一致) + 非 AI 池存量
         sector_counts: dict[str, int] = {}
-        ai_set = _load_ai_priority_set()
         non_ai_held = 0
-        # getattr 兜底：config.py 未纳入 git，旧机器若无此参数则退回默认 1，避免 AttributeError
-        max_non_ai = getattr(config, 'MAX_NON_AI_POS', 1)
         if stock_positions:
             pos_info = get_stock_info(list(stock_positions.keys()))
             for sym in stock_positions:
@@ -956,16 +900,24 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib, exits_only: bool 
                 if sym.upper() not in ai_set:
                     non_ai_held += 1
 
-        executed = 0
+        alloc = PoolAllocator(
+            policies,
+            global_slots=slots,
+            global_cap=eff_max_pos,
+            real_held_count=real_held_count,
+            sector_cap=MAX_PER_SECTOR,
+            sector_counts=sector_counts,
+            pool_counts={'sp500_base': non_ai_held},
+        )
+
         opg_buy_trades: list = []   # [(symbol, orig_qty, limit_price, trade)] 供补单监控用
         for sig in buy_list:
-            if executed >= slots:
+            if alloc.executed >= alloc.global_slots:
                 break
             # 实仓硬闸：以 IB 实际持仓为准，不信任"预期卖出会成交"（OPG LMT 出场可能不成交）。
             # 即便 slots 因预期卖出腾出，真实持仓 + 本轮已买达上限就停，从根上杜绝超仓。
-            if real_held_count + executed >= eff_max_pos:
-                print(f"  [实仓硬闸] IB 实际持仓 {real_held_count} + 本轮已买 {executed} "
-                      f"已达上限 {eff_max_pos} → 停止买入（预期卖出未成交不腾槽，防超仓）")
+            if alloc.real_held + alloc.executed >= alloc.global_cap:
+                print(f"  {alloc.stop_reason()}")
                 break
             symbol = sig['symbol']
             if symbol in stock_positions:
@@ -974,15 +926,11 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib, exits_only: bool 
             if symbol in pending_sell_exits:
                 print(f"  [{symbol}] 正在卖出（待成交市价单），不回补，跳过")
                 continue
-            # 行业集中度限制(AI 优先池豁免:GPU/网络/电力本来就重叠半导体)
+            # 行业上限(AI 池豁免) + 非 AI 池配额,统一在 allocator 判定
             sec = sig.get('sector') or 'Unknown'
-            is_ai_priority = sig.get('ai_priority', False)
-            if not is_ai_priority and sector_counts.get(sec, 0) >= MAX_PER_SECTOR:
-                print(f"  [{symbol}] 行业[{sec}]已持有 {sector_counts[sec]} 只（上限 {MAX_PER_SECTOR}），跳过")
-                continue
-            # 非 AI 主线倾斜：纯动量票（非 AI 优先池）数量封顶，AI 票不受限
-            if not is_ai_priority and non_ai_held >= max_non_ai:
-                print(f"  [{symbol}] 非 AI 动量票已达上限 {max_non_ai} 只（书向 AI 主线倾斜），跳过")
+            _skip = alloc.structural_skip(sig)
+            if _skip:
+                print(f"  [{symbol}] {_skip}")
                 continue
             # 财报回避
             if config.EARNINGS_AVOID_DAYS > 0 and has_upcoming_earnings(symbol, config.EARNINGS_AVOID_DAYS):
@@ -1009,12 +957,7 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib, exits_only: bool 
             if tif == 'OPG':
                 limit_price = round(sig['close'] * (1 + MAX_ENTRY_SLIPPAGE), 2)
                 ind_display = sig.get('industry') or sec
-                if sig.get('ai_priority'):
-                    ai_tag = '  ⭐AI优先'
-                elif sig.get('ai_boost'):
-                    ai_tag = f"  🤖AI+{sig['ai_boost']*100:.0f}%"
-                else:
-                    ai_tag = ''
+                ai_tag = '  ⭐AI优先' if sig.get('ai_priority') else ''
                 print(f"  [{symbol}]  RS={sig['rs_score']:+.3f}  量比={sig['vol_ratio']:.1f}x  行业={ind_display}{ai_tag}")
                 print(f"    {sizing_note}  限价 ${limit_price:.2f}  预计成本 ${qty*limit_price:,.0f}")
                 if not dry_run:
@@ -1029,12 +972,7 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib, exits_only: bool 
                     print(f"  → [dry-run] 将下限价 OPG 单 ${limit_price:.2f}")
             else:
                 ind_display = sig.get('industry') or sec
-                if sig.get('ai_priority'):
-                    ai_tag = '  ⭐AI优先'
-                elif sig.get('ai_boost'):
-                    ai_tag = f"  🤖AI+{sig['ai_boost']*100:.0f}%"
-                else:
-                    ai_tag = ''
+                ai_tag = '  ⭐AI优先' if sig.get('ai_priority') else ''
                 print(f"  [{symbol}]  RS={sig['rs_score']:+.3f}  量比={sig['vol_ratio']:.1f}x  行业={ind_display}{ai_tag}")
                 print(f"    {sizing_note}  拟成本 ${cost:,.0f}")
                 if not dry_run:
@@ -1046,10 +984,8 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib, exits_only: bool 
                         print(f"  → 已下单 [{tif_label}]")
                 else:
                     print(f"  → [dry-run] 将下 {tif_label}")
-            if not is_ai_priority:
-                sector_counts[sec] = sector_counts.get(sec, 0) + 1
-                non_ai_held += 1
-            executed += 1
+            # 占用一个全局槽 + 按池规则占用行业/池配额(AI 池豁免行业计数)
+            alloc.commit(sig)
 
         # 在线路径：等待开盘集合竞价完成，检测并补充部分成交订单
         if opg_buy_trades:

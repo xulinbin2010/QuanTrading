@@ -9,6 +9,10 @@ import threading
 from datetime import datetime
 from pathlib import Path
 
+# 入场得分与下单排序统一走 core.pool_policy(删 ai_boost/+0.5,跨池由 rank_tier 承载),
+# 避免本服务再维护一份会与 auto_trader 分叉的镜像副本。
+from core.pool_policy import entry_score_from_config as _entry_score
+
 ROOT = Path(__file__).resolve().parents[2]
 CACHE_PATH = ROOT / 'data' / '.production_signals_cache.json'
 TOP_N = 10
@@ -16,22 +20,6 @@ TOP_N = 10
 _logger = logging.getLogger(__name__)
 _scan_lock = threading.Lock()
 _scan_running = False
-
-
-def _entry_score(sig: dict) -> float:
-    """与 auto_trader._entry_score 保持同步:rs × 综合 boost + ai_priority_bonus。"""
-    rs       = sig.get('rs_score', 0) or 0
-    vol      = sig.get('vol_ratio', 1.0) or 1.0
-    drawdown = sig.get('drawdown_from_high', -0.15) or -0.15
-    insider  = sig.get('insider_score', 0) or 0
-    ai       = sig.get('ai_boost', 0.0) or 0.0
-    vol_boost       = min(vol / 3.0, 1.0) * 0.15
-    proximity_boost = max(0.0, (drawdown + 0.30) / 0.30) * 0.10
-    insider_boost   = min(insider / 10.0, 1.0) * 0.10
-    base = rs * (1 + vol_boost + proximity_boost + insider_boost + ai)
-    if sig.get('ai_priority'):
-        base += 0.5
-    return base
 
 
 def _clean(v):
@@ -67,7 +55,7 @@ def _serialize_signals(raw: dict, universe: str, ai_pool_size: int) -> dict:
             'industry':          sig.get('industry'),
             'market_cap_b':      sig.get('market_cap_b'),
             'ai_priority':       bool(sig.get('ai_priority')),
-            'ai_boost':          round(float(sig.get('ai_boost') or 0), 3),
+            'ai_boost':          round(float(sig.get('ai_tracker_boost') or 0), 3),
             'insider_score':     sig.get('insider_score', 0),
             'drawdown_from_high': round(float(sig.get('drawdown_from_high') or 0), 4),
             'atr14':             round(float(atr14), 2) if atr14 else None,

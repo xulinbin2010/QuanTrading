@@ -33,6 +33,47 @@ ROOT = Path(__file__).resolve().parents[2]
 _CACHE_TTL_MINUTES = 30
 _BENCHMARK = 'HS300'   # 沪深300 作为大盘基准
 
+# ── 涨停板识别 ────────────────────────────────────────────────
+# A 股连续涨停天然缩量（封死涨停无法成交），composite 的 vol_ratio(15%)+flow(10%)
+# 共 25% 权重会系统性低估连板强势票。识别近期涨停后：
+#   1) 豁免量能/资金流惩罚——把 z_vol/flow 拉回中性地板，不让缩量倒扣分（"不扣分"）
+#   2) 按连板数给 composite 额外加成（"给加成"）
+LIMIT_UP_ENABLED   = True
+LIMIT_UP_LOOKBACK  = 5      # 近 N 个交易日内有涨停 → 视为缩量有理由，触发豁免
+LIMIT_UP_NEUTRAL   = 5.0    # 豁免后 z_vol / flow_score 的中性地板（0–10 中点）
+LIMIT_UP_BONUS_PER = 0.3    # 每个连板（从最新 bar 往前连续涨停）加成
+LIMIT_UP_BONUS_MAX = 1.0    # 连板加成上限
+
+
+def _board_limit_pct(code: str) -> float:
+    """按板块返回单日涨停幅度：科创(688)/创业(30)=20%，北交所(8/4/920)=30%，主板=10%。
+    无法识别 ST（无名称前缀信息），ST 5% 板会略宽于阈值——AI 主题里基本无 ST，可接受。"""
+    c = str(code)
+    if c.startswith('688') or c.startswith('30'):
+        return 0.20
+    if c.startswith('8') or c.startswith('4') or c.startswith('920'):
+        return 0.30
+    return 0.10
+
+
+def _limit_up_metrics(df: pd.DataFrame, code: str, lookback: int = LIMIT_UP_LOOKBACK) -> dict:
+    """涨停统计：近 lookback 日涨停次数 + 从最新 bar 往前的连板数 + 今日是否涨停。
+    阈值取板块涨停幅度 - 0.5%（容收盘价四舍五入误差）。"""
+    close = df['close']
+    if len(close) < 2:
+        return {'n_limit_up': 0, 'consecutive': 0, 'is_limit_up': False}
+    pct = close.pct_change()
+    thr = _board_limit_pct(code) - 0.005
+    flags = (pct >= thr).fillna(False).tolist()
+    n = int(sum(flags[-lookback:]))
+    consec = 0
+    for v in reversed(flags):          # 从最新 bar 往前数连续涨停
+        if v:
+            consec += 1
+        else:
+            break
+    return {'n_limit_up': n, 'consecutive': consec, 'is_limit_up': bool(flags[-1])}
+
 # 每种 mode 独立缓存文件
 def _cache_path(mode: str) -> Path:
     return ROOT / 'data' / f'.astock_momentum_{mode}_cache.json'
@@ -203,6 +244,7 @@ def _do_scan(mode: str, refresh: bool = False) -> dict:
         flow = _flow_metrics(df)
         flow_score = _flow_score_0_10(flow['obv_slope'], flow['up_vol_ratio'])
         accel = (mom_3d / 3.0 > mom_5d / 5.0) if (mom_3d is not None and mom_5d is not None) else False
+        lu = _limit_up_metrics(df, sym)
         # 均线状态：EMA7（短期）/ EMA21（中期），现价跌破即视为走弱
         ema7_s = close.ewm(span=7, adjust=False).mean()
         ema7 = float(ema7_s.iloc[-1])
@@ -226,6 +268,8 @@ def _do_scan(mode: str, refresh: bool = False) -> dict:
             'vol_ratio': vr, 'obv_slope': flow['obv_slope'],
             'up_vol_ratio': flow['up_vol_ratio'], 'flow_score': flow_score,
             'accel': accel,
+            'limit_up_5d': lu['n_limit_up'], 'limit_up_consec': lu['consecutive'],
+            'is_limit_up': lu['is_limit_up'],
             'ema7': ema7, 'ema21': ema21,
             'above_ema7': above_ema7, 'above_ema21': above_ema21, 'ema_state': ema_state,
             'trend_score': tq['trend_score'], 'ema7_hold': tq['ema7_hold'],
@@ -248,14 +292,27 @@ def _do_scan(mode: str, refresh: bool = False) -> dict:
     z_rsgrp = _zscore_to_0_10([r['rs_vs_group_5d'] for r in raw_rows])
     z_vol = _zscore_to_0_10([r['vol_ratio'] for r in raw_rows])
     for i, r in enumerate(raw_rows):
+        # 涨停豁免：近期有涨停时，缩量是封板造成的，把量能/资金流拉回中性地板，不倒扣分
+        zvol_eff = z_vol[i]
+        flow_eff = r['flow_score']
+        lu_bonus = 0.0
+        if LIMIT_UP_ENABLED and r['limit_up_5d'] >= 1:
+            zvol_eff = max(zvol_eff, LIMIT_UP_NEUTRAL)
+            flow_eff = max(flow_eff, LIMIT_UP_NEUTRAL)
         composite = (0.35 * z_mom5[i] + 0.20 * z_mom3[i] + 0.20 * z_rsgrp[i]
-                     + 0.15 * z_vol[i] + 0.10 * r['flow_score'])
+                     + 0.15 * zvol_eff + 0.10 * flow_eff)
         if r['accel']:
-            composite = min(10.0, composite + 0.5)
+            composite += 0.5
+        # 连板加成：从最新 bar 往前连续涨停数 × 每板加成，封顶 BONUS_MAX
+        if LIMIT_UP_ENABLED and r['limit_up_consec'] >= 1:
+            lu_bonus = min(LIMIT_UP_BONUS_PER * r['limit_up_consec'], LIMIT_UP_BONUS_MAX)
+            composite += lu_bonus
+        composite = min(10.0, composite)
         r['z_mom_5d'] = round(z_mom5[i], 2)
         r['z_mom_3d'] = round(z_mom3[i], 2)
         r['z_rs_group'] = round(z_rsgrp[i], 2)
-        r['z_vol_ratio'] = round(z_vol[i], 2)
+        r['z_vol_ratio'] = round(z_vol[i], 2)   # 展示用保留原始 z（未豁免）
+        r['limit_up_bonus'] = round(lu_bonus, 2)
         r['composite'] = round(composite, 2)
 
     raw_rows.sort(key=lambda x: x['composite'], reverse=True)

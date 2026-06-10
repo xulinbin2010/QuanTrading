@@ -24,6 +24,11 @@ from web.services.ai_momentum_svc import (
     _pct_change, _vol_ratio, _flow_metrics, _flow_score_0_10,
     _zscore_to_0_10, _clean_floats, _trend_quality,
 )
+# 涨停板识别与实时扫描共用同一套逻辑/参数，保证回测与扫描 composite 口径一致
+from web.services.astock_momentum_svc import (
+    _limit_up_metrics, LIMIT_UP_ENABLED, LIMIT_UP_NEUTRAL,
+    LIMIT_UP_BONUS_PER, LIMIT_UP_BONUS_MAX,
+)
 from core.astock_data_store import AStockDataStore
 from core import astock_universe as _au
 
@@ -64,12 +69,14 @@ def _compute_composite_for_date(
         flow_score = _flow_score_0_10(flow['obv_slope'], flow['up_vol_ratio'])
         accel = (mom_3d / 3.0 > mom_5d / 5.0) if (mom_3d is not None and mom_5d is not None) else False
         trend_score = _trend_quality(df_cut, n=20)['trend_score']
+        lu = _limit_up_metrics(df_cut, sym)
         raw_rows.append({
             'symbol': sym, 'group': sym_to_group.get(sym),
             'mom_3d': mom_3d, 'mom_5d': mom_5d, 'mom_10d': mom_10d,
             'rs_3d': rs_3d, 'rs_5d': rs_5d, 'rs_10d': rs_10d,
             'vol_ratio': vr, 'flow_score': flow_score, 'accel': accel,
             'trend_score': trend_score,
+            'limit_up_5d': lu['n_limit_up'], 'limit_up_consec': lu['consecutive'],
         })
 
     # 组内中位 → rs_vs_group_5d
@@ -88,10 +95,18 @@ def _compute_composite_for_date(
     z_rsgrp = _zscore_to_0_10([r['rs_vs_group_5d'] for r in raw_rows])
     z_vol = _zscore_to_0_10([r['vol_ratio'] for r in raw_rows])
     for i, r in enumerate(raw_rows):
+        # 涨停豁免量能/资金流惩罚 + 连板加成（与实时扫描口径一致）
+        zvol_eff, flow_eff = z_vol[i], r['flow_score']
+        if LIMIT_UP_ENABLED and r['limit_up_5d'] >= 1:
+            zvol_eff = max(zvol_eff, LIMIT_UP_NEUTRAL)
+            flow_eff = max(flow_eff, LIMIT_UP_NEUTRAL)
         composite = (0.35 * z_mom5[i] + 0.20 * z_mom3[i] + 0.20 * z_rsgrp[i]
-                     + 0.15 * z_vol[i] + 0.10 * r['flow_score'])
+                     + 0.15 * zvol_eff + 0.10 * flow_eff)
         if r['accel']:
-            composite = min(10.0, composite + 0.5)
+            composite += 0.5
+        if LIMIT_UP_ENABLED and r['limit_up_consec'] >= 1:
+            composite += min(LIMIT_UP_BONUS_PER * r['limit_up_consec'], LIMIT_UP_BONUS_MAX)
+        composite = min(10.0, composite)
         r['composite'] = composite
 
     raw_rows.sort(key=lambda x: x['composite'], reverse=True)

@@ -103,6 +103,7 @@ from core.pool_policy import (
     build_pool_policies,
     classify as _classify_pool,
     sort_key as _pool_sort_key,
+    ai_theme_brake_now,
     PoolAllocator,
 )
 
@@ -130,7 +131,7 @@ def scan_signals(
     dl_start = (date.today() - timedelta(days=400)).strftime('%Y-%m-%d')
     dl_end   = date.today().strftime('%Y-%m-%d')
 
-    all_syms = list(set(tickers + ['SPY', '^VIX']))
+    all_syms = list(set(tickers + ['SPY', '^VIX', 'SMH']))
     store    = DataStore()
     all_data = store.get(all_syms, start=dl_start, end=dl_end,
                          force_refresh_recent_days=force_refresh_recent_days)
@@ -174,8 +175,16 @@ def scan_signals(
         rs_weights=str(rs_params.get('weights', '') or ''),
         vol_shrink_ratio=config.VOL_SHRINK_RATIO,
     )
+    # AI 主题熔断:SMH/SPY 相对强度跌破 MA → AI 池降级(回退严格扫描 + 取消行业豁免,不清空信号)
+    _smh_df = all_data.get('SMH')
+    _smh_close = _smh_df['close'] if _smh_df is not None else None
+    ai_theme_brake = ai_theme_brake_now(_smh_close, spy_close)
+    if ai_theme_brake:
+        print(f"  [AI主题熔断] SMH/SPY 相对强度跌破 MA{getattr(config,'AI_THEME_BRAKE_MA',50)}"
+              f" → AI 优先池降级(严格扫描+取消行业豁免,已有信号不清空)")
+
     # PoolPolicy 驱动:每池一套扫描参数,候选按所属池打 pool/rank_tier 标签。
-    policies = build_pool_policies()
+    policies = build_pool_policies(ai_theme_brake=ai_theme_brake)
     ai_set   = next((p.members for p in policies if p.name == 'ai_priority'), set()) or set()
     pool_strategies: dict[str, RSMomentum] = {}
     for p in policies:
@@ -342,6 +351,7 @@ def scan_signals(
             '_signal_map': signal_map, '_rs_scores': rs_scores, 'spy_brake': spy_brake,
             '_vix': vix_close, '_vix_brake': vix_brake,
             '_breadth': breadth_pct, '_breadth_cap': breadth_cap,
+            '_ai_theme_brake': ai_theme_brake,
             '_mss': mss}
 
 
@@ -885,7 +895,8 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib, exits_only: bool 
         # 结构性决策(全局上限/实仓硬闸/行业上限/池配额)交给 allocator;执行特定检查
         # (已持仓/待卖/财报/qty)留在本循环——后者跳过的候选不消耗行业/池配额,故仅
         # 真正下单后才 commit。MAX_NON_AI_POS 语义已迁移为 sp500_base 池配额(在 policy 内)。
-        policies = build_pool_policies()
+        # AI 主题熔断状态由 scan_signals 计算并随 signals 传入,execute 用同一状态构池(行业豁免一致)
+        policies = build_pool_policies(ai_theme_brake=signals.get('_ai_theme_brake', False))
         ai_set   = next((p.members for p in policies if p.name == 'ai_priority'), set()) or set()
         # 预播：当前持仓的行业分布(含 AI,与历史口径一致) + 非 AI 池存量
         sector_counts: dict[str, int] = {}

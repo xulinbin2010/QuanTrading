@@ -17,6 +17,7 @@ from core.data_store import DataStore
 from core.pool_policy import (
     build_pool_policies, classify as _classify_pool,
     sort_key as _pool_sort_key, load_ai_tracker_boost_map, PoolAllocator,
+    ai_theme_brake_series,
 )
 from core.market_regime import compute_mss_series
 from core.fmt import lj, rj
@@ -170,7 +171,9 @@ def run_backtest(
     dl_end   = bt_end.strftime('%Y-%m-%d')
 
     # ── 加载数据 ──────────────────────────────────────────
-    all_syms = list(set(tickers + ['SPY', '^VIX']))
+    # pool_mode='ai' 需 SMH 算 AI 主题熔断（SMH/SPY 相对强度）
+    _extra_syms = ['SMH'] if pool_mode == 'ai' else []
+    all_syms = list(set(tickers + ['SPY', '^VIX'] + _extra_syms))
     if preloaded_data is not None:
         # 优化器已预加载：直接使用，跳过磁盘 IO 和增量检查
         all_data = {sym: preloaded_data[sym] for sym in all_syms if sym in preloaded_data}
@@ -192,7 +195,8 @@ def run_backtest(
     dates = all_dates
 
     # ── 准备股票数据 + 信号 ───────────────────────────────
-    stock_data = {sym: df for sym, df in all_data.items() if sym != 'SPY'}
+    # SMH 仅用于 AI 主题熔断计算，不作为可买标的
+    stock_data = {sym: df for sym, df in all_data.items() if sym not in ('SPY', 'SMH')}
 
     # PoolPolicy（仅 pool_mode='ai' 且非 factors 时启用，复刻实盘双路+tier+池配额+行业豁免）
     use_pool      = (pool_mode == 'ai' and not factors)
@@ -200,6 +204,14 @@ def run_backtest(
     ai_set        = (next((p.members for p in policies if p.name == 'ai_priority'), set()) or set()) if use_pool else set()
     ai_boost_map  = load_ai_tracker_boost_map() if use_pool else {}
     pool_strats: dict = {}
+    signals_strict: dict = {}   # use_pool: AI 成员的严格信号(熔断日用,逐日切换)
+    # AI 主题熔断逐日序列（SMH/SPY 相对强度跌破 MA50）；开关关闭时全 False
+    if use_pool and getattr(config, 'AI_THEME_BRAKE_ENABLED', False):
+        _smh_df = all_data.get('SMH')
+        _smh_close = _smh_df['close'] if _smh_df is not None else None
+        ai_brake_series = ai_theme_brake_series(_smh_close, spy_close)
+    else:
+        ai_brake_series = pd.Series(False, index=spy_close.index)
     signals: dict = {}
 
     if precomputed_cache is not None and factors:
@@ -238,17 +250,22 @@ def run_backtest(
                 vol_shrink_ratio=VOL_SHRINK_RATIO,
             )
             if use_pool:
-                # 每池一套扫描参数（ai 宽松 prox=15%+vol=0 / base 严格），逐股按池分流
+                # 每池一套扫描参数（ai 宽松 prox=15%+vol=0 / base 严格），逐股按池分流。
+                # AI 成员额外预计算严格信号(signals_strict),供主题熔断日逐日切换。
                 for p in policies:
                     kw = dict(_common, breakout_proximity_pct=breakout_proximity_pct)
                     kw.update(p.signal_params)
                     st = RSMomentum(**kw)
                     st.set_spy(spy_close)
                     pool_strats[p.name] = st
+                _strict_strat = RSMomentum(**_common, breakout_proximity_pct=breakout_proximity_pct)
+                _strict_strat.set_spy(spy_close)
                 for sym, df in stock_data.items():
                     try:
-                        st = pool_strats[_classify_pool(sym, policies).name]
-                        signals[sym] = st.generate_signals(df)
+                        pol = _classify_pool(sym, policies)
+                        signals[sym] = pool_strats[pol.name].generate_signals(df)
+                        if pol.name == 'ai_priority':
+                            signals_strict[sym] = _strict_strat.generate_signals(df)
                     except Exception:
                         pass
             else:
@@ -355,6 +372,7 @@ def run_backtest(
     spy_brake_days = 0
     vix_brake_days = 0
     breadth_cap_days = 0
+    ai_brake_days = 0      # AI 主题熔断触发天数（pool_mode='ai'）
     # 行业集中度跟踪：峰值同行业并持数 + 每日「最大行业占比」累加（用于 strict vs ai 对比）
     max_sector_hold = 0
     top_sector_pct_sum = 0.0
@@ -530,14 +548,24 @@ def run_backtest(
         if free_slots > 0 and not spy_brake and not vix_brake:
             if use_pool:
                 # ── pool_mode='ai'：复刻实盘 sort_key 元组排序 + PoolAllocator ──
+                # AI 主题熔断：当日触发则 AI 成员改用严格信号 + 取消行业豁免（policies_today）
+                brake_today = bool(ai_brake_series.get(date, False))
+                if brake_today:
+                    ai_brake_days += 1
+                policies_today = build_pool_policies(ai_set, ai_theme_brake=brake_today)
                 cands = []
                 for sym, sig_df in signals.items():
-                    if sym in positions or sym in pending_sells or date not in sig_df.index:
+                    if sym in positions or sym in pending_sells:
                         continue
-                    row = sig_df.loc[date]
+                    pol = _classify_pool(sym, policies_today)
+                    # 熔断日 AI 成员走严格信号
+                    src = (signals_strict.get(sym, sig_df)
+                           if (brake_today and pol.name == 'ai_priority') else sig_df)
+                    if date not in src.index:
+                        continue
+                    row = src.loc[date]
                     if row['signal'] != 1 or not _is_allowed(sym):
                         continue
-                    pol = _classify_pool(sym, policies)
                     vma = row['vol_ma20']
                     vr  = (row['volume'] / vma) if (vma and vma > 0) else 0.0
                     cands.append({
@@ -561,7 +589,7 @@ def run_backtest(
                     if s.upper() not in ai_set:
                         non_ai_held += 1
                 alloc = PoolAllocator(
-                    policies, global_slots=free_slots, global_cap=free_slots,
+                    policies_today, global_slots=free_slots, global_cap=free_slots,
                     real_held_count=0, sector_cap=MAX_PER_SECTOR,
                     sector_counts=sector_counts,
                     pool_counts={'sp500_base': non_ai_held},
@@ -704,6 +732,7 @@ def run_backtest(
         'breadth_cap_days': breadth_cap_days,
         'universe':         universe,
         'pool_mode':        pool_mode,
+        'ai_brake_days':    ai_brake_days,
         'max_sector_hold':  max_sector_hold,
         'avg_top_sector_pct': round(top_sector_pct_sum / conc_days, 4) if conc_days else 0.0,
         'bt_start':         str(dates[bt_start_idx].date()),
@@ -756,6 +785,9 @@ def print_report(result: dict, daily: bool = False):
     print(f"  Sharpe          {s['sharpe']:>14.2f}")
     if 'max_sector_hold' in s:
         print(f"  峰值同行业并持  {s['max_sector_hold']:>11} 只  (日均最大行业占比 {s.get('avg_top_sector_pct',0):.0%})")
+    if s.get('ai_brake_days', 0) > 0:
+        ai_pct = s['ai_brake_days'] / max(s['days'], 1) * 100
+        print(f"  AI主题熔断天数  {s['ai_brake_days']:>11} 天  ({ai_pct:.0f}% 回测期，AI池降级)")
     brake_pct = s['spy_brake_days'] / max(s['days'], 1) * 100
     print(f"  SPY熔断天数     {s['spy_brake_days']:>11} 天  ({brake_pct:.0f}% 回测期)")
     if s.get('vix_brake_days', 0) > 0:

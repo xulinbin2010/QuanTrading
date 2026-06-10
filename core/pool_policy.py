@@ -97,10 +97,16 @@ def load_ai_tracker_boost_map(max_boost: float | None = None) -> dict[str, float
 #  策略池构建
 # ══════════════════════════════════════════════════════════════════
 
-def build_pool_policies(ai_set: set[str] | None = None) -> list[PoolPolicy]:
+def build_pool_policies(
+    ai_set: set[str] | None = None,
+    ai_theme_brake: bool = False,
+) -> list[PoolPolicy]:
     """
     构建默认双池：AI 优先池（tier 0，宽松扫描，行业豁免，无配额）+
     SP500 兜底池（tier 1，严格扫描，受行业上限，配额 = MAX_NON_AI_POS）。
+
+    ai_theme_brake=True（AI 主题熔断触发）时，AI 池降级：signal_params 回退严格、
+    sector_cap_exempt=False；但仍保留 rank_tier=0（不清空/不降优先级，只收紧扫描与集中度）。
 
     返回按 rank_tier 升序排列的列表（AI 在前）。
     """
@@ -110,11 +116,11 @@ def build_pool_policies(ai_set: set[str] | None = None) -> list[PoolPolicy]:
     ai_policy = PoolPolicy(
         name='ai_priority',
         members=ai_set,
-        # 宽松扫描：近高点 -15%、取消放量要求（与原 strategy_relaxed 等价）
-        signal_params={'breakout_proximity_pct': 0.15, 'vol_multiplier': 0.0},
+        # 正常：宽松扫描（近高点 -15%、取消放量）；熔断：回退严格（与 base 同参数）
+        signal_params={} if ai_theme_brake else {'breakout_proximity_pct': 0.15, 'vol_multiplier': 0.0},
         rank_tier=0,
         max_positions=None,           # AI 主线不设池配额
-        sector_cap_exempt=True,       # GPU/网络/电力本就重叠半导体，豁免行业去重
+        sector_cap_exempt=(not ai_theme_brake),  # 熔断时取消行业豁免，防 AI 弱势期书向半导体过度集中
     )
     base_policy = PoolPolicy(
         name='sp500_base',
@@ -126,6 +132,39 @@ def build_pool_policies(ai_set: set[str] | None = None) -> list[PoolPolicy]:
         sector_cap_exempt=False,
     )
     return [ai_policy, base_policy]
+
+
+AI_THEME_ETF = 'SMH'   # 半导体 ETF，作为 AI 主题相对强度代理
+
+
+def ai_theme_brake_series(smh_close, spy_close, ma: int | None = None):
+    """
+    AI 主题熔断逐日布尔序列：SMH/SPY 相对强度比值 < 其 N 日均线 → True（AI 主题走弱）。
+
+    用 DataStore 现有 SMH + SPY 收盘价计算，不引入新数据源。返回与 spy_close 同索引的
+    bool Series（数据不足 ma+1 行的前段为 False）。
+    """
+    import pandas as pd
+    if ma is None:
+        ma = getattr(config, 'AI_THEME_BRAKE_MA', 50)
+    if smh_close is None or spy_close is None or len(smh_close) == 0:
+        return pd.Series(False, index=getattr(spy_close, 'index', None))
+    spy = spy_close.copy()
+    smh = smh_close.reindex(spy.index).ffill()
+    ratio = smh / spy
+    ma_series = ratio.rolling(ma).mean()
+    brake = (ratio < ma_series)
+    return brake.fillna(False)
+
+
+def ai_theme_brake_now(smh_close, spy_close, ma: int | None = None) -> bool:
+    """当前是否触发 AI 主题熔断（取逐日序列最后一个值）。受 AI_THEME_BRAKE_ENABLED 开关控制（默认关闭）。"""
+    if not getattr(config, 'AI_THEME_BRAKE_ENABLED', False):
+        return False
+    s = ai_theme_brake_series(smh_close, spy_close, ma)
+    if s is None or len(s) == 0:
+        return False
+    return bool(s.iloc[-1])
 
 
 def classify(symbol: str, policies: list[PoolPolicy]) -> PoolPolicy:

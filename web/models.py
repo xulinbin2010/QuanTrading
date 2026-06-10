@@ -112,6 +112,7 @@ class BacktestRequest(BaseModel):
     daily: bool = False
     factors: Optional[list[str]] = None
     factor_params: Optional[dict] = None
+    pool_mode: str = 'strict'          # 'strict'=纯严格单路(历史可比) | 'ai'=复刻实盘双路+tier+池配额+行业豁免
     # 5日动量策略专用参数
     strategy: str = 'rs_momentum'      # 'rs_momentum' | 'momentum5d'
     hard_stop: float = -0.08           # 硬止损（momentum5d）

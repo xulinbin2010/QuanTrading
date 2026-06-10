@@ -188,6 +188,7 @@ const DEFAULT_PARAMS = {
   min_cap_b: 10, max_cap_b: 5000,
   deny_industries: [] as string[],
   useCustomDate: false,
+  pool_mode: 'strict' as 'strict' | 'ai',
   strategy: 'rs_momentum' as 'rs_momentum' | 'momentum5d',
   hard_stop: -0.08,
   pos_pct: 0.22,
@@ -883,6 +884,8 @@ export default function Backtest() {
       max_cap_b: params.max_cap_b,
       deny_industries: params.deny_industries.length ? params.deny_industries : undefined,
       factors: params.strategy === 'rs_momentum' && selectedFactors.length > 0 ? selectedFactors : undefined,
+      // 池模式仅对 rs_momentum 纯策略生效（factor 组合/momentum5d 不走 PoolPolicy）
+      pool_mode: params.strategy === 'rs_momentum' && selectedFactors.length === 0 ? params.pool_mode : undefined,
       strategy: params.strategy,
       hard_stop: params.hard_stop,
       pos_pct: params.pos_pct,
@@ -976,6 +979,24 @@ export default function Backtest() {
               onChange={e => setParams(p => ({ ...p, top_n: +e.target.value }))}
             />
           </div>
+
+          {/* 池模式：仅 rs_momentum 纯策略（未选 factor 组合）时可选 */}
+          {params.strategy === 'rs_momentum' && selectedFactors.length === 0 && (
+            <div>
+              <label className="block text-xs text-slate-400 mb-1">
+                池模式
+                <span className="text-slate-500 ml-1" title="strict：纯严格单路，无 AI 特殊待遇，历史可比。ai：复刻实盘——AI 优先池走宽松扫描 + 绝对置顶 + 行业去重豁免 + 非 AI 票配额，收益高但更集中、回撤更深。">ⓘ</span>
+              </label>
+              <select
+                className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500"
+                value={params.pool_mode}
+                onChange={e => setParams(p => ({ ...p, pool_mode: e.target.value as 'strict' | 'ai' }))}
+              >
+                <option value="strict">strict · 纯严格单路（历史可比）</option>
+                <option value="ai">ai · 复刻实盘（AI优先池）</option>
+              </select>
+            </div>
+          )}
 
           {/* 5日动量专属：硬止损 + 每仓比例 */}
           {params.strategy === 'momentum5d' && (<>

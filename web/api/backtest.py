@@ -21,6 +21,7 @@ def run(req: BacktestRequest):
         'deny_industries': req.deny_industries,
         'factors':         req.factors,
         'factor_params':   req.factor_params,
+        'pool_mode':       req.pool_mode,
         'strategy':        req.strategy,
         'hard_stop':       req.hard_stop,
         'pos_pct':         req.pos_pct,

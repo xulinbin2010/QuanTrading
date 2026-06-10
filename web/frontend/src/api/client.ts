@@ -86,6 +86,7 @@ export interface BacktestParams {
   daily?: boolean
   factors?: string[]
   factor_params?: Record<string, Record<string, any>>
+  pool_mode?: 'strict' | 'ai'
   strategy?: 'rs_momentum' | 'momentum5d'
   hard_stop?: number
   pos_pct?: number

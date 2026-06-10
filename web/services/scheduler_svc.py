@@ -95,6 +95,14 @@ DEFAULT_TASKS = [
         'enabled':  False,
         'description': '次日早重拉 sina 正式前复权日线，覆盖前一日盘后快照补的原始价 bar，保证数据最终准确',
     },
+    {
+        'task_id':  'log_cleanup',
+        'name':     '日志清理（删除3天前日志）',
+        'command':  f'{PYTHON} -m tools.clean_logs --days 3',
+        'cron_expr': '0 5 * * *',       # 北京 每天 05:00（低活跃时段）
+        'enabled':  False,
+        'description': '删除 logs/ 下修改时间超过 3 天的日志文件（data_health_*.json、trading.log 轮转文件等），保护正在写入的 trading.log。要改保留天数，编辑 command 里的 --days N。',
+    },
 ]
 
 # 默认任务 cron 调整（非 UTC 迁移）：task_id → 需被替换的旧默认 cron。

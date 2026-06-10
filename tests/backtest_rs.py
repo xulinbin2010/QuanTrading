@@ -14,6 +14,10 @@ from strategies.rs_momentum import RSMomentum
 from strategies.factors.atr import compute_atr
 from core.universe import get_tickers, get_stock_info
 from core.data_store import DataStore
+from core.pool_policy import (
+    build_pool_policies, classify as _classify_pool,
+    sort_key as _pool_sort_key, load_ai_tracker_boost_map, PoolAllocator,
+)
 from core.market_regime import compute_mss_series
 from core.fmt import lj, rj
 import config
@@ -56,6 +60,9 @@ def _parse_args():
                         dest='max_cap_b', help=f'最大市值（十亿USD），默认 {config.MAX_CAP_B}B')
     parser.add_argument('--deny-industry', nargs='+', default=config.DENY_INDUSTRIES,
                         dest='deny_industries', help='拒绝行业关键词（模糊匹配）')
+    parser.add_argument('--pool-mode', default='strict', choices=['strict', 'ai'],
+                        dest='pool_mode',
+                        help='strict=纯严格单路(默认,历史可比) / ai=复刻实盘双路+tier+池配额+行业豁免')
     return parser.parse_args()
 
 
@@ -66,6 +73,8 @@ def run_backtest(
     end: str = None,
     universe: str = 'sp500',
     daily: bool = False,
+    pool_mode: str = 'strict',          # 'strict'=纯严格单路(默认,历史可比) / 'ai'=复刻实盘双路+tier+池配额+行业豁免
+
     min_cap_b: float = None,
     max_cap_b: float = None,
     deny_industries: list = None,
@@ -185,6 +194,14 @@ def run_backtest(
     # ── 准备股票数据 + 信号 ───────────────────────────────
     stock_data = {sym: df for sym, df in all_data.items() if sym != 'SPY'}
 
+    # PoolPolicy（仅 pool_mode='ai' 且非 factors 时启用，复刻实盘双路+tier+池配额+行业豁免）
+    use_pool      = (pool_mode == 'ai' and not factors)
+    policies      = build_pool_policies() if use_pool else None
+    ai_set        = (next((p.members for p in policies if p.name == 'ai_priority'), set()) or set()) if use_pool else set()
+    ai_boost_map  = load_ai_tracker_boost_map() if use_pool else {}
+    pool_strats: dict = {}
+    signals: dict = {}
+
     if precomputed_cache is not None and factors:
         # 快速路径：从预计算缓存生成信号，跳过所有 rolling-window 计算
         from strategies.precompute import build_signal_from_cache
@@ -200,13 +217,18 @@ def run_backtest(
         atr_series: dict[str, pd.Series] = dict(precomputed_cache.atr_series)
     else:
         # 标准路径：逐股计算（独立回测 / Web 回测 / CLI，向后兼容）
-        # AI 优先池(与 auto_trader 对齐):成员走宽松扫描 prox=15%+vol=0
-        from auto_trader import _load_ai_priority_set
-        ai_set = _load_ai_priority_set()
+        # pool_mode='ai' 时按 PoolPolicy 双路扫描（与 auto_trader 实盘对齐）；
+        # 默认 'strict' 为纯 SP500 严格单路（无 AI 特殊待遇，保留历史可比性）。
         if factors:
             from strategies.dynamic_factor import DynamicFactorStrategy
             strategy = DynamicFactorStrategy(factors, factor_params)
-            strategy_relaxed = None
+            strategy.set_spy(spy_close)
+            signals = {}
+            for sym, df in stock_data.items():
+                try:
+                    signals[sym] = strategy.generate_signals(df)
+                except Exception:
+                    pass
         else:
             from web.services.factor_svc import get_factor_params_from_db
             _rs_p = get_factor_params_from_db('rs_score')
@@ -215,17 +237,28 @@ def run_backtest(
                 rs_weights=str(_rs_p.get('weights', '') or ''),
                 vol_shrink_ratio=VOL_SHRINK_RATIO,
             )
-            strategy = RSMomentum(**_common, breakout_proximity_pct=breakout_proximity_pct)
-            strategy_relaxed = RSMomentum(**_common, breakout_proximity_pct=0.15, vol_multiplier=0.0)
-            strategy_relaxed.set_spy(spy_close)
-        strategy.set_spy(spy_close)
-        signals = {}
-        for sym, df in stock_data.items():
-            try:
-                strat = strategy_relaxed if (strategy_relaxed is not None and sym.upper() in ai_set) else strategy
-                signals[sym] = strat.generate_signals(df)
-            except Exception:
-                pass
+            if use_pool:
+                # 每池一套扫描参数（ai 宽松 prox=15%+vol=0 / base 严格），逐股按池分流
+                for p in policies:
+                    kw = dict(_common, breakout_proximity_pct=breakout_proximity_pct)
+                    kw.update(p.signal_params)
+                    st = RSMomentum(**kw)
+                    st.set_spy(spy_close)
+                    pool_strats[p.name] = st
+                for sym, df in stock_data.items():
+                    try:
+                        st = pool_strats[_classify_pool(sym, policies).name]
+                        signals[sym] = st.generate_signals(df)
+                    except Exception:
+                        pass
+            else:
+                strategy = RSMomentum(**_common, breakout_proximity_pct=breakout_proximity_pct)
+                strategy.set_spy(spy_close)
+                for sym, df in stock_data.items():
+                    try:
+                        signals[sym] = strategy.generate_signals(df)
+                    except Exception:
+                        pass
 
         # 预计算 ATR14（用于自适应止损）
         atr_series: dict[str, pd.Series] = {}
@@ -322,6 +355,10 @@ def run_backtest(
     spy_brake_days = 0
     vix_brake_days = 0
     breadth_cap_days = 0
+    # 行业集中度跟踪：峰值同行业并持数 + 每日「最大行业占比」累加（用于 strict vs ai 对比）
+    max_sector_hold = 0
+    top_sector_pct_sum = 0.0
+    conc_days = 0
 
     for i, date in enumerate(dates):
         if i < bt_start_idx:
@@ -491,39 +528,95 @@ def run_backtest(
         # 买入信号
         free_slots = effective_max_pos - len(positions) + len(pending_sells)
         if free_slots > 0 and not spy_brake and not vix_brake:
-            new_buys = []
-            for sym, sig_df in signals.items():
-                if sym in positions or sym in pending_sells or date not in sig_df.index:
-                    continue
-                row = sig_df.loc[date]
-                if row['signal'] == 1 and _is_allowed(sym):
-                    new_buys.append((sym, row['rs_score'], sym.upper() in ai_set))
-            # AI 优先成员排在前面 (+0.5 等效)，同组内按 rs 排
-            new_buys.sort(key=lambda x: (x[2], x[1]), reverse=True)
-            kept_sectors: dict[str, int] = {}
-            for s in positions:
-                if s not in pending_sells and s.upper() not in ai_set:
+            if use_pool:
+                # ── pool_mode='ai'：复刻实盘 sort_key 元组排序 + PoolAllocator ──
+                cands = []
+                for sym, sig_df in signals.items():
+                    if sym in positions or sym in pending_sells or date not in sig_df.index:
+                        continue
+                    row = sig_df.loc[date]
+                    if row['signal'] != 1 or not _is_allowed(sym):
+                        continue
+                    pol = _classify_pool(sym, policies)
+                    vma = row['vol_ma20']
+                    vr  = (row['volume'] / vma) if (vma and vma > 0) else 0.0
+                    cands.append({
+                        'symbol': sym, 'rs_score': row['rs_score'],
+                        'vol_ratio': vr,
+                        'drawdown_from_high': row.get('drawdown_from_high', -0.15),
+                        'sector': _sector_map.get(sym, 'Unknown'),
+                        'pool': pol.name, 'rank_tier': pol.rank_tier,
+                        'ai_tracker_boost': ai_boost_map.get(sym, 0.0),
+                        # 回测无逐日内幕数据，insider_score 缺省 0（实盘有，属已知差异）
+                    })
+                cands.sort(key=_pool_sort_key)
+                # 行业计数按实盘口径：所有在手持仓都计入（含 AI）；非 AI 另计池配额
+                sector_counts: dict[str, int] = {}
+                non_ai_held = 0
+                for s in positions:
+                    if s in pending_sells:
+                        continue
                     sec = _sector_map.get(s, 'Unknown')
-                    kept_sectors[sec] = kept_sectors.get(sec, 0) + 1
-            pending_sector_counts = dict(kept_sectors)
-            filtered_buys = []
-            for sym, rs, is_ai in new_buys:
-                if len(filtered_buys) >= free_slots:
-                    break
-                sec = _sector_map.get(sym, 'Unknown')
-                # AI 优先池豁免行业去重 + 不计入计数（与 SP500 池独立）
-                if not is_ai and pending_sector_counts.get(sec, 0) >= MAX_PER_SECTOR:
-                    continue
-                filtered_buys.append((sym, rs))
-                if not is_ai:
+                    sector_counts[sec] = sector_counts.get(sec, 0) + 1
+                    if s.upper() not in ai_set:
+                        non_ai_held += 1
+                alloc = PoolAllocator(
+                    policies, global_slots=free_slots, global_cap=free_slots,
+                    real_held_count=0, sector_cap=MAX_PER_SECTOR,
+                    sector_counts=sector_counts,
+                    pool_counts={'sp500_base': non_ai_held},
+                )
+                filtered_buys = []
+                for sig in cands:
+                    if alloc.should_stop():
+                        break
+                    if alloc.structural_skip(sig):
+                        continue
+                    filtered_buys.append((sig['symbol'], sig['rs_score']))
+                    alloc.commit(sig)
+                pending_buys = filtered_buys
+            else:
+                # ── 默认 strict：纯严格单路，rs 排序 + 行业上限对所有票生效 ──
+                new_buys = []
+                for sym, sig_df in signals.items():
+                    if sym in positions or sym in pending_sells or date not in sig_df.index:
+                        continue
+                    row = sig_df.loc[date]
+                    if row['signal'] == 1 and _is_allowed(sym):
+                        new_buys.append((sym, row['rs_score']))
+                new_buys.sort(key=lambda x: x[1], reverse=True)
+                pending_sector_counts: dict[str, int] = {}
+                for s in positions:
+                    if s not in pending_sells:
+                        sec = _sector_map.get(s, 'Unknown')
+                        pending_sector_counts[sec] = pending_sector_counts.get(sec, 0) + 1
+                filtered_buys = []
+                for sym, rs in new_buys:
+                    if len(filtered_buys) >= free_slots:
+                        break
+                    sec = _sector_map.get(sym, 'Unknown')
+                    if pending_sector_counts.get(sec, 0) >= MAX_PER_SECTOR:
+                        continue
+                    filtered_buys.append((sym, rs))
                     pending_sector_counts[sec] = pending_sector_counts.get(sec, 0) + 1
-            pending_buys = filtered_buys
+                pending_buys = filtered_buys
 
         # 当日净值
         port_value = cash
         for sym, pos in positions.items():
             if date in stock_data[sym].index:
                 port_value += pos['qty'] * stock_data[sym].loc[date, 'close']
+
+        # 行业集中度：当日持仓的最大同行业并持数 / 占比
+        if positions:
+            _day_sectors: dict[str, int] = {}
+            for s in positions:
+                sec = _sector_map.get(s, 'Unknown')
+                _day_sectors[sec] = _day_sectors.get(sec, 0) + 1
+            _peak = max(_day_sectors.values())
+            max_sector_hold = max(max_sector_hold, _peak)
+            top_sector_pct_sum += _peak / len(positions)
+            conc_days += 1
 
         # SPY 基准净值（同期从 bt_start_idx 起点算）
         spy_start_price = float(spy_close.iloc[bt_start_idx])
@@ -610,6 +703,9 @@ def run_backtest(
         'vix_brake_days':   vix_brake_days,
         'breadth_cap_days': breadth_cap_days,
         'universe':         universe,
+        'pool_mode':        pool_mode,
+        'max_sector_hold':  max_sector_hold,
+        'avg_top_sector_pct': round(top_sector_pct_sum / conc_days, 4) if conc_days else 0.0,
         'bt_start':         str(dates[bt_start_idx].date()),
         'bt_end':           str(last_date.date()),
         'days':             days,
@@ -618,7 +714,7 @@ def run_backtest(
     return {
         'params': {
             'period': period, 'start': start, 'end': end,
-            'universe': universe, 'top': top,
+            'universe': universe, 'top': top, 'pool_mode': pool_mode,
             'min_cap_b': min_cap_b, 'max_cap_b': max_cap_b,
             'deny_industries': deny_industries,
         },
@@ -642,8 +738,10 @@ def print_report(result: dict, daily: bool = False):
     trail_stops  = [t for t in trades if t.get('exit_reason') == '移动止损']
     vol_div_exits = [t for t in trades if t.get('exit_reason') == '量价背离']
 
+    _pm = s.get('pool_mode', 'strict')
+    _pm_label = {'strict': '纯严格单路', 'ai': 'AI双路+tier+池配额'}.get(_pm, _pm)
     print(f"\n{'='*60}")
-    print(f"  RS 动量策略回测报告  [{s['universe'].upper()}]")
+    print(f"  RS 动量策略回测报告  [{s['universe'].upper()}]  池模式：{_pm_label}")
     print(f"  {s['bt_start']} → {s['bt_end']}（{s['days']} 天）")
     print(f"  执行方式：T 日信号 → T+1 开盘价成交（OPG 模式）")
     print(f"{'='*60}")
@@ -656,6 +754,8 @@ def print_report(result: dict, daily: bool = False):
     print(f"  超额收益        {s['excess_return']:>14.1%}  ← {'跑赢' if s['excess_return'] > 0 else '跑输'}大盘")
     print(f"  最大回撤        {s['max_drawdown']:>14.1%}")
     print(f"  Sharpe          {s['sharpe']:>14.2f}")
+    if 'max_sector_hold' in s:
+        print(f"  峰值同行业并持  {s['max_sector_hold']:>11} 只  (日均最大行业占比 {s.get('avg_top_sector_pct',0):.0%})")
     brake_pct = s['spy_brake_days'] / max(s['days'], 1) * 100
     print(f"  SPY熔断天数     {s['spy_brake_days']:>11} 天  ({brake_pct:.0f}% 回测期)")
     if s.get('vix_brake_days', 0) > 0:
@@ -762,6 +862,7 @@ def run():
         end=args.end,
         universe='sp500+ndx',
         daily=args.daily,
+        pool_mode=args.pool_mode,
         min_cap_b=args.min_cap_b,
         max_cap_b=args.max_cap_b,
         deny_industries=args.deny_industries,

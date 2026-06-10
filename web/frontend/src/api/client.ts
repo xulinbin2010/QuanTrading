@@ -227,6 +227,8 @@ export const addAISymbol       = (group: string, symbol: string) =>
   api.post(`/ai/universe/${group}/${symbol}`).then(r => r.data)
 export const removeAISymbol    = (symbol: string) =>
   api.delete(`/ai/universe/${symbol}`).then(r => r.data)
+export const setAITradePriority = (symbol: string, enabled: boolean) =>
+  api.post(`/ai/trade-priority/${symbol}`, { enabled }).then(r => r.data)
 export const discoverAISymbols = (limit = 20) =>
   api.post('/ai/discover', null, { params: { limit }, timeout: 120_000 }).then(r => r.data)
 export const analyzeAISymbol   = (symbol: string) =>

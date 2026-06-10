@@ -47,14 +47,27 @@ class PoolPolicy:
 # ══════════════════════════════════════════════════════════════════
 
 def load_ai_priority_set() -> set[str]:
-    """ai_universe.json 中所有 symbol 的大写集合。AI 优先池成员资格的唯一来源。"""
+    """
+    实盘 AI 优先池成员（大写集合）= ai_universe.json 里 trade_priority 为真的成员。
+
+    watchlist 与实盘优先池解耦：ai_universe.json 顶层 `trade_priority` 映射
+    {symbol: bool} 控制某只是否进入实盘优先池。缺省（不在映射里）视为 True，
+    保持向后兼容（历史成员全部享受优先池待遇）；UI 新增成员默认 False（研究观察）。
+    注意：AI 追踪页的 watchlist 展示仍读全部 symbols，不受此过滤影响。
+    """
     f = _ROOT / 'data' / 'ai_universe.json'
     if not f.exists():
         return set()
     try:
         u = json.loads(f.read_text(encoding='utf-8'))
-        return {str(s).upper() for gv in u.get('groups', {}).values()
-                for s in gv.get('symbols', [])}
+        tp = {str(k).upper(): bool(v) for k, v in (u.get('trade_priority') or {}).items()}
+        out: set[str] = set()
+        for gv in u.get('groups', {}).values():
+            for s in gv.get('symbols', []):
+                su = str(s).upper()
+                if tp.get(su, True):   # 缺省 True，向后兼容
+                    out.add(su)
+        return out
     except Exception:
         return set()
 

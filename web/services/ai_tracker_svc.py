@@ -359,6 +359,7 @@ def _do_ai_scan() -> dict:
 
     universe   = load_universe()
     groups     = universe.get('groups', {})
+    tp_map     = {str(k).upper(): bool(v) for k, v in (universe.get('trade_priority') or {}).items()}
 
     all_syms: list[str] = []
     sym_to_group: dict[str, str] = {}
@@ -419,6 +420,7 @@ def _do_ai_scan() -> dict:
         rows.append({
             'symbol':          sym,
             'group':           gk,
+            'trade_priority':  tp_map.get(str(sym).upper(), True),
             'group_label':     gv['label'],
             'group_color':     gv.get('color', '#94a3b8'),
             'score':           total,
@@ -487,14 +489,20 @@ def _batch_rs(symbols: list[str]) -> dict[str, float]:
 
 # ── 股票池管理 ────────────────────────────────────────────────
 
-def add_symbol_to_universe(symbol: str, group: str) -> dict:
+def add_symbol_to_universe(symbol: str, group: str, trade_priority: bool = False) -> dict:
     u = load_universe()
     if group not in u['groups']:
         raise ValueError(f'group "{group}" 不存在')
     syms = u['groups'][group]['symbols']
     sym = symbol.upper().strip()
-    if sym not in syms:
+    is_new = sym not in syms
+    if is_new:
         syms.append(sym)
+    # 新成员默认进「研究观察」(trade_priority=False)，需手动开启实盘优先；
+    # 已有成员重复加入不改动其开关。watchlist 展示不受影响，仅实盘优先池过滤用。
+    tp = u.setdefault('trade_priority', {})
+    if is_new and sym not in tp:
+        tp[sym] = bool(trade_priority)
     # 用户显式加入 → 从 rejected 黑名单移除（恢复其候选资格）
     if 'rejected' in u and sym in u['rejected']:
         u['rejected'] = [s for s in u['rejected'] if s != sym]
@@ -514,6 +522,9 @@ def remove_symbol_from_universe(symbol: str) -> dict:
     for gv in u['groups'].values():
         if sym in gv['symbols']:
             gv['symbols'].remove(sym)
+    # 清理 trade_priority 条目（移除后不再保留实盘优先开关状态）
+    if isinstance(u.get('trade_priority'), dict):
+        u['trade_priority'].pop(sym, None)
     # 从待审核移除
     u['pending_review'] = [p for p in u.get('pending_review', []) if p.get('symbol') != sym]
     # 加入黑名单
@@ -523,6 +534,17 @@ def remove_symbol_from_universe(symbol: str) -> dict:
     save_universe(u)
     if _AI_CACHE_FILE.exists():
         _AI_CACHE_FILE.unlink()
+    return u
+
+
+def set_trade_priority(symbol: str, enabled: bool) -> dict:
+    """设置某只是否纳入实盘 AI 优先池（auto_trader 用）。不影响 watchlist 展示。
+    True = 享受优先池待遇（宽松扫描 + 绝对置顶 + 行业豁免）；False = 仅研究观察。"""
+    u = load_universe()
+    sym = symbol.upper().strip()
+    u.setdefault('trade_priority', {})[sym] = bool(enabled)
+    save_universe(u)
+    # 仅改实盘优先开关，不动评分缓存（避免每次切换触发昂贵重扫；展示态走 universe 接口）
     return u
 
 

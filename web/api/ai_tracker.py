@@ -102,6 +102,14 @@ def remove_symbol(symbol: str):
     return remove_symbol_from_universe(symbol)
 
 
+# 注意：路径不能用 /universe/{symbol}/...，否则会被 /universe/{group}/{symbol} 抢匹配
+@router.post('/trade-priority/{symbol}')
+def set_symbol_trade_priority(symbol: str, enabled: bool = Body(..., embed=True)):
+    """切换某只是否纳入实盘 AI 优先池（True=实盘优先 / False=仅研究观察）。"""
+    from web.services.ai_tracker_svc import set_trade_priority
+    return set_trade_priority(symbol, enabled)
+
+
 @router.get('/analyze')
 def analyze(symbol: str = Query(...)):
     """分析单只股票，返回推荐分组 + 决策依据（供管理股票池手动加入用）"""

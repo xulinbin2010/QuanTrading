@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import ReactECharts from 'echarts-for-react'
 import {
   scanAITracker, getAIUniverse, getIndexMembership,
-  addAISymbol, removeAISymbol,
+  addAISymbol, removeAISymbol, setAITradePriority,
   approveAIPending, rejectAIPending,
   getAIMomentum, analyzeAISymbol, getEarningsCompare,
 } from '../api/client'
@@ -135,6 +135,12 @@ export default function AITracker() {
     },
   })
 
+  // 实盘优先开关：True=纳入 auto_trader AI 优先池（宽松扫描+置顶+行业豁免）/ False=仅研究观察
+  const tpMutation = useMutation({
+    mutationFn: ({ symbol, enabled }: { symbol: string; enabled: boolean }) => setAITradePriority(symbol, enabled),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['ai-universe'] }),
+  })
+
   const approveMutation = useMutation({
     mutationFn: ({ symbol, group }: { symbol: string; group: string }) => approveAIPending(symbol, group),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['ai-universe'] }),
@@ -151,6 +157,9 @@ export default function AITracker() {
   for (const r of (scanData?.rows ?? [])) {
     if (r?.market_cap_b != null) capMap[r.symbol] = r.market_cap_b
   }
+  // symbol → 实盘优先开关（缺省 true，向后兼容）。控制是否进 auto_trader AI 优先池
+  const tpMap: Record<string, boolean> = (universe?.trade_priority as Record<string, boolean>) ?? {}
+  const isTradePriority = (sym: string) => tpMap[sym] ?? true
   // 子主题 label/color 直接取自 universe（ai_universe.json），不依赖 scan，图谱秒开；隐藏组不展示
   const groups: Record<string, { label: string; color: string }> = universe?.groups
     ? Object.fromEntries(
@@ -315,6 +324,17 @@ export default function AITracker() {
                                   {meta?.desc || '—'}
                                 </span>
                                 <span className="flex gap-0.5 shrink-0 items-center">
+                                  <button
+                                    onClick={e => { e.stopPropagation(); tpMutation.mutate({ symbol: sym, enabled: !isTradePriority(sym) }) }}
+                                    disabled={tpMutation.isPending}
+                                    title={isTradePriority(sym)
+                                      ? '实盘优先池成员（auto_trader 走宽松扫描+置顶+行业豁免）。点击转为仅研究观察'
+                                      : '仅研究观察，未进实盘优先池。点击纳入实盘优先'}
+                                    className={`text-[8px] leading-tight px-1 rounded transition-colors ${isTradePriority(sym)
+                                      ? 'bg-emerald-900/60 text-emerald-300 hover:bg-emerald-800/70'
+                                      : 'bg-slate-700/70 text-slate-500 hover:bg-slate-600/70'}`}>
+                                    {isTradePriority(sym) ? '实盘' : '观察'}
+                                  </button>
                                   {sp500Set.has(sym) && <span title="S&P 500 成分" className="text-[8px] leading-tight px-1 rounded bg-blue-900/50 text-blue-300">S&P</span>}
                                   {ndxSet.has(sym) && <span title="Nasdaq 100 成分" className="text-[8px] leading-tight px-1 rounded bg-purple-900/50 text-purple-300">100</span>}
                                 </span>
@@ -398,6 +418,7 @@ export default function AITracker() {
       {/* 说明 */}
       <div className="text-xs text-slate-600 space-y-0.5">
         <div>· 产业图谱按上下游分层展示，公司业务为人工标注（data/aiCompanyMeta.ts）；增删即时写入 ai_universe.json（auto_trader 优先池）</div>
+        <div>· 每只右侧 <span className="px-1 rounded bg-emerald-900/60 text-emerald-300">实盘</span>/<span className="px-1 rounded bg-slate-700/70 text-slate-500">观察</span> 切换是否纳入 auto_trader 实盘 AI 优先池：<span className="text-slate-400">实盘</span>=宽松扫描+置顶+行业豁免；<span className="text-slate-400">观察</span>=仅研究不下单。新增成员默认「观察」，老成员默认「实盘」（向后兼容）</div>
         <div>· 「手动加入」识别行业并归组；待定区（图谱最下方）选分组「加入」转正；评分/动量数据见「动能轮动」</div>
         <div>· <span className="text-slate-400">👑</span> 大盘龙头（约 ≥ $100B）卡片高亮，<span className="opacity-55">暗淡卡</span>为微小盘（约 ≤ $5B）；<span className="text-blue-300">S&P</span>=标普500 / <span className="text-purple-300">100</span>=纳指100 成分</div>
       </div>

@@ -33,23 +33,65 @@ def _clean_floats(obj):
     return obj
 
 
-# ── 内存缓存（factor scan 结果，TTL 1 小时）────────────────
+# ── 缓存（factor scan 结果，TTL 1 小时）─────────────────────
+# 双层：内存缓存(同进程快速命中) + 文件缓存(跨进程共享，供定时任务预热)。
+# 定时任务在子进程跑 scan，写入文件缓存；web server 进程读文件即可秒出，
+# 不必等用户点开页面时现场跑。
+import json
+from pathlib import Path
+
 _scan_cache: dict = {}         # key: universe, value: {ts, data}
 _scan_running: dict[str, bool] = {}   # 正在后台扫描的 universe
 _scan_lock = threading.Lock()
 CACHE_TTL = 3600               # 秒
+_CACHE_DIR = Path(__file__).resolve().parents[2] / 'data'
+
+
+def _cache_file(universe: str) -> Path:
+    return _CACHE_DIR / f'.factor_scan_{universe}.json'
+
+
+def _read_file_cache(universe: str) -> dict | None:
+    """读文件缓存 {ts, data}，新鲜则回灌内存。无/损坏/过期 → None。"""
+    fp = _cache_file(universe)
+    if not fp.exists():
+        return None
+    try:
+        with open(fp, encoding='utf-8') as f:
+            entry = json.load(f)
+    except Exception:
+        return None
+    if not isinstance(entry, dict) or (time.time() - entry.get('ts', 0)) >= CACHE_TTL:
+        return None
+    _scan_cache[universe] = entry   # 回灌内存，下次走快速路径
+    return entry
+
+
+def _write_file_cache(universe: str, entry: dict) -> None:
+    try:
+        _CACHE_DIR.mkdir(parents=True, exist_ok=True)
+        with open(_cache_file(universe), 'w', encoding='utf-8') as f:
+            json.dump(entry, f, ensure_ascii=False)
+    except Exception:
+        pass
 
 
 def _cache_valid(universe: str) -> bool:
     entry = _scan_cache.get(universe)
-    return entry is not None and (time.time() - entry['ts']) < CACHE_TTL
+    if entry is not None and (time.time() - entry['ts']) < CACHE_TTL:
+        return True
+    # 内存未命中/过期 → 看文件缓存（可能是定时任务刚预热的）
+    return _read_file_cache(universe) is not None
 
 
 def invalidate_cache(universe: str = None):
     if universe:
         _scan_cache.pop(universe, None)
+        _cache_file(universe).unlink(missing_ok=True)
     else:
         _scan_cache.clear()
+        for fp in _CACHE_DIR.glob('.factor_scan_*.json'):
+            fp.unlink(missing_ok=True)
 
 
 # ── 注册表 API ─────────────────────────────────────────────
@@ -237,8 +279,9 @@ def scan_factors(universe: str = 'sp500', top: int = 50, force: bool = False) ->
 def _run_scan(universe: str, top: int) -> None:
     """实际扫描逻辑，在后台线程中运行。"""
     try:
-        data = _do_scan(universe, top)
-        _scan_cache[universe] = {'ts': time.time(), 'data': data}
+        entry = {'ts': time.time(), 'data': _do_scan(universe, top)}
+        _scan_cache[universe] = entry
+        _write_file_cache(universe, entry)   # 同步落盘，供其他进程/重启后复用
     finally:
         with _scan_lock:
             _scan_running.pop(universe, None)
@@ -1005,3 +1048,22 @@ def delete_narrative_entry(entry_id: int) -> bool:
         return False
     _save_narrative_watchlist(new_entries)
     return True
+
+
+# CLI 入口（供 scheduler 定时预热市场扫描缓存）：
+#   python -m web.services.factor_svc --universe ai --top 50
+if __name__ == '__main__':
+    import argparse
+    import logging
+
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%H:%M:%S')
+    _p = argparse.ArgumentParser(description='预热市场扫描因子缓存')
+    _p.add_argument('--universe', default='ai', help='股票池(默认 ai)')
+    _p.add_argument('--top', type=int, default=50, help='输出前 N(默认 50)')
+    _args = _p.parse_args()
+
+    _entry = {'ts': time.time(), 'data': _do_scan(_args.universe, _args.top)}
+    _scan_cache[_args.universe] = _entry
+    _write_file_cache(_args.universe, _entry)
+    print(f"[factor_svc] 预热完成 universe={_args.universe} "
+          f"rows={len(_entry['data'].get('rows', []))} total={_entry['data'].get('total')}")

@@ -80,6 +80,14 @@ DEFAULT_TASKS = [
         'description': '复用 auto_trader.scan_signals 全套(双路扫描+过滤+排名),写 top10 缓存供因子看板「生产信号」展示',
     },
     {
+        'task_id':  'market_scan',
+        'name':     '市场扫描预热(因子裸值表)',
+        'command':  f'{PYTHON} -m web.services.factor_svc --universe ai --top 50',
+        'cron_expr': '45 21 * * 1-5',  # 北京 周一至五 21:45(production_signals 前 5 分钟一起预热)
+        'enabled':  False,
+        'description': '全池逐股算因子裸值+覆盖率,写文件缓存供市场扫描页秒开,避免用户点开时现场跑',
+    },
+    {
         'task_id':  'astock_update',
         'name':     'A股盘中实时刷新 + 扫描(主题板块)',
         'command':  f'{PYTHON} -m web.services.astock_momentum_svc --mode theme',

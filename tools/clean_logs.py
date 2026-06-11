@@ -62,7 +62,25 @@ def clean_logs(days: int = 3, dry_run: bool = False) -> dict:
 
     print(f'[clean_logs] {"将删除" if dry_run else "已删除"} {deleted} 个文件，'
           f'释放 {freed/1024/1024:.2f} MB；保留 {kept} 个（含活跃/未过期）')
-    return {'deleted': deleted, 'freed_bytes': freed, 'kept': kept}
+    runs_deleted = _clean_task_runs(days=days, dry_run=dry_run)
+    return {'deleted': deleted, 'freed_bytes': freed, 'kept': kept,
+            'runs_deleted': runs_deleted}
+
+
+def _clean_task_runs(days: int, dry_run: bool) -> int:
+    """删除调度器「最近执行记录」(task_runs 表) 中超过 N 天的历史，保护 running 在途任务。
+    DB 不可用（如无依赖环境）时静默跳过，不影响日志文件清理。"""
+    try:
+        from core.database import Database
+    except Exception as e:
+        print(f'[clean_logs] 跳过执行记录清理（DB 不可用）：{e}')
+        return 0
+    db = Database()
+    db.connect()
+    n = db.delete_old_task_runs(days=days, dry_run=dry_run)
+    print(f'[clean_logs] 执行记录(task_runs)：{"将删除" if dry_run else "已删除"} '
+          f'{n} 条（{days} 天前，保护 running）')
+    return n
 
 
 def main():

@@ -372,6 +372,20 @@ class Database:
             return
         self.cursor.execute("DELETE FROM task_runs WHERE id = ?", (run_id,))
 
+    def delete_old_task_runs(self, days: int = 3, dry_run: bool = False) -> int:
+        """删除 started_at 早于 now-days 的执行记录（保护 running 状态，避免误删在途任务）。
+        started_at 存为 '%Y-%m-%d %H:%M:%S' 字符串，字典序即时间序，可直接比较。
+        返回（将）删除的条数。"""
+        if not self._ensure_conn():
+            return 0
+        cutoff = (datetime.now(_CST) - timedelta(days=days)).strftime('%Y-%m-%d %H:%M:%S')
+        where = "started_at < ? AND status != 'running'"
+        self.cursor.execute(f"SELECT COUNT(*) FROM task_runs WHERE {where}", (cutoff,))
+        n = self.cursor.fetchone()[0]
+        if not dry_run and n:
+            self.cursor.execute(f"DELETE FROM task_runs WHERE {where}", (cutoff,))
+        return n
+
     def get_last_runs_per_task(self) -> dict:
         if not self._ensure_conn():
             return {}

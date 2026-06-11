@@ -105,11 +105,11 @@ DEFAULT_TASKS = [
     },
     {
         'task_id':  'log_cleanup',
-        'name':     '日志清理（删除3天前日志）',
+        'name':     '日志清理（删除3天前日志+执行记录）',
         'command':  f'{PYTHON} -m tools.clean_logs --days 3',
         'cron_expr': '0 5 * * *',       # 北京 每天 05:00（低活跃时段）
         'enabled':  False,
-        'description': '删除 logs/ 下修改时间超过 3 天的日志文件（data_health_*.json、trading.log 轮转文件等），保护正在写入的 trading.log。要改保留天数，编辑 command 里的 --days N。',
+        'description': '删除 logs/ 下修改时间超过 3 天的日志文件（data_health_*.json、trading.log 轮转文件等），保护正在写入的 trading.log；并清理调度器「最近执行记录」(task_runs) 中 3 天前的历史（保护 running 在途任务）。要改保留天数，编辑 command 里的 --days N。',
     },
 ]
 

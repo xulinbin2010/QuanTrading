@@ -63,7 +63,8 @@
         "AXTI",
         "TSEM",
         "CAMT",
-        "GFS"
+        "GFS",
+        "UCTT"
       ]
     },
     "datacenter_infra": {
@@ -408,5 +409,12 @@
     "MSI",
     "HUBB",
     "ZBRA"
-  ]
+  ],
+  "trade_priority": {
+    "UCTT": false,
+    "LRCX": true,
+    "POWI": false,
+    "CALX": false,
+    "OKLO": false
+  }
 }

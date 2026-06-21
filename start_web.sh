@@ -14,6 +14,23 @@ if [ -f .web.pid ]; then
     rm .web.pid
 fi
 
+# 自我脱离终端：首次调用时用 nohup 重启自身后退出，使服务真正后台常驻。
+# 子进程继承「忽略 SIGHUP」，关闭终端/会话不会再把服务带走（不必手动加 nohup）。
+if [ -z "$__WEB_DAEMONIZED" ]; then
+    export __WEB_DAEMONIZED=1
+    nohup "$0" "$@" > web_session.log 2>&1 < /dev/null &
+    disown
+    echo "服务已后台启动 (wrapper PID: $!)，日志：web_session.log"
+    if [ "$1" = "--dev" ]; then
+        echo "  前端 UI:  http://localhost:5178  (代理 /api → 3001)"
+        echo "  后端 API: http://127.0.0.1:3001"
+    else
+        echo "  地址：http://127.0.0.1:3001"
+    fi
+    echo "停止：./stop_web.sh"
+    exit 0
+fi
+
 source .venv/bin/activate
 
 if [ "$1" = "--dev" ]; then

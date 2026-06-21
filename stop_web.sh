@@ -27,8 +27,8 @@ else
     fi
 fi
 
-# 清理可能残留的 Vite 进程 (仅开发模式)
-pkill -f "node.*/bin/vite" 2>/dev/null
+# 注意：不要用 pkill -f "node.*/bin/vite"，会误杀其他项目（如 opticx）的 vite。
+# Vite(5178) 由下面的「按端口精准强杀」处理，只动 QuanTrading 自己的端口。
 
 # 兜底：按端口强杀（防止 PID 文件丢失或进程名匹配失败后端口仍被占用）
 for PORT in 3001 5178; do

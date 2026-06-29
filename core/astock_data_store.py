@@ -279,9 +279,29 @@ class AStockDataStore:
             prior = local[local.index.date < today]
             if prior.empty:
                 continue
+            # 缺口自愈：本地最后一根距今 > 4 天（超出正常周末 Fri→Mon=3 天间隔），说明中间
+            # 缺交易日。若此时直接把当日快照续到陈旧 bar 上，会导致：①「今日涨幅」被算成跨多日
+            # 涨幅（如 601133 06-17→06-29 算出假的 +27%）②本地最后一根变成今日，后续 get()
+            # 的 _update_one 因 last>=today 短路，永远不再回补缺口。故先用历史日线补缺口再贴当日。
+            # 长假场景无害：假期内 _download 返回空，prior 不变，前后两根本就是连续交易日。
+            last_prior = prior.index[-1].date()
+            if (today - last_prior).days > 4:
+                gap = self._download(code, (last_prior + timedelta(days=1)).strftime('%Y-%m-%d'))
+                if not gap.empty:
+                    local = pd.concat([local, gap])
+                    local = local[~local.index.duplicated(keep='last')].sort_index()
+                    local.to_parquet(self._path(code))
+                    prior = local[local.index.date < today]
+                    if prior.empty:
+                        continue
             last_close = float(prior['close'].iloc[-1])
             if last_close <= 0 or abs(prev - last_close) / last_close > 0.2:
                 continue   # 连续性校验失败（疑似代码错位/复权跳变），跳过
+            # 数据新鲜度：节假日(工作日休市)spot 返回上一交易日陈旧快照，最新价+成交量
+            # 与本地昨日完全相同 → 跳过，不补重复假 bar（isoweekday>5 仅排周末，节假日漏网）
+            last_vol = float(prior['volume'].iloc[-1]) if 'volume' in prior.columns else None
+            if close == last_close and last_vol is not None and vol == last_vol:
+                continue
             row = {'open': o, 'high': hi, 'low': lo, 'close': close, 'volume': vol}
             if 'shares' in prior.columns:
                 row['shares'] = prior['shares'].iloc[-1]   # 盘中流通股本不变，用昨日值
@@ -326,6 +346,10 @@ class AStockDataStore:
             r = row.iloc[0]
             o, hi, lo, close = float(r['今开']), float(r['最高']), float(r['最低']), float(r['最新价'])
             if close <= 0:
+                return False
+            # 数据新鲜度：节假日指数 spot 返回陈旧值，与本地昨日 close 相同 → 不补假 bar
+            prior_idx = local[local.index.date < today]
+            if not prior_idx.empty and close == float(prior_idx['close'].iloc[-1]):
                 return False
             new = pd.DataFrame([{'open': o, 'high': hi, 'low': lo, 'close': close, 'volume': 0.0}],
                                index=[pd.Timestamp(today)])

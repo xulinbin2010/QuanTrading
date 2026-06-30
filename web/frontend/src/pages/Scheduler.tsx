@@ -5,12 +5,13 @@ import {
   upsertSchedulerTask, getRunLog, getCronPreview, deleteTaskRun,
 } from '../api/client'
 
-function cronToHuman(expr: string): string {
+function cronToHuman(expr: string, tz = 'Asia/Shanghai'): string {
   try {
     const [mn, hr, , , dw] = expr.split(' ')
     const dayMap: Record<string, string> = { '1-5': '周一至五', '2-6': '周二至六', '*': '每天' }
     const days = dayMap[dw] ?? `周${dw}`
-    return `${days} ${hr.padStart(2, '0')}:${mn.padStart(2, '0')} 北京`
+    const tzLabel = tz === 'America/New_York' ? '美东' : '北京'
+    return `${days} ${hr.padStart(2, '0')}:${mn.padStart(2, '0')} ${tzLabel}`
   } catch {
     return expr
   }
@@ -80,9 +81,10 @@ export default function Scheduler() {
   useEffect(() => {
     const expr = editTask?.cron_expr?.trim()
     if (!expr) { setCronTimes([]); setCronError(''); return }
+    const tz = editTask?.tz ?? 'Asia/Shanghai'
     const timer = setTimeout(async () => {
       try {
-        const res = await getCronPreview(expr)
+        const res = await getCronPreview(expr, 5, tz)
         setCronTimes(res.times ?? [])
         setCronError(res.error ?? '')
       } catch {
@@ -91,7 +93,7 @@ export default function Scheduler() {
       }
     }, 600)
     return () => clearTimeout(timer)
-  }, [editTask?.cron_expr])
+  }, [editTask?.cron_expr, editTask?.tz])
 
   const { data: tasks = [], isLoading: tasksLoading, isError: tasksError } = useQuery({
     queryKey: ['scheduler-tasks'],
@@ -103,6 +105,9 @@ export default function Scheduler() {
     },
     retry: 1,
   })
+
+  // 「今天」按北京时区判断（started_at 存的是北京时间字符串），用于淡化非当日执行记录
+  const todayBJ = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Shanghai' })
 
   const { data: runs = [], isLoading: runsLoading } = useQuery({
     queryKey: ['task-runs'],
@@ -230,7 +235,7 @@ export default function Scheduler() {
             <div className="space-y-1.5 text-xs text-slate-400 mb-3">
               <div className="font-mono text-slate-300 bg-slate-700/50 rounded px-2 py-1 truncate">{task.command}</div>
               <div className="flex justify-between">
-                <span>⏱ {cronToHuman(task.cron_expr)}</span>
+                <span>⏱ {cronToHuman(task.cron_expr, task.tz)}</span>
                 {task.next_run && <span className="text-slate-500">下次：{task.next_run}</span>}
               </div>
               {task.last_run && (
@@ -324,8 +329,11 @@ export default function Scheduler() {
                 </tr>
               </thead>
               <tbody>
-                {runs.map((r: any) => (
-                  <tr key={r.id} className="border-b border-slate-700/50 hover:bg-slate-700/30">
+                {runs.map((r: any) => {
+                  // 非当日记录整行淡化，今天的正常显示，一眼区分
+                  const isToday = typeof r.started_at === 'string' && r.started_at.slice(0, 10) === todayBJ
+                  return (
+                  <tr key={r.id} className={`border-b border-slate-700/50 hover:bg-slate-700/30 ${isToday ? '' : 'opacity-50'}`}>
                     <td className="px-4 py-2 font-medium text-slate-300">{r.task_name}</td>
                     <td className="px-4 py-2 text-slate-400 font-mono">{r.started_at}</td>
                     <td className="px-4 py-2 text-slate-400">
@@ -359,7 +367,8 @@ export default function Scheduler() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -399,9 +408,13 @@ export default function Scheduler() {
                   />
                 </div>
               ))}
-              {/* Cron 表达式（北京时间）+ 预览 */}
+              {/* Cron 表达式 + 预览（美股任务按美东时间，自动夏/冬令时） */}
               <div>
-                <label className="block text-xs text-slate-400 mb-1">Cron 表达式（北京时间）</label>
+                <label className="block text-xs text-slate-400 mb-1">
+                  {editTask.tz === 'America/New_York'
+                    ? 'Cron 表达式（美东时间，自动夏/冬令时）'
+                    : 'Cron 表达式（北京时间）'}
+                </label>
                 <input
                   placeholder="0 22 * * 1-5"
                   className="w-full bg-slate-700 border border-slate-600 rounded px-2 py-1.5 text-sm text-white font-mono focus:outline-none focus:border-blue-500"

@@ -18,35 +18,42 @@ PYTHON = os.path.join(ROOT, '.venv', 'bin', 'python')
 if not os.path.exists(PYTHON):
     PYTHON = sys.executable
 
-# 预设任务（北京时间）
+# 调度器单实例锁：跨进程互斥，保证同一时刻只有一个进程真正启动 APScheduler。
+# 防止 uvicorn --reload 残留的孤儿 worker / 多开实例各起一个调度器导致定时任务重复执行
+# （尤其 auto_trader 重复下单）。抢不到锁的进程只服务 API、不跑调度。
+_SCHED_LOCK_PATH = os.path.join(ROOT, 'data', '.scheduler.lock')
+
+# 预设任务（混合时区）：
+#   美股开盘时段任务（见 NY_TASKS）cron 按【美东时间】书写，trigger 用 America/New_York，自动夏/冬令时；
+#   A 股 / 收盘后批处理 / 维护任务 cron 按【北京时间】书写，trigger 用 Asia/Shanghai。
 DEFAULT_TASKS = [
     {
         'task_id':  'dry_run',
         'name':     '模拟预览（Dry-run，不下单）',
         'command':  f'{PYTHON} auto_trader.py --dry-run',
-        'cron_expr': '30 21 * * 1-5',  # 北京 21:30，比正式下单早 30 分钟
+        'cron_expr': '30 8 * * 1-5',   # 美东 8:30（纽约时区），开盘前预览，比 auto_trader 早 30 分钟
         'enabled':  False,
     },
     {
         'task_id':  'auto_trader',
         'name':     '自动交易（OPG 下单）',
         'command':  f'{PYTHON} auto_trader.py --run',
-        'cron_expr': '0 22 * * 1-5',   # 北京 22:00 = 美东 9:00（非夏令时）/ 21:00（夏令时）
+        'cron_expr': '0 9 * * 1-5',    # 美东 9:00（纽约时区，自动夏/冬令时），开盘前 30 分钟提交 OPG
         'enabled':  False,
     },
     {
         'task_id':  'stop_exits',
         'name':     '止损出场（开盘后 DAY 单）',
         'command':  f'{PYTHON} auto_trader.py --run --exits-only',
-        'cron_expr': '35 21 * * 1-5',  # 北京 21:35 = 美东 9:35（夏令时）开盘后5分钟
+        'cron_expr': '35 9 * * 1-5',   # 美东 9:35（纽约时区），开盘后 5 分钟
         'enabled':  True,
-        'description': '开盘后用 DAY 市价单执行止损/卖出出场（不买入）。盘前 OPG 出场单在模拟盘不撮合、易漏卖，此任务确保止损真正成交。注：cron 按美东夏令时设定，冬令时需后移1小时。',
+        'description': '开盘后用 DAY 市价单执行止损/卖出出场（不买入）。盘前 OPG 出场单在模拟盘不撮合、易漏卖，此任务确保止损真正成交。',
     },
     {
         'task_id':  'confirm_fills',
         'name':     '成交确认（OPG 回报）',
         'command':  f'{PYTHON} confirm_fills.py',
-        'cron_expr': '35 22 * * 1-5',  # 北京 22:35 = 美东 10:35（夏令时），开盘1小时后对账
+        'cron_expr': '35 10 * * 1-5',  # 美东 10:35（纽约时区），开盘约 1 小时后对账
         'enabled':  True,              # 与 stop_exits 配套：买单+DAY出场单成交后回写 DB，避免订单状态长期失真
     },
     {
@@ -75,7 +82,7 @@ DEFAULT_TASKS = [
         'task_id':  'production_signals',
         'name':     '生产信号扫描(因子看板 top10)',
         'command':  f'{PYTHON} -m web.services.production_signal_svc',
-        'cron_expr': '50 21 * * 1-5',  # 北京 周一至五 21:50(美东 08:50,开盘前 40 分钟)
+        'cron_expr': '50 8 * * 1-5',   # 美东 8:50（纽约时区），开盘前 40 分钟
         'enabled':  False,
         'description': '复用 auto_trader.scan_signals 全套(双路扫描+过滤+排名),写 top10 缓存供因子看板「生产信号」展示',
     },
@@ -83,7 +90,7 @@ DEFAULT_TASKS = [
         'task_id':  'market_scan',
         'name':     '市场扫描预热(因子裸值表)',
         'command':  f'{PYTHON} -m web.services.factor_svc --universe ai --top 50',
-        'cron_expr': '45 21 * * 1-5',  # 北京 周一至五 21:45(production_signals 前 5 分钟一起预热)
+        'cron_expr': '45 8 * * 1-5',   # 美东 8:45（纽约时区），production_signals 前 5 分钟一起预热
         'enabled':  False,
         'description': '全池逐股算因子裸值+覆盖率,写文件缓存供市场扫描页秒开,避免用户点开时现场跑',
     },
@@ -91,9 +98,9 @@ DEFAULT_TASKS = [
         'task_id':  'astock_update',
         'name':     'A股盘中实时刷新 + 扫描(主题板块)',
         'command':  f'{PYTHON} -m web.services.astock_momentum_svc --mode theme',
-        'cron_expr': '0,30 10-11,13-15 * * 1-5',  # 北京 交易时段每 30 分钟（10:00~11:30 / 13:00~15:30）
+        'cron_expr': '*/10 9-11,13-15 * * 1-5',  # 北京 交易时段每 10 分钟（含开盘 9:30 起 / 上午~11:30 / 下午13:00~15:00；盘前/午休/盘后空转由 topup 新鲜度校验自动跳过）
         'enabled':  False,
-        'description': 'A股交易时段每 30 分钟用实时快照覆盖当日 bar 并重建主题扫描缓存；15:30 那次即收盘价，次日 astock_refresh 用正式日线复核',
+        'description': 'A股交易时段每 10 分钟用实时快照覆盖当日 bar 并重建主题扫描缓存；含开盘段(9:30起)；15:00 收盘那次即收盘价，次日 astock_refresh 用正式日线复核。单次扫描约 20 秒',
     },
     {
         'task_id':  'astock_refresh',
@@ -113,18 +120,35 @@ DEFAULT_TASKS = [
     },
 ]
 
+# 依赖美股交易时段的任务：cron 按美东时间书写，trigger 用 America/New_York（自动夏/冬令时）。
+# 其余任务（A 股 / 收盘后批处理 / 维护）用 Asia/Shanghai。
+NY_TASKS = {'dry_run', 'auto_trader', 'stop_exits', 'confirm_fills',
+            'production_signals', 'market_scan'}
+
 # 默认任务 cron 调整（非 UTC 迁移）：task_id → 需被替换的旧默认 cron。
 # DB 里命中此旧值时升级到 DEFAULT_TASKS 当前 cron；用户手改过的自定义 cron 不受影响。
 _REPLACE_OLD_CRON = {
-    'astock_update': '30 16 * * 1-5',  # 盘后单次 → 盘中每 30 分钟实时刷新
+    'astock_update': '0,30 10-11,13-15 * * 1-5',  # 每 30 分钟 → 每 10 分钟(且补开盘 9:30 段)
 }
 
-# 旧 UTC cron → 新北京时间 cron（自动迁移）
-_UTC_TO_CST = {
-    '0 14 * * 1-5':  '0 22 * * 1-5',
-    '35 14 * * 1-5': '35 22 * * 1-5',
-    '0 22 * * 1-5':  '0 6 * * 2-6',
-    '0 23 * * 1-5':  '0 7 * * 2-6',
+# 历史 cron 自动迁移：{task_id: {旧值: 新值}}，**按 task_id 限定**避免跨任务误伤
+# （旧版用全局 cron 字符串匹配，把 auto_trader 的目标值 '0 22 * * 1-5' 误当 UTC 迁成
+#  '0 6 * * 2-6'，导致 OPG 单跑到收盘后——此处按 task_id 隔离根治）。
+# 仅当 DB 现值精确命中下列旧值才迁移；用户自定义过的 cron 不受影响。
+_MIGRATE = {
+    # 美股任务：旧北京时间 / 旧 UTC / 被旧 bug 改坏值 → 新美东时间（纽约时区）
+    'auto_trader':        {'0 22 * * 1-5': '0 9 * * 1-5',
+                           '0 6 * * 2-6':  '0 9 * * 1-5',
+                           '0 14 * * 1-5': '0 9 * * 1-5'},
+    'confirm_fills':      {'35 22 * * 1-5': '35 10 * * 1-5',
+                           '35 14 * * 1-5': '35 10 * * 1-5'},
+    'stop_exits':         {'35 21 * * 1-5': '35 9 * * 1-5'},
+    'dry_run':            {'30 21 * * 1-5': '30 8 * * 1-5'},
+    'market_scan':        {'45 21 * * 1-5': '45 8 * * 1-5'},
+    'production_signals': {'50 21 * * 1-5': '50 8 * * 1-5'},
+    # 收盘后批处理：保持北京时间，仅迁移更老的 UTC 残留值
+    'sp500_scanner':      {'0 22 * * 1-5': '0 6 * * 2-6'},
+    'data_update':        {'0 23 * * 1-5': '0 7 * * 2-6'},
 }
 
 
@@ -142,6 +166,24 @@ class SchedulerService:
         self.scheduler = BackgroundScheduler(timezone='Asia/Shanghai')
         self._local = threading.local()  # 每个线程独立 DB 连接，避免 sqlite3 并发 segfault
         self._lock = threading.Lock()
+        self._lock_fp = None             # 单实例文件锁的 fd（持有期间不关闭）
+
+    def _acquire_singleton_lock(self) -> bool:
+        """抢占跨进程单实例锁（flock 非阻塞）。抢到返回 True 并持有 fd 直到进程退出。"""
+        import fcntl
+        try:
+            fp = open(_SCHED_LOCK_PATH, 'w')
+            fcntl.flock(fp.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fp.write(str(os.getpid()))
+            fp.flush()
+            self._lock_fp = fp          # 保持引用，进程存活期间不释放
+            return True
+        except (OSError, BlockingIOError):
+            try:
+                fp.close()
+            except Exception:
+                pass
+            return False
 
     def _get_db(self) -> Database:
         if not hasattr(self._local, 'db'):
@@ -150,7 +192,13 @@ class SchedulerService:
         return self._local.db
 
     def start(self):
-        """启动调度器，加载 DB 中的任务"""
+        """启动调度器，加载 DB 中的任务（受单实例锁保护，抢不到则只服务 API 不调度）"""
+        import logging
+        if not self._acquire_singleton_lock():
+            logging.getLogger(__name__).warning(
+                "[scheduler] 调度锁被其它进程持有（多开/--reload 残留 worker？），"
+                "本进程仅服务 API，不启动调度器，避免定时任务重复执行")
+            return
         self._seed_defaults()
         # 清理上次服务崩溃遗留的僵尸 runs
         n = self._get_db().reap_zombie_runs(timeout_minutes=5)
@@ -172,7 +220,18 @@ class SchedulerService:
         self._get_db().reap_zombie_runs(timeout_minutes=5)
 
     def stop(self):
-        self.scheduler.shutdown(wait=False)
+        try:
+            if self.scheduler.running:
+                self.scheduler.shutdown(wait=False)
+        except Exception:
+            pass
+        # 释放单实例锁
+        if self._lock_fp is not None:
+            try:
+                self._lock_fp.close()   # 关闭即释放 flock
+            except Exception:
+                pass
+            self._lock_fp = None
 
     def _seed_defaults(self):
         """写入预设任务；已存在时若 cron 为旧 UTC 格式则自动迁移到北京时间"""
@@ -189,12 +248,13 @@ class SchedulerService:
                 )
             else:
                 old_cron = existing[t['task_id']][3]
-                if old_cron in _UTC_TO_CST:
+                migrate = _MIGRATE.get(t['task_id'], {})
+                if old_cron in migrate:
                     db.upsert_task(
                         task_id=t['task_id'],
                         name=t['name'],
                         command=t['command'],
-                        cron_expr=_UTC_TO_CST[old_cron],
+                        cron_expr=migrate[old_cron],
                         enabled=existing[t['task_id']][4],
                     )
                 elif _REPLACE_OLD_CRON.get(t['task_id']) == old_cron:
@@ -222,10 +282,11 @@ class SchedulerService:
         if len(parts) != 5:
             return
         mn, hr, dm, mo, dw = parts
+        tz = 'America/New_York' if task_id in NY_TASKS else 'Asia/Shanghai'
         trigger = CronTrigger(
             minute=mn, hour=hr, day=dm, month=mo,
             day_of_week=re.sub(r'\d+', lambda m: str((int(m.group()) - 1) % 7), dw) if dw != '*' else dw,
-            timezone='Asia/Shanghai',
+            timezone=tz,
         )
         self.scheduler.add_job(
             func=self._execute_task,
@@ -300,6 +361,7 @@ class SchedulerService:
                 'enabled':    bool(enabled),
                 'next_run':   next_run,
                 'last_run':   last_run,
+                'tz':         'America/New_York' if task_id in NY_TASKS else 'Asia/Shanghai',
             })
         return result
 

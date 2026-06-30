@@ -3,7 +3,7 @@
 与美股 ai_momentum_svc.py 并行：
 - 复用其纯价格量算法（_pct_change/_vol_ratio/_flow_metrics/_flow_score_0_10/_zscore_to_0_10）
 - 基准 SPY → 沪深300（HS300）
-- 双板块模式 mode='sw'（申万一级行业全市场轮动）| 'theme'（自定义主题板块）
+- 主题板块模式 mode='theme'（AI 硬件自定义主题板块）
 
 输出结构与美股动能 svc 完全一致（rows/groups/basket/top4），前端复用同款渲染。
 """
@@ -82,50 +82,35 @@ _scan_running: dict[str, bool] = {}
 _scan_lock = threading.Lock()
 
 
-# ── 板块定义：sw（申万行业）/ theme（主题）──────────────────
+# ── 板块定义：theme（主题板块）──────────────────────────────
 
-def _build_groups(mode: str) -> tuple[dict, dict, dict]:
-    """返回 (groups_cfg, sym_to_group, code_names)。
+def _build_groups(mode: str = 'theme') -> tuple[dict, dict, dict, dict, dict]:
+    """两级返回 (subcats_cfg, sym_to_subcat, boards_cfg, sym_to_board, code_names)。
 
-    groups_cfg: { group_key: {label, color, symbols[]} }
-    sym_to_group: { code: group_key }
-    code_names: { code: 名称 }
+    subcats_cfg : 细分小分类(50+) { subcat_key: {label,color,symbols[]} } —— 每只股票后面跟的「分类」标签来源
+    sym_to_subcat: { code: subcat_key }
+    boards_cfg  : 板块(17) { board_key: {label,color} } —— 板块卡 / 板块强度 / 筛选 / 分层 的聚合维度
+    sym_to_board: { code: board_key }（= board_of(细分)）
+    code_names  : { code: 名称 }
     """
-    groups_cfg: dict = {}
-    sym_to_group: dict = {}
-    code_names: dict = {}
+    subcats_cfg: dict = {}
+    sym_to_subcat: dict = {}
 
-    if mode == 'sw':
-        sw = _au.get_sw_l1_industries(top_n=40)
-        palette = ['#f97316', '#a855f7', '#22c55e', '#ef4444', '#3b82f6',
-                   '#eab308', '#06b6d4', '#ec4899', '#14b8a6', '#8b5cf6']
-        for i, (ind_name, info) in enumerate(sw.items()):
-            gk = info['code']
-            groups_cfg[gk] = {
-                'label': ind_name,
-                'color': palette[i % len(palette)],
-                'symbols': info['symbols'],
-            }
-            code_names.update(info.get('names', {}))
-            for code in info['symbols']:
-                if code not in sym_to_group:
-                    sym_to_group[code] = gk
-    else:  # theme
-        themes = _au.load_themes().get('groups', {})
-        for gk, gv in themes.items():
-            groups_cfg[gk] = {
-                'label': gv['label'],
-                'color': gv.get('color', '#94a3b8'),
-                'symbols': [str(s).zfill(6) for s in gv.get('symbols', [])],
-            }
-            for code in groups_cfg[gk]['symbols']:
-                if code not in sym_to_group:
-                    sym_to_group[code] = gk
-        # 主题模式补名称
-        all_codes = list(sym_to_group.keys())
-        code_names = _au.get_astock_names(all_codes)
+    themes = _au.load_themes().get('groups', {})
+    for gk, gv in themes.items():
+        subcats_cfg[gk] = {
+            'label': gv['label'],
+            'color': gv.get('color', '#94a3b8'),
+            'symbols': [str(s).zfill(6) for s in gv.get('symbols', [])],
+        }
+        for code in subcats_cfg[gk]['symbols']:
+            if code not in sym_to_subcat:
+                sym_to_subcat[code] = gk
+    sym_to_board = {code: _au.board_of(sc) for code, sc in sym_to_subcat.items()}
+    boards_cfg = {bk: {'label': bv['label'], 'color': bv['color']} for bk, bv in _au.BOARDS.items()}
+    code_names = _au.get_astock_names(list(sym_to_subcat.keys()))
 
-    return groups_cfg, sym_to_group, code_names
+    return subcats_cfg, sym_to_subcat, boards_cfg, sym_to_board, code_names
 
 
 # ── 缓存 ──────────────────────────────────────────────────
@@ -153,10 +138,9 @@ def _write_cache(mode: str, data: dict) -> None:
 
 # ── 主入口 ──────────────────────────────────────────────────
 
-def scan_momentum(mode: str = 'sw', force: bool = False) -> dict:
-    """A 股动能扫描。mode='sw'（申万行业）|'theme'（主题板块）。"""
-    if mode not in ('sw', 'theme'):
-        mode = 'sw'
+def scan_momentum(mode: str = 'theme', force: bool = False) -> dict:
+    """A 股动能扫描（主题板块）。mode 兼容旧参数，恒按 theme 处理。"""
+    mode = 'theme'
 
     cached = _read_cache(mode)
     if not force and cached is not None:
@@ -197,8 +181,8 @@ def _run_scan_bg(mode: str) -> None:
 
 
 def _do_scan(mode: str, refresh: bool = False) -> dict:
-    groups_cfg, sym_to_group, code_names = _build_groups(mode)
-    all_syms = list(sym_to_group.keys())
+    subcats_cfg, sym_to_subcat, boards_cfg, sym_to_board, code_names = _build_groups(mode)
+    all_syms = list(sym_to_subcat.keys())
     _logger.info(f'[AStockMomentum/{mode}] 扫描 {len(all_syms)} 只...')
 
     store = AStockDataStore()
@@ -257,12 +241,38 @@ def _do_scan(mode: str, refresh: bool = False) -> dict:
         # 流通市值（亿元）= 收盘价 × 流通股本；无股本数据时为 None
         shares = df['shares'].iloc[-1] if 'shares' in df.columns else None
         market_cap = (last_close * float(shares) / 1e8) if (shares is not None and not pd.isna(shares)) else None
-        gk = sym_to_group[sym]
+        # 换手率%（最新一天）= 成交量 / 流通股本；异动倍数 = 今日 / 近20日均（不含今日）
+        # 标记口径用异动倍数（相对自身爆量），不受流通盘大小干扰，不误伤天然高换手的小盘
+        turnover = turnover_surge = None
+        if 'shares' in df.columns:
+            to_series = (df['volume'] / df['shares'] * 100).replace([np.inf, -np.inf], np.nan)
+            tv = to_series.iloc[-1]
+            if pd.notna(tv):
+                turnover = float(tv)
+                prev = to_series.iloc[-21:-1].dropna()
+                if len(prev) >= 5 and prev.mean() > 0:
+                    turnover_surge = round(turnover / prev.mean(), 2)
+        # YTD 年初至今涨幅（用窗口内今年首个交易日 close 为基准）
+        ytd = None
+        _ytd_mask = df.index >= pd.Timestamp(datetime.now().year, 1, 1)
+        if _ytd_mask.any():
+            _ytd_base = float(df['close'][_ytd_mask].iloc[0])
+            if _ytd_base > 0:
+                ytd = last_close / _ytd_base - 1.0
+        subcat = sym_to_subcat[sym]
+        board = sym_to_board[sym]
         raw_rows.append({
             'symbol': sym, 'name': code_names.get(sym, sym),
-            'group': gk, 'group_label': groups_cfg[gk]['label'],
-            'group_color': groups_cfg[gk].get('color', '#94a3b8'),
+            # group = 板块(17):驱动板块卡 / 板块强度(group_rank) / 组内(rs_vs_group) / 筛选
+            'group': board, 'group_label': boards_cfg[board]['label'],
+            'group_color': boards_cfg[board].get('color', '#94a3b8'),
+            # subcat = 细分(50+):股票后面跟的「分类」标签(前端 badge 用)
+            'subcat': subcat, 'subcat_label': subcats_cfg[subcat]['label'],
+            'subcat_color': subcats_cfg[subcat].get('color', '#94a3b8'),
             'close': last_close, 'market_cap': market_cap,
+            'turnover': round(turnover, 2) if turnover is not None else None,
+            'turnover_surge': turnover_surge,
+            'ytd': round(ytd, 4) if ytd is not None else None,
             'mom_3d': mom_3d, 'mom_5d': mom_5d, 'mom_10d': mom_10d,
             'rs_3d': rs_3d, 'rs_5d': rs_5d, 'rs_10d': rs_10d,
             'vol_ratio': vr, 'obv_slope': flow['obv_slope'],
@@ -329,25 +339,32 @@ def _do_scan(mode: str, refresh: bool = False) -> dict:
             r['group_rank'] = idx + 1
             r['group_size'] = len(_members)
 
-    # 子组聚合
+    # 板块聚合(17 板块,空板块跳过)
+    def _med(ms: list[dict], fld: str):
+        vs = [r[fld] for r in ms if r.get(fld) is not None]
+        return float(np.median(vs)) if vs else None
+
     groups_summary: list[dict] = []
-    for gk, gv in groups_cfg.items():
+    for gk, gv in boards_cfg.items():
         members = [r for r in raw_rows if r['group'] == gk]
         if not members:
             continue
-        rs5_vals = [r['rs_5d'] for r in members if r['rs_5d'] is not None]
-        mom5_vals = [r['mom_5d'] for r in members if r['mom_5d'] is not None]
         flow_vals_g = [r['flow_score'] for r in members]
-        advance = sum(1 for r in members if (r['rs_5d'] or 0) > 0)
+        # 各周期红绿家数（按该周期相对沪深300超额 > 0）
+        adv = {p: sum(1 for r in members if (r[f'rs_{p}'] or 0) > 0) for p in ('3d', '5d', '10d')}
         leaders = sorted(members, key=lambda x: x['composite'], reverse=True)[:3]
         median_flow = float(np.median(flow_vals_g)) if flow_vals_g else 5.0
         flow_signal = 'inflow' if median_flow > 6 else ('outflow' if median_flow < 4 else 'neutral')
         groups_summary.append({
             'key': gk, 'label': gv['label'], 'color': gv.get('color', '#94a3b8'),
             'count': len(members),
-            'median_mom_5d': float(np.median(mom5_vals)) if mom5_vals else None,
-            'median_rs_5d': float(np.median(rs5_vals)) if rs5_vals else None,
-            'advance': advance, 'decline': len(members) - advance,
+            # 板块中位：绝对涨跌幅 median_mom_* 与相对沪深300超额 median_rs_*（前端按 3/5/10 日窗口切换）
+            'median_mom_3d': _med(members, 'mom_3d'), 'median_mom_5d': _med(members, 'mom_5d'),
+            'median_mom_10d': _med(members, 'mom_10d'),
+            'median_rs_3d': _med(members, 'rs_3d'), 'median_rs_5d': _med(members, 'rs_5d'),
+            'median_rs_10d': _med(members, 'rs_10d'),
+            'advance': adv['5d'], 'decline': len(members) - adv['5d'],   # 兼容旧字段（默认 5 日）
+            'advance_3d': adv['3d'], 'advance_5d': adv['5d'], 'advance_10d': adv['10d'],
             'flow_score': round(median_flow, 2), 'flow_signal': flow_signal,
             'leaders': [{'symbol': r['symbol'], 'name': r.get('name', r['symbol']),
                          'composite': r['composite']} for r in leaders],
@@ -357,8 +374,15 @@ def _do_scan(mode: str, refresh: bool = False) -> dict:
     basket = _compute_basket_flow_cny(price_map, all_syms)
     top4 = [r['symbol'] for r in raw_rows[:4]]
 
+    # 细分小分类目录(给「添加股票」下拉用：归入的是细分,不是板块)
+    subcats_catalog = [
+        {'key': k, 'label': v['label'], 'color': v['color'],
+         'board': _au.board_of(k), 'board_label': boards_cfg.get(_au.board_of(k), {}).get('label', '')}
+        for k, v in subcats_cfg.items()
+    ]
     result = _clean_floats({
         'rows': raw_rows, 'groups': groups_summary, 'basket': basket,
+        'subcats': subcats_catalog,
         'top4': top4, 'mode': mode,
         'benchmark': {'mom_3d': b3, 'mom_5d': b5, 'mom_10d': b10},
         'total': len(raw_rows),
@@ -474,8 +498,23 @@ def get_astock_detail(code: str, days: int = 120) -> dict:
         'turnover': float(turn.iloc[-1]) if (turn is not None and not pd.isna(turn.iloc[-1])) else None,
         'turnover_5d': float(turn.tail(5).mean()) if (turn is not None and turn.tail(5).notna().any()) else None,
     }
+    # 年初至今涨跌幅（基准=去年最后收盘，无则今年首个交易日收盘）
+    ytd = None
+    try:
+        cur_year = df.index[-1].year
+        prev = df[df.index.year < cur_year]
+        if len(prev) > 0:
+            base = float(prev['close'].iloc[-1])
+        else:
+            this_year = df[df.index.year == cur_year]
+            base = float(this_year['close'].iloc[0]) if len(this_year) >= 2 else None
+        if base and base > 0:
+            ytd = (last_close - base) / base
+    except Exception:
+        ytd = None
+
     return _clean_floats({'ohlcv': ohlcv[-days:], 'factors': factors[-days:],
-                          'fundamental': {}, 'info': info})
+                          'fundamental': {}, 'info': info, 'ytd': ytd})
 
 
 # ── 命令行入口：盘后增量更新 + 重建扫描缓存（供调度器调用）──────────
@@ -483,12 +522,12 @@ if __name__ == '__main__':
     import argparse
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(message)s', datefmt='%H:%M:%S')
     parser = argparse.ArgumentParser(description='A 股盘后数据更新 + 扫描缓存重建')
-    parser.add_argument('--mode', choices=['sw', 'theme', 'all'], default='all',
-                        help='更新哪种模式的缓存（默认全部）')
+    parser.add_argument('--mode', choices=['theme'], default='theme',
+                        help='更新哪种模式的缓存（仅主题板块）')
     parser.add_argument('--refresh', action='store_true',
                         help='次日复核：重拉正式前复权日线覆盖前一日快照 bar（次日早任务用）')
     args = parser.parse_args()
-    modes = ['theme', 'sw'] if args.mode == 'all' else [args.mode]
+    modes = ['theme']
     tag = '次日复核' if args.refresh else '盘后更新'
     for _m in modes:
         _logger.info(f'[AStockUpdate/{tag}] 开始 {_m} ...')

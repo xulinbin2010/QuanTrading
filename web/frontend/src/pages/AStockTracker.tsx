@@ -3,11 +3,13 @@
  * 申万行业全市场轮动（sw）+ 自定义主题板块（theme），两个 tab 切换。
  * UI 结构复用 AITracker 的动能轮动设计。
  */
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import ReactECharts from 'echarts-for-react'
 import { getAStockMomentum, classifyAStock, addAStockTheme, removeAStockTheme } from '../api/client'
 import SymbolLink from '../components/SymbolLink'
+import LeaderBadge from '../components/LeaderBadge'
+import AStockRebalancePanel from '../components/AStockRebalancePanel'
 import { ASTOCK_LEADERS } from '../data/astockLeaders'
 
 // ── 辅助函数 ──────────────────────────────────────────────────
@@ -24,22 +26,27 @@ function pctColor(v: number | null | undefined): string {
   return 'text-red-500/80'
 }
 
-// 30 个细分主题归并为 10 个中类（板块卡 + 过滤用；细分降为股票上的标签）。
-// 仅 theme 模式生效；sw（申万行业）模式保持原行业分组不变。
-// AI 硬件产业链分层（上游→中游→下游→配套），每层挂其子主题；覆盖全部 30 主题
+// 主题板块归并为 17 个中类（板块卡 + 过滤用）。仅 theme 模式生效；sw（申万行业）模式保持原行业分组不变。
+// AI 硬件产业链分层（上游→中游→下游→配套），每层挂其子主题；覆盖全部 17 主题
+// ⚠️ 以后通过 /#/astock 新增「全新主题板块」时，务必在下方某一层的 groups 里挂上对应 key，
+//    否则该板块会落入自动兜底的「其他」层（该层 cards 为空时隐藏，等于前端看不到）。
 const ASTOCK_CHAIN_LAYERS: { title: string; flow: string; groups: string[] }[] = [
-  { title: '上游 · 材料 / 设备', flow: '芯片与电路板的原料、造芯片的工具',
-    groups: ['semi_substrate', 'semi_litho', 'semi_chem', 'semi_equip', 'glass_fiber', 'ccl', 'copper_foil', 'resin', 'passive'] },
-  { title: '上游 · 芯片设计', flow: 'GPU / 存储 / 模拟 / 功率 / 光芯片',
-    groups: ['chip_compute', 'storage', 'analog_chip', 'power_semi', 'optical_chip'] },
+  { title: '上游 · 材料', flow: '半导体材料·覆铜板/PCB材料·先进封装基板',
+    groups: ['semi_material', 'ccl_material', 'adv_substrate'] },
+  { title: '上游 · 设备', flow: '造芯片的工具',
+    groups: ['semi_equip'] },
+  { title: '上游 · 芯片设计', flow: 'GPU/算力 · 存储 · 模拟/功率',
+    groups: ['chip_compute', 'storage', 'analog_power_chip'] },
   { title: '中游 · 制造封测', flow: '晶圆代工与封装测试',
-    groups: ['foundry', 'packaging'] },
-  { title: '中游 · 光互连 / 连接 / PCB', flow: '光模块·光纤·高速铜缆·算力载板',
-    groups: ['optical', 'fiber_cable', 'ocs', 'connector', 'pcb'] },
-  { title: '下游 · 服务器 / 数据中心', flow: '整机·散热·配电·运营·租赁',
-    groups: ['server', 'idc', 'cooling', 'power_supply', 'display_panel', 'compute_lease'] },
-  { title: '配套 · 电力', flow: '电网·变压·燃机·算电协同，贯穿全链',
-    groups: ['power_grid', 'gas_turbine', 'power_compute'] },
+    groups: ['foundry_pkg'] },
+  { title: '中游 · 元件 / 载板', flow: '被动元件·算力 PCB 载板',
+    groups: ['passive', 'pcb'] },
+  { title: '中游 · 光互连 / 连接', flow: '光模块·光纤·光交换·高速铜缆',
+    groups: ['optical', 'connector'] },
+  { title: '下游 · 服务器 / 数据中心', flow: '整机·运营租赁·散热·显示',
+    groups: ['server', 'idc', 'cooling', 'display_panel'] },
+  { title: '配套 · 电力', flow: '电网·变压·燃机·算电协同·配电，贯穿全链',
+    groups: ['power'] },
 ]
 // 所有已分层的主题 key（用于兜底：未分层的新主题进「其他」）
 const LAYERED_GROUP_KEYS = new Set(ASTOCK_CHAIN_LAYERS.flatMap(l => l.groups))
@@ -81,18 +88,22 @@ function FlowBar({ score }: { score: number }) {
   )
 }
 
-function GroupCard({ g, active, onClick }: {
-  g: any; active: boolean; onClick: () => void
+function GroupCard({ g, active, onClick, period = '5d' }: {
+  g: any; active: boolean; onClick: () => void; period?: '3d' | '5d' | '10d'
 }) {
-  const rs5 = g.median_rs_5d ?? 0
-  const intensity = Math.max(-1, Math.min(1, rs5 / 0.03))  // A股振幅小，±3% 满色
+  const rs = g[`median_rs_${period}`] ?? 0
+  const mom = g[`median_mom_${period}`]
+  const adv = g[`advance_${period}`] ?? g.advance ?? 0
+  const dec = g.count != null ? g.count - adv : (g.decline ?? 0)
+  const pd = period.replace('d', '')
+  const intensity = Math.max(-1, Math.min(1, rs / 0.03))  // A股振幅小，±3% 满色
   const bg = intensity > 0
     ? `rgba(16,185,129,${0.15 + Math.abs(intensity) * 0.35})`
     : `rgba(239,68,68,${0.15 + Math.abs(intensity) * 0.35})`
-  const tone = rs5 >= 0 ? 'pos' : 'neg'
+  const tone = rs >= 0 ? 'pos' : 'neg'
   return (
     <button onClick={onClick}
-      title={`${g.label}：板块中位 5 日相对沪深300 ${pctFmt(g.median_rs_5d)}`}
+      title={`${g.label}：板块中位 ${pd} 日相对沪深300 ${pctFmt(g[`median_rs_${period}`])}（绝对涨跌 ${pctFmt(mom)}）`}
       className={`group-card group-card-${tone} text-left rounded-lg border p-2.5 transition-colors ${
         active ? 'border-blue-500' : 'border-slate-700 hover:border-slate-500'}`}
       style={{ background: bg }}>
@@ -100,11 +111,11 @@ function GroupCard({ g, active, onClick }: {
         <span className="w-2 h-2 rounded-full" style={{ background: g.color }} />
         <span className="gc-label text-[11px] text-slate-200 font-medium truncate">{g.label}</span>
       </div>
-      <div className={`gc-rs font-mono text-sm font-bold ${rs5 >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
-        {pctFmt(g.median_rs_5d)}
+      <div className={`gc-rs font-mono text-sm font-bold ${rs >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+        {pctFmt(g[`median_rs_${period}`])}
       </div>
       <div className="gc-ad text-[10px] text-slate-400 mt-0.5">
-        涨 <span className="gc-up text-emerald-300">{g.advance}</span> / 跌 <span className="gc-dn text-red-300">{g.decline}</span>
+        涨 <span className="gc-up text-emerald-300">{adv}</span> / 跌 <span className="gc-dn text-red-300">{dec}</span>
       </div>
     </button>
   )
@@ -164,14 +175,15 @@ function BasketFlowPanel({ basket }: { basket: any }) {
 
 // ── 主页面 ─────────────────────────────────────────────────────
 
-type Mode = 'sw' | 'theme'
-
 export default function AStockTracker() {
   const qc = useQueryClient()
-  const [mode, setMode] = useState<Mode>('theme')
+  const [view, setView] = useState<'scan' | 'trade'>('scan')
+  const mode = 'theme'
   const [window, setWindow] = useState<'composite' | 'trend' | '3d' | '5d' | '10d'>('composite')
-  const [groupFilter, setGroupFilter] = useState<string>('all')
+  const [groupFilter, setGroupFilter] = useState<string>('all')   // 大分类(板块,17)
+  const [subcatFilter, setSubcatFilter] = useState<string>('all') // 小分类(细分),仅在选中板块后可选
   const [emaFilter, setEmaFilter] = useState<'all' | 'ema7' | 'ema21'>('ema21')
+  const [leaderOnly, setLeaderOnly] = useState(false)
   const [priceMin, setPriceMin] = useState('')
   const [priceMax, setPriceMax] = useState('')
   const [capMin, setCapMin] = useState('')
@@ -185,6 +197,8 @@ export default function AStockTracker() {
   const [pickGroup, setPickGroup] = useState('')
   const [busy, setBusy] = useState(false)
   const [addMsg, setAddMsg] = useState('')
+  // 切换大分类(板块)时,重置小分类筛选
+  useEffect(() => { setSubcatFilter('all') }, [groupFilter])
 
   const { data, isLoading } = useQuery({
     queryKey: ['astock-momentum', mode],
@@ -206,14 +220,17 @@ export default function AStockTracker() {
   }
 
   const rows: any[] = data?.rows ?? []
-  const groups: any[] = data?.groups ?? []
+  const groups: any[] = data?.groups ?? []          // 板块(17):板块卡 / 强度 / 筛选 / 分层
+  const subcats: any[] = data?.subcats ?? []        // 细分(50+):股票标签 + 添加下拉
   const basket = data?.basket
   const benchmark = data?.benchmark
-  const groupOptions: { key: string; label: string }[] = groups.map((g: any) => ({ key: g.key, label: g.label }))
+  // 「添加股票」归入的是细分小分类(不是板块),故下拉列细分；按板块分组、组内字母序便于查找
+  const groupOptions: { key: string; label: string; board_label?: string }[] = subcats
+    .map((s: any) => ({ key: s.key, label: s.label, board_label: s.board_label }))
+    .sort((a: any, b: any) => (a.board_label || '').localeCompare(b.board_label || '') || a.label.localeCompare(b.label))
 
   // theme 模式：30 子主题按产业链分层展示；sw 模式：原申万行业组平铺
   const isTheme = mode === 'theme'
-  const groupLabelMap: Record<string, string> = Object.fromEntries(groups.map((g: any) => [g.key, g.label]))
   const groupByKey: Record<string, any> = Object.fromEntries(groups.map((g: any) => [g.key, g]))
   // theme 模式下的分层结构：每层带上有数据的子主题卡；未分层主题归「其他」
   const chainLayers = isTheme
@@ -228,13 +245,26 @@ export default function AStockTracker() {
         },
       ].filter(layer => layer.cards.length > 0)
     : []
-  // 选中标签查找（theme=子主题 key，sw=申万小类 key，都直接取 groups）
+  // 选中标签查找（板块 key，直接取 groups）
   const displayGroups: any[] = groups
-  // 某只股票是否命中当前选中板块（theme/sw 都按子主题 key 精确匹配）
+  // 命中：先按大分类(板块)，再按小分类(细分)双重过滤
   const inActiveGroup = (r: any) => {
-    if (groupFilter === 'all') return true
-    return r.group === groupFilter
+    if (groupFilter !== 'all' && r.group !== groupFilter) return false
+    if (subcatFilter !== 'all' && r.subcat !== subcatFilter) return false
+    return true
   }
+  // 选中大分类(板块)后，列出其下出现的小分类(细分)，带颜色 + 只数，供二级筛选
+  const boardSubcats: { key: string; label: string; color: string; count: number }[] =
+    groupFilter === 'all' ? [] : (() => {
+      const m = new Map<string, { key: string; label: string; color: string; count: number }>()
+      for (const r of rows) {
+        if (r.group !== groupFilter || !r.subcat) continue
+        const e = m.get(r.subcat)
+        if (e) e.count++
+        else m.set(r.subcat, { key: r.subcat, label: r.subcat_label || r.subcat, color: r.subcat_color || '#94a3b8', count: 1 })
+      }
+      return Array.from(m.values()).sort((a, b) => b.count - a.count || a.label.localeCompare(b.label))
+    })()
 
   const doClassify = () => {
     const code = addCode.trim()
@@ -281,6 +311,7 @@ export default function AStockTracker() {
   const tMin = numOr(minTrend, -Infinity)
   const filteredRows = rows.filter(r => {
     if (!inActiveGroup(r)) return false
+    if (leaderOnly && !ASTOCK_LEADERS[r.symbol]) return false
     if (!(emaFilter === 'all' || (emaFilter === 'ema7' ? r.above_ema7 : r.above_ema21))) return false
     if (r.close != null && (r.close < pMin || r.close > pMax)) return false
     // 市值缺失（如申万模式部分股票）不参与过滤，避免误删
@@ -296,6 +327,8 @@ export default function AStockTracker() {
     v == null ? '—' : v >= 10000 ? (v / 10000).toFixed(2) + '万亿' : Math.round(v) + '亿'
   const rsField = window === '3d' ? 'rs_3d' : window === '10d' ? 'rs_10d' : 'rs_5d'
   const sortField = window === '3d' ? 'mom_3d' : window === '5d' ? 'mom_5d' : window === '10d' ? 'mom_10d' : window === 'trend' ? 'trend_score' : 'composite'
+  // 板块颜色卡涨跌幅/超额跟随窗口的 3/5/10 日联动（composite/trend 默认 5 日）
+  const groupPeriod: '3d' | '5d' | '10d' = window === '3d' ? '3d' : window === '10d' ? '10d' : '5d'
   const sortedRows = [...filteredRows].sort((a, b) => (b[sortField] ?? -Infinity) - (a[sortField] ?? -Infinity))
 
   return (
@@ -322,17 +355,22 @@ export default function AStockTracker() {
         </div>
       </div>
 
-      {/* 模式切换 */}
+      {/* Tab 导航：动能扫描 / 半自动调仓（下划线式，与 AI 追踪页同款，避免被误读成操作按钮） */}
       <div className="flex gap-0 border-b border-slate-700">
-        {([['theme','AI 产业链（主题板块）'], ['sw','申万行业（全市场轮动）']] as const).map(([k, l]) => (
-          <button key={k} onClick={() => { setMode(k); setGroupFilter('all') }}
+        {([['scan', '📊 动能扫描'], ['trade', '🛒 半自动调仓']] as const).map(([k, l]) => (
+          <button key={k} onClick={() => setView(k)}
             className={`px-4 py-2 text-sm border-b-2 transition-colors ${
-              mode === k ? 'border-blue-500 text-white font-medium' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
+              view === k
+                ? 'border-blue-500 text-white font-medium'
+                : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
             {l}
           </button>
         ))}
       </div>
 
+      {view === 'trade' && <AStockRebalancePanel />}
+
+      {view === 'scan' && (<>
       {/* 添加股票（主题模式专用：输入代码→自动识别板块→确认加入） */}
       {mode === 'theme' && (
         <div className="bg-slate-800/60 rounded-lg border border-slate-700 p-3 flex flex-wrap items-center gap-2">
@@ -357,7 +395,7 @@ export default function AStockTracker() {
                 className="px-2 py-1 text-xs bg-slate-900 border border-slate-600 rounded text-slate-200 focus:border-blue-500 outline-none">
                 <option value="">选择板块…</option>
                 {groupOptions.map(g => (
-                  <option key={g.key} value={g.key}>{g.label}</option>
+                  <option key={g.key} value={g.key}>{g.board_label ? `${g.board_label} · ${g.label}` : g.label}</option>
                 ))}
               </select>
               <button onClick={doAdd} disabled={busy || !pickGroup}
@@ -376,28 +414,30 @@ export default function AStockTracker() {
       ) : (
         <div className="space-y-4">
           {isTheme ? (
-            // 产业链分层：每层一个标题区，下挂该层子主题卡
-            <div className="space-y-3">
-              {chainLayers.map(layer => (
-                <div key={layer.title}>
-                  <div className="flex items-baseline gap-2 mb-1.5">
-                    <span className="text-xs font-semibold text-slate-300">{layer.title}</span>
-                    <span className="text-[11px] text-slate-500">— {layer.flow}</span>
-                    <span className="text-[10px] text-slate-600">{layer.cards.length} 个板块</span>
-                  </div>
-                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2 pl-3 border-l-2 border-slate-700/60">
+            // 产业链横向泳道：每层一列(上游→下游 从左到右)，列内板块卡竖排；宽屏铺满，窄屏自动换行
+            <div className="flex flex-wrap items-start gap-y-3">
+              {chainLayers.map((layer, li) => (
+                <div key={layer.title} className="flex items-stretch">
+                  <div className="flex flex-col gap-2 w-40 shrink-0">
+                    <div className="border-b-2 border-slate-700/60 pb-1 leading-tight" title={layer.flow}>
+                      <div className="text-xs font-semibold text-slate-300 truncate">{layer.title}</div>
+                      <div className="text-[10px] text-slate-500 truncate">{layer.flow}</div>
+                    </div>
                     {layer.cards.map((g: any) => (
-                      <GroupCard key={g.key} g={g} active={groupFilter === g.key}
+                      <GroupCard key={g.key} g={g} active={groupFilter === g.key} period={groupPeriod}
                         onClick={() => setGroupFilter(f => f === g.key ? 'all' : g.key)} />
                     ))}
                   </div>
+                  {li < chainLayers.length - 1 && (
+                    <div className="flex items-center px-1 text-slate-600 select-none">→</div>
+                  )}
                 </div>
               ))}
             </div>
           ) : (
             <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 xl:grid-cols-8 gap-2">
               {displayGroups.map((g: any) => (
-                <GroupCard key={g.key} g={g} active={groupFilter === g.key}
+                <GroupCard key={g.key} g={g} active={groupFilter === g.key} period={groupPeriod}
                   onClick={() => setGroupFilter(f => f === g.key ? 'all' : g.key)} />
               ))}
             </div>
@@ -420,8 +460,31 @@ export default function AStockTracker() {
                 </span>
               )
             })()}
+            {/* 二级筛选：选中大分类(板块)后，可再点小分类(细分)收窄 */}
+            {groupFilter !== 'all' && boardSubcats.length > 1 && (
+              <span className="inline-flex items-center gap-1 flex-wrap">
+                <span className="text-[11px] text-slate-500 ml-1">小分类</span>
+                <button onClick={() => setSubcatFilter('all')}
+                  className={`px-2 py-0.5 text-xs rounded ${subcatFilter === 'all' ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
+                  全部
+                </button>
+                {boardSubcats.map(sc => (
+                  <button key={sc.key} onClick={() => setSubcatFilter(f => f === sc.key ? 'all' : sc.key)}
+                    title={`${sc.label}（${sc.count} 只）`}
+                    className={`px-2 py-0.5 text-xs rounded ${subcatFilter === sc.key ? 'text-white' : 'text-slate-300 hover:opacity-80'}`}
+                    style={subcatFilter === sc.key ? { background: sc.color } : { background: sc.color + '33' }}>
+                    {sc.label}<span className="opacity-70 ml-1">{sc.count}</span>
+                  </button>
+                ))}
+              </span>
+            )}
             <div className="ml-auto flex items-center gap-2">
-              <span className="text-xs text-slate-500">均线：</span>
+              <button onClick={() => setLeaderOnly(v => !v)}
+                title="只看有龙头标记(🏆/◆/○)的票"
+                className={`px-2 py-1 text-xs rounded ${leaderOnly ? 'bg-amber-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-slate-200'}`}>
+                🏆 只看龙头
+              </button>
+              <span className="text-xs text-slate-500 ml-1">均线：</span>
               {([['ema21','站上EMA21'],['ema7','站上EMA7'],['all','全部']] as const).map(([k, l]) => (
                 <button key={k} onClick={() => setEmaFilter(k)}
                   className={`px-2 py-1 text-xs rounded ${emaFilter === k ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-400 hover:text-slate-200'}`}>
@@ -498,10 +561,11 @@ export default function AStockTracker() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-xs text-slate-400 border-b border-slate-700">
-                  <th className="text-left px-3 py-2.5 font-medium">代码</th>
-                  <th className="text-left px-3 py-2.5 font-medium">名称</th>
+                  <th className="text-left px-3 py-2.5 font-medium">名称（代码）</th>
                   <th className="text-right px-2 py-2.5 font-medium">现价</th>
                   <th className="text-right px-2 py-2.5 font-medium">市值</th>
+                  <th className="text-right px-2 py-2.5 font-medium" title="最新一天换手率 = 成交量 / 流通股本；🔥 = 今日换手 ≥ 近20日均 3 倍(相对自身爆量,与流通盘大小无关)">换手率</th>
+                  <th className="text-right px-2 py-2.5 font-medium" title="年初至今涨幅(YTD)">YTD</th>
                   <th className="text-center px-2 py-2.5 font-medium">综合分</th>
                   <th className="text-center px-2 py-2.5 font-medium" title="板块内 composite 强度排名(短期动量+量能),不等同于机构龙头(无市值/北上/龙虎榜数据)">板块强度</th>
                   <th className="text-center px-2 py-2.5 font-medium">趋势</th>
@@ -519,25 +583,32 @@ export default function AStockTracker() {
               </thead>
               <tbody>
                 {sortedRows.map((r: any, idx: number) => (
-                  <tr key={r.symbol} className="border-b border-slate-700/50 hover:bg-slate-750 transition-colors">
-                    <td className="px-3 py-1.5 text-slate-500 text-xs">{idx + 1}
+                  <tr key={r.symbol} className={`border-b border-slate-700/50 hover:bg-slate-750 transition-colors ${ASTOCK_LEADERS[r.symbol] ? 'bg-amber-500/5' : ''}`}>
+                    <td className="px-3 py-1.5 whitespace-nowrap">
+                      <span className="text-slate-500 text-xs mr-1.5">{idx + 1}</span>
                       <SymbolLink symbol={r.symbol} market="a"
-                        className="ml-1.5 font-mono font-medium text-white text-sm" />
-                      {ASTOCK_LEADERS[r.symbol] && (
-                        <span title={ASTOCK_LEADERS[r.symbol].note}
-                          className={`ml-1 cursor-help text-[11px] ${ASTOCK_LEADERS[r.symbol].tier === '◆' ? 'text-sky-400' : ASTOCK_LEADERS[r.symbol].tier === '○' ? 'text-slate-400' : ''}`}>
-                          {ASTOCK_LEADERS[r.symbol].tier}
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-1.5 text-xs text-slate-400 max-w-[120px]">
-                      <div className="truncate">{r.name}</div>
-                      {isTheme && r.group && groupLabelMap[r.group] && (
-                        <span className="inline-block mt-0.5 text-[9px] px-1 rounded bg-slate-700/60 text-slate-400 leading-tight">{groupLabelMap[r.group]}</span>
+                        className="text-sm font-semibold text-slate-100">
+                        {r.name}<span className="font-mono text-xs text-slate-400 font-normal">（{r.symbol}）</span>
+                      </SymbolLink>
+                      <LeaderBadge code={r.symbol} className="ml-1" />
+                      {/* 股票后面跟「细分小分类」标签(如 玻璃基板),不是板块名 */}
+                      {isTheme && r.subcat_label && (
+                        <span className="ml-1.5 inline-block text-[9px] px-1 rounded bg-slate-700/60 text-slate-400 leading-tight">{r.subcat_label}</span>
                       )}
                     </td>
                     <td className="px-2 py-1.5 text-right font-mono text-xs text-slate-300">{r.close != null ? r.close.toFixed(2) : '—'}</td>
                     <td className="px-2 py-1.5 text-right font-mono text-xs text-slate-400">{fmtCap(r.market_cap)}</td>
+                    <td className="px-2 py-1.5 text-right font-mono text-xs">
+                      {r.turnover == null ? <span className="text-slate-600">—</span> : (
+                        <span className={r.turnover_surge != null && r.turnover_surge >= 3 ? 'text-amber-400' : 'text-slate-400'}>
+                          {r.turnover.toFixed(1)}%
+                          {r.turnover_surge != null && r.turnover_surge >= 3 && (
+                            <span title={`换手异动 ${r.turnover_surge}×(今日 / 近20日均)`}> 🔥</span>
+                          )}
+                        </span>
+                      )}
+                    </td>
+                    <td className={`px-2 py-1.5 text-right font-mono text-xs ${pctColor(r.ytd)}`}>{pctFmt(r.ytd, 0)}</td>
                     <td className="px-2 py-1.5 text-center"><CompositeBadge score={r.composite} /></td>
                     <td className="px-2 py-1.5 text-center text-sm">
                       {r.group_rank == null ? (
@@ -602,15 +673,16 @@ export default function AStockTracker() {
       )}
 
       {/* 说明 */}
-      <div className="text-xs text-slate-400 space-y-0.5">
-        <div>· 龙头标记(代码后)：<span className="text-amber-300">🏆</span> 全球第一/垄断 · <span className="text-sky-400">◆</span> 全球前列 · <span className="text-slate-400">○</span> 国产替代龙头(定性参考，鼠标悬停看具体领域)</div>
+      <div className="text-sm text-slate-400 space-y-1">
+        <div>· 龙头标记(代码后)：<span className="text-amber-400">▲</span> 全球第一/垄断 · <span className="text-sky-400">◆</span> 全球前列 · <span className="text-emerald-400">●</span> 国产替代龙头(定性参考，鼠标悬停看具体领域)</div>
         <div>· 综合分 = 0.35×5日相对沪深300 + 0.20×3日相对沪深300 + 0.20×组内排名 + 0.15×量比 + 0.10×资金流（z-score 归一 0-10）</div>
         <div>· 加速 ▲：3日日均收益 &gt; 5日日均收益</div>
         <div>· 均线：<span className="text-emerald-300">强</span>=站上EMA7+EMA21 / <span className="text-amber-300">破7</span>=跌破EMA7仍站上EMA21 / <span className="text-red-300">破21</span>=跌破EMA21中期走弱；默认隐藏破EMA21，可切「全部」查看</div>
         <div>· 趋势分（0-10）：近20日站上EMA7占比 + log价格回归R²（平滑爬升·仅上升有效），暴涨（单日&gt;9.5%/区间&gt;50%）扣分。找<span className="text-emerald-300">稳步爬升不暴涨</span>的票就按趋势分排序或筛「趋势股」</div>
         <div>· 资金流：OBV 5日斜率（标准化）+ 上涨日量/下跌日量比；A/D 线按 Parquet 本地数据计算</div>
-        <div>· <span className="text-amber-400">申万行业</span>：每行业取权重最高 40 只；首次扫描较慢（下载行业成分），缓存 30 分钟</div>
+        <div>· 换手率：最新一天成交量÷流通股本；<span className="text-amber-400">🔥</span>=今日换手 ≥ 近20日均 3 倍(相对自身爆量，不看绝对值，不误伤天然高换手的小盘)。仅标记，不参与综合分。</div>
       </div>
+      </>)}
     </div>
   )
 }

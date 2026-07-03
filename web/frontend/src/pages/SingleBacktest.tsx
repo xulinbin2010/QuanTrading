@@ -69,6 +69,11 @@ export default function SingleBacktest() {
   const [allowMargin, setAllowMargin] = useState(false)
   const [maxLeverage, setMaxLeverage] = useState(1.5)
   const [marginRate, setMarginRate]   = useState(0.06)
+  const [retraceMaxLev, setRetraceMaxLev]     = useState(2.0)
+  const [retraceRsiBoost, setRetraceRsiBoost] = useState(false)
+  const [retraceLevels, setRetraceLevels]     = useState([
+    { thr: -12, lev: 0.4 }, { thr: -20, lev: 0.4 }, { thr: -28, lev: 0.4 },
+  ])
 
   const [taskId, setTaskId]   = useState<string | null>(null)
   const [status, setStatus]   = useState<string>('idle')
@@ -123,6 +128,9 @@ export default function SingleBacktest() {
         allow_margin: allowMargin,
         max_leverage: maxLeverage,
         margin_rate: marginRate,
+        retrace_max_leverage: retraceMaxLev,
+        retrace_rsi_boost: retraceRsiBoost,
+        retrace_levels: retraceLevels.map(l => [l.thr / 100, l.lev]),
       })
       setTaskId(r.task_id)
     } catch (e: any) {
@@ -209,6 +217,36 @@ export default function SingleBacktest() {
           {!allowMargin && (
             <span className="text-[11px] text-slate-500">勾选后允许总持仓 &gt; 初始资金（融资买入），常用于牛市单股放大暴露</span>
           )}
+        </div>
+        {/* 逢跌加仓(满仓+杠杆,只买不卖)— 单边牛股增厚 B&H 的对照策略 */}
+        <div className="flex items-center gap-3 pb-2 border-b border-slate-700 flex-wrap">
+          <span className="text-xs text-amber-300">逢跌加仓对照</span>
+          <span className="text-[11px] text-slate-500">满仓底仓 + 从峰值回撤 -12%/-20%/-28% 各加仓，只买不卖(退出靠人工看基本面)</span>
+          <span className="text-xs text-slate-400 ml-2">加仓杠杆上限</span>
+          <input type="number" step={0.1} min={1.0} max={3.0}
+            value={retraceMaxLev}
+            onChange={e => setRetraceMaxLev(Math.max(1.0, Number(e.target.value) || 1.0))}
+            className="w-20 bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white font-mono focus:outline-none focus:border-blue-500" />
+          <span className="text-xs text-slate-400">×</span>
+          <label className="flex items-center gap-2 text-xs text-slate-300 cursor-pointer ml-2">
+            <input type="checkbox" checked={retraceRsiBoost}
+              onChange={e => setRetraceRsiBoost(e.target.checked)}
+              className="accent-amber-500" />
+            RSI&lt;40 超卖加码 ×1.5
+          </label>
+          <span className="text-xs text-slate-400 ml-2">回撤档</span>
+          {retraceLevels.map((l, idx) => (
+            <span key={idx} className="inline-flex items-center gap-1 text-[11px] text-slate-500">
+              <input type="number" step={1} max={0} value={l.thr}
+                onChange={e => setRetraceLevels(ls => ls.map((x, i) => i === idx ? { ...x, thr: Number(e.target.value) } : x))}
+                className="w-12 bg-slate-700 border border-slate-600 rounded px-1 py-0.5 text-white font-mono text-center focus:outline-none focus:border-blue-500" />
+              %加
+              <input type="number" step={0.1} min={0} value={l.lev}
+                onChange={e => setRetraceLevels(ls => ls.map((x, i) => i === idx ? { ...x, lev: Number(e.target.value) } : x))}
+                className="w-12 bg-slate-700 border border-slate-600 rounded px-1 py-0.5 text-white font-mono text-center focus:outline-none focus:border-blue-500" />
+              x
+            </span>
+          ))}
         </div>
         {/* 仓位预设 + 实时最大暴露指标 */}
         <PositionPresetsRow
@@ -427,6 +465,7 @@ function ResultPanel({ data }: { data: any }) {
   const equity    = data.equity_curve || []
   const emaTrades = data.ema_trades   || []
   const rsTrades  = data.rs_trades    || []
+  const retraceTrades = data.retrace_trades || []
   const stats     = data.signal_stats || null
 
   return (
@@ -435,8 +474,8 @@ function ResultPanel({ data }: { data: any }) {
       {stats && <SignalStats stats={stats} />}
 
       {/* 指标对比卡片 */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
-        {(['ema_pullback', 'rs_only', 'buy_hold_base', 'buy_hold', 'spy'] as const).map(key => {
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        {(['ema_pullback', 'retrace_add', 'rs_only', 'buy_hold_base', 'buy_hold', 'spy'] as const).map(key => {
           const s = summaries[key]
           if (!s) return null
           const tone = (s.total_return ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'
@@ -468,6 +507,7 @@ function ResultPanel({ data }: { data: any }) {
         <TradeTable title="EMA21 补仓 — 交易明细" trades={emaTrades} />
         <TradeTable title="RSMomentum 纯策略 — 交易明细" trades={rsTrades} />
       </div>
+      <TradeTable title="逢跌加仓 — 加仓明细(满仓底仓 + 回撤分档加仓，只买不卖)" trades={retraceTrades} />
     </div>
   )
 }
@@ -483,6 +523,8 @@ function EquityChart({ equity }: { equity: any[] }) {
     xAxis: { type: 'category', data: equity.map(p => p.date), axisLabel: { color: c.axis, fontSize: 10 } },
     yAxis: { type: 'value', scale: true, axisLabel: { color: c.axis, fontSize: 10 }, splitLine: { lineStyle: { color: c.grid } } },
     series: [
+      { name: '逢跌加仓(满仓+杠杆)', type: 'line', smooth: true, symbol: 'none',
+        data: equity.map(p => p.retrace_equity), lineStyle: { color: '#fbbf24', width: 2.5 } },
       { name: 'EMA21 补仓', type: 'line', smooth: true, symbol: 'none',
         data: equity.map(p => p.ema_equity), lineStyle: { color: c.emaFast, width: 2 } },
       { name: 'RSMomentum',  type: 'line', smooth: true, symbol: 'none',

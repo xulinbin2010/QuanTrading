@@ -64,6 +64,9 @@ def _parse_args():
     parser.add_argument('--pool-mode', default='strict', choices=['strict', 'ai'],
                         dest='pool_mode',
                         help='strict=纯严格单路(默认,历史可比) / ai=复刻实盘双路+tier+池配额+行业豁免')
+    parser.add_argument('--exit-mode', default='legacy', choices=['legacy', 'simple'],
+                        dest='exit_mode',
+                        help='legacy=多层止损(默认,与基准表一致) / simple=-15%%硬止损+EMA21两日破位(对齐实盘)')
     return parser.parse_args()
 
 
@@ -85,7 +88,11 @@ def run_backtest(
     preloaded_info: dict = None,        # {symbol: info_dict}，由优化器预加载传入，跳过 API 调用
     precomputed_cache=None,             # PrecomputedCache，跳过因子/ATR/breadth 计算
     breakout_proximity_pct: float = 0.05,  # 突破宽松度（0=严格新高，0.05=在高点95%内即可）
+    # 出场模式：'legacy'=多层止损(ATR/移动/时间/量价背离/RS衰退，与历史基准表一致)
+    #          'simple'=精简版(-15%硬止损 + EMA21两日破位，对齐实盘 auto_trader)
+    exit_mode: str = 'legacy',
     # ── 可覆盖的止损参数（None = 使用 config 值，不写 DB）──────────
+    # 注：exit_mode='simple' 时下列 ATR/移动/时间/RS衰退参数不生效，仅 stop_loss_pct 用作 -15% 硬止损线
     stop_loss_pct=None,
     atr_stop_multiplier=None,
     atr_stop_floor=None,
@@ -286,6 +293,15 @@ def run_backtest(
             except Exception:
                 pass
 
+    # 预计算 EMA21（仅 simple 出场模式需要：两日破位判定，与实盘 auto_trader 一致）
+    ema21_series: dict[str, pd.Series] = {}
+    if exit_mode == 'simple':
+        for sym, df in stock_data.items():
+            try:
+                ema21_series[sym] = df['close'].ewm(span=21, adjust=False).mean()
+            except Exception:
+                pass
+
     # ── 批量获取基本面 / 行业数据（复用于过滤 + 行业分类）────
     if preloaded_info is not None:
         _sector_batch = {sym: preloaded_info[sym] for sym in stock_data if sym in preloaded_info}
@@ -474,39 +490,54 @@ def run_backtest(
             ret   = (price - pos['entry_price']) / pos['entry_price']
             pos['peak_price'] = max(pos['peak_price'], price)
             days_held = (date - pos['entry_date']).days
-            # ATR 自适应止损
-            atr14 = pos.get('atr14')
-            if atr14 is not None and atr14 > 0 and pos['entry_price'] > 0:
-                atr_stop_pct = max(ATR_STOP_FLOOR,
-                                   -(ATR_STOP_MULTIPLIER * atr14 / pos['entry_price']))
-            else:
-                atr_stop_pct = STOP_LOSS_PCT
-            if ret <= atr_stop_pct:
-                pending_sells[sym] = '止损'
-            else:
-                peak_ret  = (pos['peak_price'] - pos['entry_price']) / pos['entry_price']
-                trail_ret = (price - pos['peak_price']) / pos['peak_price']
-                # 分级移动止损：浮盈越高触发线越紧
-                if peak_ret >= TRAIL_STOP_TIER2_THRESHOLD:
-                    trail_trigger = TRAIL_STOP_TIER2_PCT
-                elif peak_ret >= TRAIL_STOP_TIER1_THRESHOLD:
-                    trail_trigger = TRAIL_STOP_TIER1_PCT
+            if exit_mode == 'simple':
+                # 出场规则1：硬止损 -15%（T 日收盘价触发）
+                if ret <= STOP_LOSS_PCT:
+                    pending_sells[sym] = '硬止损'
                 else:
-                    trail_trigger = eff_trail_pct
-                if peak_ret >= eff_trail_activate and trail_ret <= trail_trigger:
-                    pending_sells[sym] = '移动止损'
-                elif (TIME_STOP_DAYS > 0
-                      and days_held >= TIME_STOP_DAYS
-                      and ret < TIME_STOP_MIN_RETURN):
-                    pending_sells[sym] = '时间止损'
-                elif sym in signals and date in signals[sym].index:
-                    sig_row = signals[sym].loc[date]
-                    if sig_row['signal'] == -1:
-                        pending_sells[sym] = '量价背离'
-                    elif (RS_DECAY_ENABLED
-                          and ret >= RS_DECAY_MIN_PROFIT
-                          and float(sig_row.get('rs_score', 0)) < RS_DECAY_THRESHOLD):
-                        pending_sells[sym] = 'RS衰退'
+                    # 出场规则2：EMA21 连续两日破位（T、T-1 收盘均 < 各自 EMA21）
+                    # 决策用最近两根已收盘日线，T+1 开盘成交，与实盘 auto_trader 对齐
+                    ema = ema21_series.get(sym)
+                    if ema is not None and date in ema.index:
+                        pe = ema.index.get_loc(date)
+                        if pe >= 1:
+                            c_t1 = float(stock_data[sym]['close'].iloc[pe - 1])
+                            if price < float(ema.iloc[pe]) and c_t1 < float(ema.iloc[pe - 1]):
+                                pending_sells[sym] = '跌破EMA21两日'
+            else:
+                # ATR 自适应止损
+                atr14 = pos.get('atr14')
+                if atr14 is not None and atr14 > 0 and pos['entry_price'] > 0:
+                    atr_stop_pct = max(ATR_STOP_FLOOR,
+                                       -(ATR_STOP_MULTIPLIER * atr14 / pos['entry_price']))
+                else:
+                    atr_stop_pct = STOP_LOSS_PCT
+                if ret <= atr_stop_pct:
+                    pending_sells[sym] = '止损'
+                else:
+                    peak_ret  = (pos['peak_price'] - pos['entry_price']) / pos['entry_price']
+                    trail_ret = (price - pos['peak_price']) / pos['peak_price']
+                    # 分级移动止损：浮盈越高触发线越紧
+                    if peak_ret >= TRAIL_STOP_TIER2_THRESHOLD:
+                        trail_trigger = TRAIL_STOP_TIER2_PCT
+                    elif peak_ret >= TRAIL_STOP_TIER1_THRESHOLD:
+                        trail_trigger = TRAIL_STOP_TIER1_PCT
+                    else:
+                        trail_trigger = eff_trail_pct
+                    if peak_ret >= eff_trail_activate and trail_ret <= trail_trigger:
+                        pending_sells[sym] = '移动止损'
+                    elif (TIME_STOP_DAYS > 0
+                          and days_held >= TIME_STOP_DAYS
+                          and ret < TIME_STOP_MIN_RETURN):
+                        pending_sells[sym] = '时间止损'
+                    elif sym in signals and date in signals[sym].index:
+                        sig_row = signals[sym].loc[date]
+                        if sig_row['signal'] == -1:
+                            pending_sells[sym] = '量价背离'
+                        elif (RS_DECAY_ENABLED
+                              and ret >= RS_DECAY_MIN_PROFIT
+                              and float(sig_row.get('rs_score', 0)) < RS_DECAY_THRESHOLD):
+                            pending_sells[sym] = 'RS衰退'
 
         # SPY 熔断
         spy_ret_20d = spy_rolling_ret.get(date)
@@ -766,6 +797,8 @@ def print_report(result: dict, daily: bool = False):
     stop_losses  = [t for t in trades if t.get('exit_reason') == '止损']
     trail_stops  = [t for t in trades if t.get('exit_reason') == '移动止损']
     vol_div_exits = [t for t in trades if t.get('exit_reason') == '量价背离']
+    hard_stops   = [t for t in trades if t.get('exit_reason') == '硬止损']            # simple 模式 -15%
+    ema_breaks   = [t for t in trades if t.get('exit_reason') == '跌破EMA21两日']      # simple 模式 EMA21
 
     _pm = s.get('pool_mode', 'strict')
     _pm_label = {'strict': '纯严格单路', 'ai': 'AI双路+tier+池配额'}.get(_pm, _pm)
@@ -803,15 +836,19 @@ def print_report(result: dict, daily: bool = False):
         avg_loss = np.mean([t['pnl'] for t in trades if t['pnl'] <= 0]) or 0
         print(f"  平均盈利        ${avg_win:>14,.0f}")
         print(f"  平均亏损        ${avg_loss:>14,.0f}")
-        print(f"  硬止损触发      {len(stop_losses):>14} 笔")
+        # 出场原因统计（按实际出现的原因显示，兼容 legacy 多层止损 / simple 两条规则）
+        if hard_stops:
+            print(f"  -15%硬止损触发  {len(hard_stops):>14} 笔  (总亏损 ${sum(t['pnl'] for t in hard_stops):,.0f})")
+        if ema_breaks:
+            print(f"  EMA21两日破位   {len(ema_breaks):>14} 笔  (平均 {np.mean([t['return'] for t in ema_breaks]):+.1%} 退出)")
         if stop_losses:
-            print(f"  硬止损总亏损    ${sum(t['pnl'] for t in stop_losses):>14,.0f}")
-        print(f"  移动止损触发    {len(trail_stops):>14} 笔")
+            print(f"  ATR/固定止损    {len(stop_losses):>14} 笔  (总亏损 ${sum(t['pnl'] for t in stop_losses):,.0f})")
         if trail_stops:
             ts_total = sum(t['pnl'] for t in trail_stops)
             ts_avg   = np.mean([t['return'] for t in trail_stops])
-            print(f"  移动止损总盈亏  ${ts_total:>14,.0f}  (平均 {ts_avg:+.1%} 退出)")
-        print(f"  量价背离触发    {len(vol_div_exits):>14} 笔")
+            print(f"  移动止损触发    {len(trail_stops):>14} 笔  (总盈亏 ${ts_total:,.0f}，平均 {ts_avg:+.1%} 退出)")
+        if vol_div_exits:
+            print(f"  量价背离触发    {len(vol_div_exits):>14} 笔")
 
     if trades:
         print(f"\n{'='*60}")
@@ -895,6 +932,7 @@ def run():
         universe='sp500+ndx',
         daily=args.daily,
         pool_mode=args.pool_mode,
+        exit_mode=args.exit_mode,
         min_cap_b=args.min_cap_b,
         max_cap_b=args.max_cap_b,
         deny_industries=args.deny_industries,

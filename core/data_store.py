@@ -89,6 +89,7 @@ class DataStore:
         min_rows:   int  = 40,
         auto_update: bool = True,
         force_refresh_recent_days: int = 0,
+        allow_stale: bool = False,
     ) -> dict[str, pd.DataFrame]:
         """
         确保数据是最新的，然后返回 {symbol: DataFrame}。
@@ -97,11 +98,16 @@ class DataStore:
         force_refresh_recent_days: 强制重拉最近 N 个交易日(覆盖 yfinance 在
         美东收盘前/后两次拉取产生的"stale-but-corrupted"数据,典型场景如
         MRVL 5/29 volume 13.75M→33.95M 的校正)。N=0 时为现有 incremental 行为。
+
+        allow_stale: True 时跳过"疑似退市/停牌"过滤，只要本地有数据就返回(末日可能偏旧)。
+        用于研究/对比视图(如收益对比)——这类场景该像回测一样展示已有历史，不应套用
+        选股/实盘的退市过滤。典型：小众杠杆 ETF(如 MUU) yfinance 最近几天有数据缺口、
+        但本地有完整历史，不该被误判退市而整只隐藏。
         """
         end = self._cap_end(end)
         if auto_update:
             self.update(symbols, start, end, force_refresh_recent_days=force_refresh_recent_days)
-        return self._load(symbols, start, end, min_rows)
+        return self._load(symbols, start, end, min_rows, allow_stale=allow_stale)
 
     def update(self, symbols: list[str], start: str, end: str = None,
                force_refresh_recent_days: int = 0) -> bool:
@@ -380,6 +386,7 @@ class DataStore:
         end:       str,
         min_rows:  int,
         max_stale: int = 4,   # 最后一条 K 线比 SPY 最新日早超过 N 日历天，视为退市/停牌
+        allow_stale: bool = False,  # True=跳过退市过滤(研究/对比视图)，只要本地有数据就返回
     ) -> dict[str, pd.DataFrame]:
         result = {}
         ts_start = pd.Timestamp(start)
@@ -396,7 +403,8 @@ class DataStore:
         stale_limit = ref_date - pd.Timedelta(days=max_stale)
         # 只有"请求的 end 本身接近今天"时才做 stale 过滤（选股/实盘场景）。
         # 历史回测的 end 早于 stale_limit，退市股的历史数据应当保留参与计算。
-        check_stale = ts_end >= stale_limit
+        # allow_stale=True（研究/对比视图）则完全不过滤，本地有啥返回啥。
+        check_stale = (ts_end >= stale_limit) and not allow_stale
         for sym in symbols:
             # update() 中 yfinance 对此 symbol 无数据（同批其他有）→ 疑似退市，直接过滤
             # 但仅在实盘/选股场景下过滤；历史回测同样放行

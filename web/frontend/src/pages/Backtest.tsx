@@ -374,7 +374,7 @@ function VixBacktest() {
         </div>
 
         {/* 说明 */}
-        <div className="mt-3 text-xs text-slate-500 space-y-0.5">
+        <div className="mt-3 text-sm text-slate-400 space-y-1">
           <div><span className="text-amber-400">spike模式</span>：VIX当日收盘超过阈值即触发，包含所有恐慌日，样本量多</div>
           <div><span className="text-amber-400">peak模式</span>：VIX超阈值且当日低于昨日（峰值回落），避免接飞刀，买在恐慌缓解时</div>
         </div>

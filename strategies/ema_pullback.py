@@ -53,6 +53,12 @@ def _compute_indicators(df: pd.DataFrame, ema_fast: int, ema_slow: int, atr_peri
     lc = (df['low']  - df['close'].shift(1)).abs()
     tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
     df[f'atr{atr_period}'] = tr.rolling(atr_period).mean()
+    # RSI14（给「回撤加仓」的超卖加码二次确认用）
+    delta = df['close'].diff()
+    gain = delta.clip(lower=0).rolling(14).mean()
+    loss = (-delta.clip(upper=0)).rolling(14).mean()
+    rs = gain / loss.replace(0, np.nan)
+    df['rsi14'] = (100 - 100 / (1 + rs)).fillna(50)
     return df
 
 
@@ -84,6 +90,9 @@ def run_ema_pullback_backtest(
     allow_margin: bool = False,
     max_leverage: float = 1.0,
     margin_rate: float = 0.06,
+    retrace_levels: list | None = None,        # 回撤加仓档 [[回撤阈值,加仓倍数],...]
+    retrace_max_leverage: float = 2.0,         # 回撤加仓策略的总杠杆上限
+    retrace_rsi_boost: bool = False,           # 回撤档触发时若 RSI<40 则加仓力度×1.5
 ) -> dict:
     """单股 EMA21 补仓回测，同时跑 RSMomentum 纯策略对照 + Buy&Hold + SPY。
 
@@ -93,6 +102,11 @@ def run_ema_pullback_backtest(
                        适合在已知是上升趋势股上做"踩 EMA21 网格"
     """
     from core.data_store import DataStore
+
+    if retrace_levels is None:
+        retrace_levels = [(-0.12, 0.4), (-0.20, 0.4), (-0.28, 0.4)]
+    else:
+        retrace_levels = [tuple(x) for x in retrace_levels]
 
     store = DataStore()
 
@@ -147,6 +161,12 @@ def run_ema_pullback_backtest(
     bh_state = _simulate_buy_hold(bt, initial_cash, commission_per_share, budget_pct=1.0)
     # ── 对照：Buy & Hold 同底仓（用 base_pct × cash，与策略底仓暴露一致 → 公平比较）─
     bh_base_state = _simulate_buy_hold(bt, initial_cash, commission_per_share, budget_pct=base_pct)
+    # ── 对照：逢跌加仓（满仓底仓 + 回撤分档加杠杆，只买不卖）— 单边牛股增厚 B&H ─
+    retrace_state = _simulate_retrace_add(
+        bt, initial_cash, retrace_levels, commission_per_share,
+        max_leverage=retrace_max_leverage, margin_rate=margin_rate,
+        rsi_boost=retrace_rsi_boost,
+    )
     # ── 对照：SPY Buy & Hold ───────────────────────────────
     spy_slice = spy_close.loc[bt.index[0]:bt.index[-1]]
     spy_norm  = (spy_slice / spy_slice.iloc[0]) * initial_cash
@@ -161,6 +181,7 @@ def run_ema_pullback_backtest(
             'rs_equity':      float(rs_state['equity_series'].iloc[i]),
             'bh_equity':      float(bh_state['equity_series'].iloc[i]),
             'bh_base_equity': float(bh_base_state['equity_series'].iloc[i]),
+            'retrace_equity': float(retrace_state['equity_series'].iloc[i]),
             'spy_equity':     float(spy_norm.iloc[i]) if i < len(spy_norm) else None,
             'close':          float(bt['close'].iloc[i]),
             'ema_fast':       float(bt[ema_fast_col].iloc[i]) if pd.notna(bt[ema_fast_col].iloc[i]) else None,
@@ -210,8 +231,11 @@ def run_ema_pullback_backtest(
 
     ema_summary = _summary(ema_state, 'EMA21 补仓')
     ema_summary['interest_paid'] = float(ema_state.get('interest_paid', 0.0))
+    retrace_summary = _summary(retrace_state, '逢跌加仓 (满仓+杠杆)')
+    retrace_summary['interest_paid'] = float(retrace_state.get('interest_paid', 0.0))
     summaries = {
         'ema_pullback': ema_summary,
+        'retrace_add':  retrace_summary,
         'rs_only':      _summary(rs_state, 'RSMomentum 纯策略'),
         'buy_hold':     _passive_summary(bh_state,      'B&H 满仓 (100%)'),
         'buy_hold_base': _passive_summary(bh_base_state, f'B&H 同底仓 ({int(base_pct*100)}%)'),
@@ -248,12 +272,16 @@ def run_ema_pullback_backtest(
             'allow_margin':   allow_margin,
             'max_leverage':   max_leverage,
             'margin_rate':    margin_rate,
+            'retrace_levels':       retrace_levels,
+            'retrace_max_leverage': retrace_max_leverage,
+            'retrace_rsi_boost':    retrace_rsi_boost,
         },
         'summaries':     summaries,
         'signal_stats':  signal_stats,
         'equity_curve':  equity_curve,
         'ema_trades':    ema_state['trades'],
         'rs_trades':     rs_state['trades'],
+        'retrace_trades': retrace_state['trades'],
     }
 
 
@@ -553,4 +581,98 @@ def _simulate_buy_hold(bt: pd.DataFrame, cash: float, commission_per_share: floa
             'action': 'buy', 'kind': 'base',
             'price':  float(px0), 'shares': shares, 'pnl': None,
         }],
+    }
+
+
+def _simulate_retrace_add(
+    bt: pd.DataFrame, cash: float, retrace_levels: list,
+    commission_per_share: float,
+    max_leverage: float = 2.0, margin_rate: float = 0.06,
+    rsi_boost: bool = False, rsi_col: str = 'rsi14',
+) -> dict:
+    """满仓底仓 + 从滚动峰值回撤分档加仓（可用 margin）+ 从不主动减仓。
+
+    单边强趋势股「增厚 B&H」的唯一正期望结构：只买不卖，退出靠人工看基本面。
+    - 第一天开盘满仓建底仓（= B&H 基准起点）
+    - close 从峰值回撤达各档阈值 → T+1 开盘加仓，加仓金额 = 倍数 × 当日权益（借 margin）
+    - 总持仓市值上限 = initial_cash × max_leverage
+    - rsi_boost：回撤档触发时若 RSI<40（超卖），加仓力度 ×1.5
+    每档整段回测仅触发一次（避免反复加仓把杠杆堆爆）。
+    """
+    n = len(bt)
+    init_cash = cash
+    total_shares = 0
+    pending: list[dict] = []
+    equity_series: list[float] = []
+    trades: list[dict] = []
+    interest_paid = 0.0
+    daily_rate = margin_rate / 252.0
+    peak: float | None = None
+    fired: set = set()
+
+    closes = bt['close'].values
+    opens  = bt['open'].values
+    rsi_vals = bt[rsi_col].values if rsi_col in bt.columns else [None] * n
+
+    for i in range(n):
+        # 0. 融资利息（cash<0 时按日计息）
+        if cash < 0:
+            interest = -cash * daily_rate
+            cash -= interest
+            interest_paid += interest
+
+        # 1. 执行昨日下的加仓单（今日 open 成交，受总杠杆上限约束）
+        for ord_ in pending:
+            px = opens[i]
+            shares = ord_['shares']
+            room_value = init_cash * max_leverage - total_shares * px
+            if shares * px > room_value:
+                shares = max(0, int(room_value / px))
+            if shares <= 0:
+                continue
+            cash -= shares * px + shares * commission_per_share
+            total_shares += shares
+            trades.append({
+                'date': bt.index[i].strftime('%Y-%m-%d'), 'action': 'buy',
+                'kind': ord_['kind'], 'price': float(px), 'shares': shares, 'pnl': None,
+            })
+        pending = []
+
+        # 2. 第一天开盘满仓建底仓
+        if i == 0:
+            px = opens[0]
+            shares = int(init_cash / px)
+            if shares > 0:
+                cash -= shares * px + shares * commission_per_share
+                total_shares += shares
+                trades.append({
+                    'date': bt.index[0].strftime('%Y-%m-%d'), 'action': 'buy',
+                    'kind': '底仓(满仓)', 'price': float(px), 'shares': shares, 'pnl': None,
+                })
+            peak = closes[0]
+
+        # 3. 今日权益（按 close 估值）
+        equity = cash + total_shares * closes[i]
+        equity_series.append(equity)
+
+        # 4. 更新峰值 + 检测回撤分档加仓（次日开盘成交）
+        c = closes[i]
+        peak = c if peak is None else max(peak, c)
+        dd = c / peak - 1.0 if peak else 0.0
+        for j, (thr, lev) in enumerate(retrace_levels):
+            if j in fired or dd > thr:
+                continue
+            mult = lev
+            rv = rsi_vals[i]
+            if rsi_boost and rv is not None and not pd.isna(rv) and rv < 40:
+                mult *= 1.5
+            shares = int(mult * equity / c)
+            if shares > 0:
+                pending.append({'action': 'buy', 'kind': f'回撤{int(thr * 100)}%档', 'shares': shares})
+            fired.add(j)
+
+    return {
+        'equity_series': pd.Series(equity_series, index=bt.index),
+        'trades':        trades,
+        'interest_paid': float(interest_paid),
     }

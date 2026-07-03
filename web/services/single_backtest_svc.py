@@ -121,6 +121,9 @@ def _run(task_id: str, params: dict):
             allow_margin       = bool(params.get('allow_margin', False)),
             max_leverage       = float(params.get('max_leverage', 1.0)),
             margin_rate        = float(params.get('margin_rate', 0.06)),
+            retrace_levels       = params.get('retrace_levels'),
+            retrace_max_leverage = float(params.get('retrace_max_leverage', 2.0)),
+            retrace_rsi_boost    = bool(params.get('retrace_rsi_boost', False)),
         )
 
         s = result['summaries']['ema_pullback']

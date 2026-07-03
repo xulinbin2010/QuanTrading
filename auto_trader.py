@@ -61,7 +61,7 @@ TIME_STOP_MIN_RETURN    = config.TIME_STOP_MIN_RETURN
 MAX_ENTRY_SLIPPAGE = config.MAX_ENTRY_SLIPPAGE
 
 # 仓位计算：5 × 15% = 75% 持仓 + 25% 现金保留
-SELL_ON_ALERT    = False  # 量价背离时是否自动卖出（False = 只报警，出场由RS衰退/移动止损处理）
+SELL_ON_ALERT    = False  # 已废弃：量价背离出场已下线，恒 False（出场仅 -15%硬止损 + EMA21两日破位）
 
 
 def _entry_date(sym: str, db) -> date | None:
@@ -465,25 +465,19 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib, exits_only: bool 
               f"{'（盘中 DAY 单，开盘后运行可即时成交）' if tif == 'DAY' else '（当前非盘中，出场单仍走 OPG，建议开盘后运行）'}")
     print(f"  订单类型：{tif_label}")
 
-    # ── MSS 自适应：根据市场强度动态覆盖止损/仓位参数 ────────────────────────
+    # ── MSS 自适应：根据市场强度动态覆盖仓位上限 ────────────────────────
     # MSS_BULL/BEAR_MAX_POS 默认与 MAX_POSITIONS 一致，防止静默扩/缩仓位
+    # 注：移动止损已下线（出场仅 -15% 硬止损 + EMA21 两日破位），MSS 不再调止损参数
     mss = signals.get('_mss', 0.0)
-    bull_thr = getattr(config, 'MSS_BULL_THRESHOLD',      0.5)
-    bear_thr = getattr(config, 'MSS_BEAR_THRESHOLD',      0.0)
+    bull_thr = getattr(config, 'MSS_BULL_THRESHOLD', 0.5)
+    bear_thr = getattr(config, 'MSS_BEAR_THRESHOLD', 0.0)
     if mss >= bull_thr:
-        eff_max_pos        = getattr(config, 'MSS_BULL_MAX_POS',        config.MAX_POSITIONS)
-        eff_trail_activate = getattr(config, 'MSS_BULL_TRAIL_ACTIVATE', 0.15)
-        eff_trail_pct      = getattr(config, 'MSS_BULL_TRAIL_PCT',      -0.10)
+        eff_max_pos = getattr(config, 'MSS_BULL_MAX_POS', config.MAX_POSITIONS)
     elif mss < bear_thr:
-        eff_max_pos        = getattr(config, 'MSS_BEAR_MAX_POS',        config.MAX_POSITIONS)
-        eff_trail_activate = getattr(config, 'MSS_BEAR_TRAIL_ACTIVATE', 0.06)
-        eff_trail_pct      = getattr(config, 'MSS_BEAR_TRAIL_PCT',      -0.06)
+        eff_max_pos = getattr(config, 'MSS_BEAR_MAX_POS', config.MAX_POSITIONS)
     else:
-        eff_max_pos        = config.MAX_POSITIONS
-        eff_trail_activate = config.TRAIL_STOP_ACTIVATE_PCT
-        eff_trail_pct      = config.TRAIL_STOP_PCT
-    print(f"  MSS={mss:.2f} ({mss_label(mss)}) → 仓位上限={eff_max_pos}  "
-          f"移动止损激活={eff_trail_activate:.0%} 触发={eff_trail_pct:.0%}")
+        eff_max_pos = config.MAX_POSITIONS
+    print(f"  MSS={mss:.2f} ({mss_label(mss)}) → 仓位上限={eff_max_pos}")
 
     net_liq   = account._get_value('NetLiquidation')
     cash      = account._get_value('TotalCashValue')
@@ -617,231 +611,75 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib, exits_only: bool 
     account.print_balance()   # 顺带存快照到 DB，便于事后审计
     account.print_positions()
 
-    # ── 预加载持仓历史数据（用于移动止损峰值计算，与因子看板逻辑一致）──
+    # ── 预加载持仓历史数据（用于 EMA21 两日破位判定）──
     from core.data_store import DataStore
     held_syms   = [s for s in stock_positions if s not in CASH_EQUIV]
     dl_start    = (date.today() - timedelta(days=400)).strftime('%Y-%m-%d')
     held_data   = DataStore().get(held_syms, start=dl_start, end=date.today().strftime('%Y-%m-%d'),
                                   auto_update=False) if held_syms else {}
 
-    # ── 止损检查 ──────────────────────────────────────────────
-    stop_loss_list = []
+    # ── 出场体系（精简版：-15% 硬止损 + EMA21 两日破位）──────────────
+    # 设计依据：单边趋势票上频繁止损/高抛是负 alpha（见 CLAUDE.md 单股回测教训），
+    # 故只保留两条出场、给趋势充分空间：
+    #   规则1 灾难硬止损：浮亏 ≤ STOP_LOSS_PCT（默认 -15%，按现价/盘前价算）
+    #   规则2 趋势破位：最近两根【已收盘】日线（T-1、T-2）收盘均 < 各自当日 EMA21
+    #         盘前(9:00 ET)运行时当日 bar 未生成，只用已确认收盘，不把盘前现价算作一天
+    EMA_EXIT_PERIOD = 21
+    exit_list = []
     for sym, pos in stock_positions.items():
+        if sym in CASH_EQUIV:
+            continue
         avg_cost  = pos.avgCost
         qty       = int(pos.position)
         cur_price = signals.get('_prices', {}).get(sym)
         if avg_cost <= 0 or qty <= 0 or cur_price is None:
             continue
         ret = (cur_price - avg_cost) / avg_cost
-        # ATR 自适应止损：止损价 = 入场价 - N×ATR14，最大亏损不超过 ATR_STOP_FLOOR
-        atr14 = signals.get('_atr', {}).get(sym)
-        if atr14 is not None and atr14 > 0 and avg_cost > 0:
-            atr_stop_pct = max(config.ATR_STOP_FLOOR, -(config.ATR_STOP_MULTIPLIER * atr14 / avg_cost))
-        else:
-            atr_stop_pct = STOP_LOSS_PCT  # 无ATR数据时回退固定止损
-        if ret <= atr_stop_pct:
-            stop_loss_list.append({
-                'symbol': sym, 'qty': qty,
-                'avg_cost': avg_cost, 'cur_price': cur_price, 'return': ret,
-                'stop_pct': atr_stop_pct,
+
+        # 规则1：硬止损
+        if ret <= STOP_LOSS_PCT:
+            exit_list.append({
+                'symbol': sym, 'qty': qty, 'avg_cost': avg_cost,
+                'cur_price': cur_price, 'return': ret,
+                'reason': f'硬止损（浮亏 {ret:+.1%} ≤ {STOP_LOSS_PCT:.0%}）',
+            })
+            continue
+
+        # 规则2：EMA21 连续两日破位（已收盘 T-1、T-2）
+        df = held_data.get(sym)
+        if df is None or len(df) < EMA_EXIT_PERIOD + 2:
+            continue
+        try:
+            ema21 = df['close'].ewm(span=EMA_EXIT_PERIOD, adjust=False).mean()
+            c_t1, c_t2 = float(df['close'].iloc[-1]), float(df['close'].iloc[-2])
+            e_t1, e_t2 = float(ema21.iloc[-1]),       float(ema21.iloc[-2])
+        except Exception:
+            continue
+        if c_t1 < e_t1 and c_t2 < e_t2:
+            exit_list.append({
+                'symbol': sym, 'qty': qty, 'avg_cost': avg_cost,
+                'cur_price': cur_price, 'return': ret,
+                'reason': (f'跌破EMA{EMA_EXIT_PERIOD}两日'
+                           f'（收 {c_t2:.2f}/{c_t1:.2f} < EMA {e_t2:.2f}/{e_t1:.2f}）'),
             })
 
     print(f"\n{'='*54}")
-    if stop_loss_list:
-        print(f"  止损触发（ATR自适应止损）：{len(stop_loss_list)} 只")
+    if exit_list:
+        print(f"  出场触发（-15%硬止损 / EMA{EMA_EXIT_PERIOD}两日破位）：{len(exit_list)} 只")
         print(f"{'='*54}")
-        for s in stop_loss_list:
+        for s in exit_list:
             print(f"  [{s['symbol']}]  均价 ${s['avg_cost']:.2f} → 现价 ${s['cur_price']:.2f}  "
-                  f"浮亏 {s['return']:.1%}（止损线 {s['stop_pct']:.1%}）")
-            _place_sell(s['symbol'], s['qty'], s['cur_price'], '止损单', 0.95)
+                  f"{s['return']:+.1%}  | {s['reason']}")
+            _place_sell(s['symbol'], s['qty'], s['cur_price'], '出场单', 0.95)
     else:
-        print(f"  无止损触发")
+        print(f"  无出场触发")
         print(f"{'='*54}")
-    exit_orders.extend(stop_loss_list)
+    exit_orders.extend(exit_list)
 
-    # ── EMA 破位止损检查 ─────────────────────────────────────
-    # 强牛市利器：收盘跌破短期 EMA 立即出场，比移动止损更早触发
-    already_hard_stop = {o['symbol'] for o in exit_orders}
-    ema_period       = int(getattr(config, 'EMA_STOP_PERIOD', 8) or 0)
-    ema_stop_list    = []
-    if ema_period > 0:
-        for sym, pos in stock_positions.items():
-            if sym in already_hard_stop or sym in CASH_EQUIV:
-                continue
-            qty       = int(pos.position)
-            cur_price = signals.get('_prices', {}).get(sym)
-            if qty <= 0 or cur_price is None:
-                continue
-            df = held_data.get(sym)
-            if df is None or len(df) < ema_period + 1:
-                continue
-            try:
-                ema_today = float(df['close'].ewm(span=ema_period, adjust=False).mean().iloc[-1])
-            except Exception:
-                continue
-            # 现价已跌破今日 EMA → 触发
-            if cur_price < ema_today:
-                ema_stop_list.append({
-                    'symbol': sym, 'qty': qty,
-                    'avg_cost': pos.avgCost, 'cur_price': cur_price,
-                    'ema':      ema_today,
-                    'return':   (cur_price - pos.avgCost) / pos.avgCost if pos.avgCost > 0 else 0,
-                })
+    # 移动止损/时间止损/量价背离/RS衰退止盈已下线：出场仅由上面两条规则驱动
+    sell_list: list[dict] = []
 
-    print(f"\n{'='*54}")
-    if ema_stop_list:
-        print(f"  EMA{ema_period}破位止损触发：{len(ema_stop_list)} 只")
-        print(f"{'='*54}")
-        for s in ema_stop_list:
-            print(f"  [{s['symbol']}]  均价 ${s['avg_cost']:.2f}  现价 ${s['cur_price']:.2f}  "
-                  f"EMA{ema_period} ${s['ema']:.2f}  {s['return']:+.1%}")
-            _place_sell(s['symbol'], s['qty'], s['cur_price'], f'EMA{ema_period}止损单', 0.95)
-    elif ema_period > 0:
-        print(f"  无 EMA{ema_period} 破位止损触发")
-        print(f"{'='*54}")
-    exit_orders.extend(ema_stop_list)
-
-    # ── 移动止损检查 ──────────────────────────────────────────
-    already_hard_stop = {o['symbol'] for o in exit_orders}
-    trail_stop_list   = []
-    for sym, pos in stock_positions.items():
-        if sym in already_hard_stop or sym in CASH_EQUIV:
-            continue
-        avg_cost  = pos.avgCost
-        qty       = int(pos.position)
-        cur_price = signals.get('_prices', {}).get(sym)
-        if avg_cost <= 0 or qty <= 0 or cur_price is None:
-            continue
-        ed        = _entry_date(sym, db)   # 只看入场日之后的收盘，避免旧历史高点误触发
-        peak      = _peak_price(sym, avg_cost, held_data.get(sym), entry_date=ed)
-        peak_ret  = (peak - avg_cost) / avg_cost
-        trail_ret = (cur_price - peak) / peak
-        # 分级移动止损：浮盈越高触发线越紧
-        if peak_ret >= getattr(config, 'TRAIL_STOP_TIER2_THRESHOLD', 0.35):
-            trail_trigger = getattr(config, 'TRAIL_STOP_TIER2_PCT', -0.04)
-        elif peak_ret >= getattr(config, 'TRAIL_STOP_TIER1_THRESHOLD', 0.20):
-            trail_trigger = getattr(config, 'TRAIL_STOP_TIER1_PCT', -0.06)
-        else:
-            trail_trigger = eff_trail_pct
-        if peak_ret >= eff_trail_activate and trail_ret <= trail_trigger:
-            trail_stop_list.append({
-                'symbol': sym, 'qty': qty,
-                'avg_cost': avg_cost, 'cur_price': cur_price,
-                'peak': peak, 'peak_ret': peak_ret, 'trail_ret': trail_ret,
-                'trail_trigger': trail_trigger,
-            })
-
-    print(f"\n{'='*54}")
-    if trail_stop_list:
-        print(f"  移动止损触发（分级止损）：{len(trail_stop_list)} 只")
-        print(f"{'='*54}")
-        for s in trail_stop_list:
-            print(f"  [{s['symbol']}]  均价 ${s['avg_cost']:.2f}  峰值 ${s['peak']:.2f}"
-                  f"（+{s['peak_ret']:.1%}）→ 现价 ${s['cur_price']:.2f}  "
-                  f"回撤 {s['trail_ret']:.1%}（触发线 {s['trail_trigger']:.0%}）")
-            _place_sell(s['symbol'], s['qty'], s['cur_price'], '移动止损单', 0.95)
-    else:
-        print(f"  无移动止损触发")
-        print(f"{'='*54}")
-    exit_orders.extend(trail_stop_list)
-
-    # ── 时间止损检查（Time Stop）─────────────────────────────
-    already_stopped = {o['symbol'] for o in exit_orders}
-    time_stop_list  = []
-    if TIME_STOP_DAYS > 0:
-        today = date.today()
-        for sym, pos in stock_positions.items():
-            if sym in already_stopped or sym in CASH_EQUIV:
-                continue
-            avg_cost  = pos.avgCost
-            qty       = int(pos.position)
-            cur_price = signals.get('_prices', {}).get(sym)
-            if avg_cost <= 0 or qty <= 0 or cur_price is None:
-                continue
-            ret = (cur_price - avg_cost) / avg_cost
-            if ret >= TIME_STOP_MIN_RETURN:
-                continue  # 已达最低盈利，不触发
-            ed = _entry_date(sym, db)
-            if ed is None:
-                continue
-            days_held = (today - ed).days
-            if days_held >= TIME_STOP_DAYS:
-                time_stop_list.append({
-                    'symbol': sym, 'qty': qty,
-                    'avg_cost': avg_cost, 'cur_price': cur_price,
-                    'return': ret, 'days_held': days_held,
-                })
-
-    print(f"\n{'='*54}")
-    if time_stop_list:
-        print(f"  时间止损触发（持仓>{TIME_STOP_DAYS}天未达{TIME_STOP_MIN_RETURN:.0%}）：{len(time_stop_list)} 只")
-        print(f"{'='*54}")
-        for s in time_stop_list:
-            print(f"  [{s['symbol']}]  均价 ${s['avg_cost']:.2f} → 现价 ${s['cur_price']:.2f}"
-                  f"  {s['return']:+.1%}  持仓 {s['days_held']} 天")
-            _place_sell(s['symbol'], s['qty'], s['cur_price'], '时间止损单', 0.97)
-    else:
-        print(f"  无时间止损触发")
-        print(f"{'='*54}")
-    exit_orders.extend(time_stop_list)
-
-    # ── 卖出报警（量价背离）──────────────────────────────────
-    # 用真实 IB 持仓补充：--held 未传入的股票也能被检测到
-    sell_list      = list(signals.get('sell', []))
-    signal_map     = signals.get('_signal_map', {})
-    already_alerted = {s['symbol'] for s in sell_list} | {o['symbol'] for o in exit_orders}
-    for sym in stock_positions:
-        if sym in already_alerted or sym in CASH_EQUIV:
-            continue
-        if signal_map.get(sym) == -1:
-            cur_price = signals.get('_prices', {}).get(sym)
-            if cur_price is None:
-                continue
-            sell_list.append({'symbol': sym, 'close': cur_price, 'reason': '量价背离（新高缩量）'})
-    print(f"\n{'='*54}")
-    if sell_list:
-        print(f"  持仓卖出报警（量价背离）：{len(sell_list)} 只")
-        print(f"{'='*54}")
-        for s in sell_list:
-            print(f"  [{s['symbol']}]  {s['reason']}  收盘 ${s['close']:.2f}")
-            if SELL_ON_ALERT and s['symbol'] in stock_positions:
-                qty = int(stock_positions[s['symbol']].position)
-                _place_sell(s['symbol'], qty, s['close'], '卖出报警单', 0.97)
-    else:
-        print(f"  持仓无卖出报警")
-        print(f"{'='*54}")
-
-    # ── RS 衰退止盈 ───────────────────────────────────────────
-    if getattr(config, 'RS_DECAY_ENABLED', True):
-        rs_decay_thr    = getattr(config, 'RS_DECAY_THRESHOLD',  -0.03)
-        rs_decay_min    = getattr(config, 'RS_DECAY_MIN_PROFIT',  0.10)
-        already_handled = ({o['symbol'] for o in exit_orders} |
-                           {s['symbol'] for s in sell_list})
-        rs_decay_list   = []
-        for sym, pos in stock_positions.items():
-            if sym in already_handled or sym in CASH_EQUIV:
-                continue
-            rs_val  = signals.get('_rs_scores', {}).get(sym)
-            cur_p   = signals.get('_prices', {}).get(sym)
-            if rs_val is None or cur_p is None:
-                continue
-            ret = (cur_p - pos.avgCost) / pos.avgCost if pos.avgCost > 0 else 0
-            if rs_val < rs_decay_thr and ret >= rs_decay_min:
-                rs_decay_list.append({'symbol': sym, 'close': cur_p,
-                                      'rs': rs_val, 'return': ret})
-        print(f"\n{'='*54}")
-        if rs_decay_list:
-            print(f"  RS 衰退止盈触发（浮盈≥{rs_decay_min:.0%} 且 RS<{rs_decay_thr:+.0%}）：{len(rs_decay_list)} 只")
-            print(f"{'='*54}")
-            for s in rs_decay_list:
-                print(f"  [{s['symbol']}]  RS={s['rs']:+.3f}  浮盈 {s['return']:+.1%}  收盘 ${s['close']:.2f}")
-                sell_list.append({'symbol': s['symbol'], 'close': s['close'],
-                                  'reason': f"RS衰退（RS={s['rs']:+.3f}，跑输SPY）"})
-        else:
-            print(f"  无 RS 衰退止盈触发")
-            print(f"{'='*54}")
-
-    # ── 重新计算可用仓位和资金（含本次止损/卖出释放的仓位和回笼资金）──
+    # ── 重新计算可用仓位和资金（含本次出场释放的仓位和回笼资金）──
     exiting_syms = (
         {o['symbol'] for o in exit_orders} |
         {s['symbol'] for s in sell_list

@@ -156,7 +156,7 @@ web/
   server.py           FastAPI 入口（端口 3001）
   api/                路由：portfolio / factors / backtest / scheduler / config / optimizer
   services/           服务层：封装现有 Python 模块
-    factor_svc.py     因子扫描、内幕数据、移动止损检查
+    factor_svc.py     因子扫描、内幕数据、K线详情因子/基本面
     backtest_svc.py   异步回测执行
     optimizer_svc.py  因子组合优化（含预计算缓存）
     performance_svc.py 净值/业绩指标计算
@@ -164,7 +164,7 @@ web/
     scheduler_svc.py  APScheduler 任务管理
   models.py           Pydantic 请求/响应模型
   frontend/           React + TypeScript + Vite + ECharts + Tailwind
-    src/pages/        七个页面组件
+    src/pages/        各功能页面组件（Portfolio/MarketScan/Backtest/AITracker/AStockTracker/Optimizer/Scheduler/Config 等）
     dist/             生产构建产物（由 FastAPI 静态服务）
 start_web.sh          一键启动脚本
 ```
@@ -248,7 +248,7 @@ python auto_trader.py --dry-run --universe nasdaq100     # 切换股票池
 | 常量 | 值 | 说明 |
 |------|----|------|
 | `CASH_EQUIV` | `{'SGOV','BIL','USFR'}` | 现金等价 ETF 白名单 |
-| `SELL_ON_ALERT` | True | 量价背离时是否自动卖出 |
+| `SELL_ON_ALERT` | False | 已废弃：量价背离自动卖出已下线，恒 False（实盘出场仅 -15% 硬止损 + EMA21 两日破位） |
 
 ---
 
@@ -328,7 +328,7 @@ web/
   services/          # 服务层：封装现有模块供 API 调用
   models.py          # Pydantic 请求/响应模型
   frontend/          # React + TS + Vite 前端
-    src/pages/       # 七个页面组件
+    src/pages/       # 各功能页面组件（Portfolio/MarketScan/Backtest/AITracker/AStockTracker/Optimizer/Scheduler/Config 等）
     dist/            # 生产构建（npm run build 生成，FastAPI 静态服务）
 start_web.sh         # 一键启动脚本
 ```
@@ -355,7 +355,7 @@ start_web.sh         # 一键启动脚本
 | 崩跌过滤 (`max_drawdown=-30%`) | ✅ 必须 | ✅ 必须（保留防御） |
 | 趋势 MA10>MA20 | ✅ 必须 | ✅ 必须 |
 
-**卖出信号（量价背离）：** 价格创50日新高但成交量低于均量 × `VOL_SHRINK_RATIO`（顶部信号，`SELL_ON_ALERT=True` 时自动下卖单）
+**卖出信号（量价背离）：** 价格创50日新高但成交量低于均量 × `VOL_SHRINK_RATIO`（顶部信号）。**实盘已不据此自动卖出**（`SELL_ON_ALERT=False`，出场仅 -15% 硬止损 + EMA21 两日破位）；该信号现仅供 `sp500_scanner` 报警参考。
 
 > **AI 优先池如何维护**：在 Web UI「美股AI追踪」(`/#/ai`) 增删股票即可写入 `data/ai_universe.json`；`auto_trader` 每次扫描自动加载（无需重启）。用户的主观判断（看好 MU/NVDA/AVGO）通过这个接口传给系统。
 
@@ -431,23 +431,26 @@ ai_priority_bonus  = +0.5（AI 优先池成员绝对置顶；rs_score 通常 [-0
 
 ---
 
-### 止损体系（多层，按优先级顺序检查，已触发的不重复计入）
+### 止损体系（实盘精简版：只有 2 条规则）
+
+实盘 `auto_trader._execute_inner` 的出场只保留两条，按顺序检查，任一触发即挂 OPG 限价卖出（现金等价 ETF 跳过）：
 
 | 优先级 | 类型 | 触发条件 | 卖出方式 |
 |--------|------|----------|----------|
-| 1 | ATR 自适应止损 | 现价 ≤ 入场价 + max(ATR_STOP_FLOOR, -ATR_STOP_MULTIPLIER×ATR14/入场价) × 入场价 | OPG限价（入场价×0.95下限）|
-| 2 | EMA 破位止损 | 现价 < EMA`EMA_STOP_PERIOD`（默认8日），`EMA_STOP_PERIOD=0` 则禁用 | OPG限价（收盘×0.95下限）|
-| 3 | 移动止损 | 浮盈 ≥ `TRAIL_STOP_ACTIVATE_PCT` 后，从峰值（入场后最高收盘）回撤 ≥ `|TRAIL_STOP_PCT|` | OPG限价（收盘×0.95下限）|
-| 4 | 时间止损 | 持仓 ≥ `TIME_STOP_DAYS` 天 且 收益率 < `TIME_STOP_MIN_RETURN` | OPG限价（收盘×0.97下限）|
-| 5 | 卖出报警 | 量价背离（新高缩量，signal=-1），`SELL_ON_ALERT=True` | OPG限价（收盘×0.97下限）|
+| 1 | 灾难硬止损 | 浮亏 `ret ≤ STOP_LOSS_PCT`（默认 -15%，按现价/盘前价算） | OPG限价（入场价×0.95下限）|
+| 2 | EMA21 两日破位 | 最近两根**已收盘**日线（T-1、T-2）收盘均 < 各自当日 `EMA21`（`EMA_EXIT_PERIOD=21`，代码内常量） | OPG限价（收盘×0.95下限）|
 
-> 峰值收盘价只取**入场日之后**的历史数据，防止买入前旧高点误触发移动止损。
+> **历史多层止损（ATR自适应 / EMA8破位 / 移动止损 / 时间止损 / 量价背离卖出）已从实盘下线。** `SELL_ON_ALERT` 恒 False。这些机制仍存在于两处，**不影响实盘执行**：
+> - `tests/backtest_rs.py --exit-mode legacy`（默认，与「回测业绩参考」表一致；`--exit-mode simple` 才对齐实盘 2 条规则）
+> - `sp500_scanner.py` 的移动止损是**持仓报警**（提示用），不下单
+>
+> `ATR_STOP_MULTIPLIER` / `ATR_STOP_FLOOR` 在实盘仍被使用，但仅用于**仓位计算**（风险法 qty），不再作为出场条件。`TRAIL_STOP_*` / `TIME_STOP_*` / `EMA_STOP_PERIOD` 参数保留是给回测 legacy 模式和扫描器报警用。
 
 ---
 
 ### MSS 市场强度评分（Market Strength Score）
 
-`core/market_regime.py::compute_mss()` — 每次执行前计算，驱动仓位上限和移动止损参数的自适应切换。
+`core/market_regime.py::compute_mss()` — 每次执行前计算，驱动**仓位上限**的自适应切换。（注：移动止损已从实盘下线，MSS 不再调止损参数，`MSS_*_TRAIL_*` 参数仅回测 legacy 模式可能引用。）
 
 ```
 MSS = SPY趋势分 + 市场宽度分 + VIX得分   ∈ [-1, +1]
@@ -457,11 +460,11 @@ SPY趋势分  = (SPY > MA20)×0.2 + (SPY > MA50)×0.2   → [0, 0.4]
 VIX得分    = clip((30 - VIX) / 100, -0.2, +0.2)      → [-0.2, +0.2]
 ```
 
-| MSS 区间 | 市场状态 | 生效参数 |
+| MSS 区间 | 市场状态 | 生效的仓位上限 |
 |----------|----------|----------|
-| ≥ 0.5 | 强牛市 | `MSS_BULL_MAX_POS`、`MSS_BULL_TRAIL_ACTIVATE`、`MSS_BULL_TRAIL_PCT` |
-| 0.0 ~ 0.5 | 温和 | `MAX_POSITIONS`、`TRAIL_STOP_ACTIVATE_PCT`、`TRAIL_STOP_PCT`（默认值） |
-| < 0.0 | 弱势/熊市 | `MSS_BEAR_MAX_POS`（压缩仓位）、`MSS_BEAR_TRAIL_ACTIVATE`/`PCT`（收紧止损） |
+| ≥ 0.5 | 强牛市 | `MSS_BULL_MAX_POS` |
+| 0.0 ~ 0.5 | 温和 | `MAX_POSITIONS`（默认值） |
+| < 0.0 | 弱势/熊市 | `MSS_BEAR_MAX_POS`（压缩仓位） |
 
 ---
 

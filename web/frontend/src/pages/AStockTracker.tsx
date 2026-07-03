@@ -557,9 +557,9 @@ export default function AStockTracker() {
           </div>
 
           {/* 个股动能表格 */}
-          <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-x-auto">
+          <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-x-auto max-h-[70vh]">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-slate-800">
                 <tr className="text-xs text-slate-400 border-b border-slate-700">
                   <th className="text-left px-3 py-2.5 font-medium">名称（代码）</th>
                   <th className="text-right px-2 py-2.5 font-medium">现价</th>

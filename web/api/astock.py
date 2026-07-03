@@ -43,8 +43,8 @@ def backtest_status(task_id: str):
 
 
 @router.get('/momentum')
-def momentum(mode: str = Query('sw'), force: bool = Query(False)):
-    """A 股板块强度 + 个股动能。mode='sw'（申万行业）|'theme'（主题板块）。"""
+def momentum(mode: str = Query('theme'), force: bool = Query(False)):
+    """A 股板块强度 + 个股动能（主题板块）。"""
     try:
         from web.services.astock_momentum_svc import scan_momentum
         return scan_momentum(mode=mode, force=force)
@@ -54,17 +54,10 @@ def momentum(mode: str = Query('sw'), force: bool = Query(False)):
 
 @router.get('/universe')
 def universe():
-    """返回申万一级行业列表 + 主题板块定义。"""
+    """返回主题板块定义。"""
     try:
         from core import astock_universe as au
-        sw = au.get_sw_l1_industries(top_n=40)
-        return {
-            'sw_industries': [
-                {'code': v['code'], 'name': k, 'count': len(v['symbols'])}
-                for k, v in sw.items()
-            ],
-            'themes': au.load_themes().get('groups', {}),
-        }
+        return {'themes': au.load_themes().get('groups', {})}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

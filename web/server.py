@@ -64,6 +64,7 @@ from web.api.astock import router as astock_router
 from web.api.astock_trade import router as astock_trade_router
 from web.api.risk import router as risk_router
 from web.api.premarket import router as premarket_router
+from web.api.account_doctor import router as account_doctor_router
 
 
 @asynccontextmanager
@@ -120,6 +121,7 @@ app.include_router(astock_router)
 app.include_router(astock_trade_router)
 app.include_router(risk_router)
 app.include_router(premarket_router)
+app.include_router(account_doctor_router)
 
 
 @app.get('/api/health')

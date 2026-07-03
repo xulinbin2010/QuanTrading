@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { useAccount } from '../App'
 import SymbolLink from '../components/SymbolLink'
 import RiskThermometer from '../components/RiskThermometer'
+import AccountDoctor from './AccountDoctor'
 
 // ── 复用辅助组件 ──────────────────────────────────────────────
 function RsBar({ v }: { v: number }) {
@@ -1084,6 +1085,7 @@ export default function Portfolio() {
   const [selectedPos, setSelectedPos] = useState<any>(null)
   const [sellPos, setSellPos] = useState<any>(null)
   const [cancellingSym, setCancellingSym] = useState<string | null>(null)
+  const [view, setView] = useState<'holdings' | 'doctor'>('holdings')
   const queryClient = useQueryClient()
 
   const handleCancelOrders = async (symbol: string) => {
@@ -1135,10 +1137,17 @@ export default function Portfolio() {
 
   return (
     <>
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-lg font-semibold text-white">持仓总览</h1>
-      </div>
+    {/* Tab 栏：持仓总览 / 账户诊断 */}
+    <div className="flex items-center gap-5 border-b border-slate-700 mb-5">
+      {([['holdings', '持仓总览'], ['doctor', '账户诊断 🩺']] as const).map(([k, label]) => (
+        <button key={k} onClick={() => setView(k)}
+          className={`pb-2 -mb-px text-sm font-medium border-b-2 transition-colors ${view === k ? 'border-blue-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
+          {label}
+        </button>
+      ))}
+    </div>
+    {view === 'doctor' && <AccountDoctor />}
+    <div className="space-y-6" style={{ display: view === 'holdings' ? undefined : 'none' }}>
 
       {ibOffline && (
         <div className="bg-slate-700 border border-slate-600 rounded-lg px-4 py-2 text-sm text-slate-300">

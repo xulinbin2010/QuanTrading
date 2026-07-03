@@ -304,3 +304,15 @@ export const getPremarketScan = () =>
   api.get('/premarket/scan').then(r => r.data)
 export const generatePremarketBriefing = () =>
   api.post('/premarket/briefing', {}, { timeout: 300_000 }).then(r => r.data)
+
+// ── 账户诊断（桌面医生）──────────────────────────────────────
+export type DoctorImage = { media_type: string; data: string }
+
+export const parseAccountScreenshots = (images: DoctorImage[]) =>
+  api.post('/account-doctor/parse', { images }, { timeout: 180_000 }).then(r => r.data)
+
+export const diagnoseAccount = (account: any, positions: any[]) =>
+  api.post('/account-doctor/diagnose', { account, positions }).then(r => r.data)
+
+export const getAccountDoctorLatest = () =>
+  api.get('/account-doctor/latest').then(r => r.data)

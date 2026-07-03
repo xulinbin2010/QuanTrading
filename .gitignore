@@ -29,3 +29,5 @@ logs/
 *.swp
 *.log
 /.claude/
+
+.DS_Store

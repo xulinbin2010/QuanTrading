@@ -13,10 +13,10 @@ import {
 } from '../api/client'
 
 const STRATEGIES = [
-  ['sector_rotation', '板块轮动'],
-  ['momentum_filtered', '动能+EMA21'],
-  ['momentum', '纯动能'],
-  ['quality_momentum', '质量动能'],
+  ['sector_rotation', '板块轮动（选最强2板块的龙头·集中押主线）'],
+  ['momentum_filtered', '动能+EMA21（全市场前N·须站上EMA21趋势过滤）'],
+  ['momentum', '纯动能（全市场composite前N·不看板块）'],
+  ['quality_momentum', '质量动能（动能×低PE加权·偏估值防高估）'],
 ] as const
 
 const yuan = (v: number | null | undefined) =>

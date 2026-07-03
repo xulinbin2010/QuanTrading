@@ -193,7 +193,7 @@ def classify(symbol: str, policies: list[PoolPolicy]) -> PoolPolicy:
 
 
 # ══════════════════════════════════════════════════════════════════
-#  入场得分（共享：auto_trader.scan_signals + production_signal_svc）
+#  入场得分（共享：auto_trader.scan_signals + backtest_rs）
 # ══════════════════════════════════════════════════════════════════
 
 def entry_score(

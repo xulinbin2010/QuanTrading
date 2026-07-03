@@ -96,7 +96,7 @@ CASH_EQUIV = {'SGOV', 'BIL', 'USFR'}
 # ══════════════════════════════════════════════════════
 
 # AI 优先池成员加载 + 入场得分 + 槽位分配统一收敛到 core/pool_policy。
-# 此处重新导出 _load_ai_priority_set，保持 production_signal_svc / backtest_rs 旧 import 不破。
+# 此处重新导出 _load_ai_priority_set，保持 backtest_rs 旧 import 不破。
 from core.pool_policy import (
     load_ai_priority_set as _load_ai_priority_set,
     load_ai_tracker_boost_map,

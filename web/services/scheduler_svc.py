@@ -82,7 +82,7 @@ DEFAULT_TASKS = [
         'task_id':  'market_scan',
         'name':     '市场扫描预热(因子裸值表)',
         'command':  f'{PYTHON} -m web.services.factor_svc --universe ai --top 50',
-        'cron_expr': '45 8 * * 1-5',   # 美东 8:45（纽约时区），production_signals 前 5 分钟一起预热
+        'cron_expr': '45 8 * * 1-5',   # 美东 8:45（纽约时区），开盘前预热市场扫描缓存
         'enabled':  False,
         'description': '全池逐股算因子裸值+覆盖率,写文件缓存供市场扫描页秒开,避免用户点开时现场跑',
     },
@@ -114,8 +114,7 @@ DEFAULT_TASKS = [
 
 # 依赖美股交易时段的任务：cron 按美东时间书写，trigger 用 America/New_York（自动夏/冬令时）。
 # 其余任务（A 股 / 收盘后批处理 / 维护）用 Asia/Shanghai。
-NY_TASKS = {'dry_run', 'auto_trader', 'stop_exits', 'confirm_fills',
-            'production_signals', 'market_scan'}
+NY_TASKS = {'dry_run', 'auto_trader', 'stop_exits', 'confirm_fills', 'market_scan'}
 
 # 默认任务 cron 调整（非 UTC 迁移）：task_id → 需被替换的旧默认 cron。
 # DB 里命中此旧值时升级到 DEFAULT_TASKS 当前 cron；用户手改过的自定义 cron 不受影响。
@@ -137,7 +136,6 @@ _MIGRATE = {
     'stop_exits':         {'35 21 * * 1-5': '35 9 * * 1-5'},
     'dry_run':            {'30 21 * * 1-5': '30 8 * * 1-5'},
     'market_scan':        {'45 21 * * 1-5': '45 8 * * 1-5'},
-    'production_signals': {'50 21 * * 1-5': '50 8 * * 1-5'},
     # 收盘后批处理：保持北京时间，仅迁移更老的 UTC 残留值
     'sp500_scanner':      {'0 22 * * 1-5': '0 6 * * 2-6'},
     'data_update':        {'0 23 * * 1-5': '0 7 * * 2-6'},

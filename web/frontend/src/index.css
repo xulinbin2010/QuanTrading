@@ -201,7 +201,7 @@ html.night ::-webkit-scrollbar-thumb { background: #b8b6b0; border-radius: 3px; 
 
 
 /* ════════════════════════════════════════════════════════════
-   因子标签（回测页 / 因子看板）三主题自适应
+   因子标签（回测页）三主题自适应
    ════════════════════════════════════════════════════════════ */
 
 /* 未选中 —— 深色模式默认 */
@@ -324,4 +324,19 @@ html.night .group-card .gc-flow {
 html.day .factor-tag-selected .factor-tag-signal,
 html.night .factor-tag-selected .factor-tag-signal {
   color: #1d4ed8;
+}
+
+/* AI 追踪「实盘分(entry_score)」列 —— 浅色主题：深色调的浅绿字/深绿底在浅底上不可读，改深绿字 + 浅绿底 */
+html.day th.entry-score-th,
+html.night th.entry-score-th {
+  background: #d1fae5;                          /* emerald-100 浅绿底 */
+  color: #065f46;                              /* emerald-800 深绿字 */
+}
+html.day td.entry-score-active,
+html.night td.entry-score-active {
+  background: #ecfdf5;                          /* emerald-50 极浅绿底（替换 20% 深绿）*/
+}
+html.day td.entry-score-pos,
+html.night td.entry-score-pos {
+  color: #047857;                              /* emerald-700 深绿字，浅底上高对比 */
 }

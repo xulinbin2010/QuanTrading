@@ -76,8 +76,10 @@ def get_log(run_id: int):
 
 
 @router.get('/cron-preview')
-def cron_preview(expr: str = Query(...), count: int = Query(5, le=10)):
-    """返回 cron 表达式（北京时间）未来 N 次执行时间"""
+def cron_preview(expr: str = Query(...), count: int = Query(5, le=10),
+                 tz: str = Query('Asia/Shanghai')):
+    """返回 cron 表达式未来 N 次执行时间（按 tz 解析，统一换算成北京时间显示）。
+    美股任务 cron 以美东时间书写，需传 tz=America/New_York 才能预览准确。"""
     try:
         parts = expr.strip().split()
         if len(parts) != 5:
@@ -86,7 +88,7 @@ def cron_preview(expr: str = Query(...), count: int = Query(5, le=10)):
         trigger = CronTrigger(
             minute=mn, hour=hr, day=dm, month=mo,
             day_of_week=_posix_dow_to_aps(dw),
-            timezone='Asia/Shanghai',
+            timezone=tz,
         )
         cst = ZoneInfo('Asia/Shanghai')
         t = datetime.now(tz=timezone.utc)

@@ -64,11 +64,13 @@
         "TSEM",
         "CAMT",
         "GFS",
-        "UCTT"
+        "UCTT",
+        "MKSI",
+        "VSH"
       ]
     },
     "datacenter_infra": {
-      "label": "数据中心基础设施",
+      "label": "服务器/数据中心硬件",
       "color": "#22c55e",
       "symbols": [
         "SMCI",
@@ -78,10 +80,7 @@
         "EQIX",
         "DLR",
         "AMT",
-        "PSTG",
-        "NTAP",
         "CLS",
-        "IONQ",
         "TTMI",
         "TEL",
         "HPQ"
@@ -108,11 +107,12 @@
         "LPTH",
         "SITM",
         "MXL",
-        "FLEX"
+        "FLEX",
+        "PENG"
       ]
     },
     "ai_infra_build": {
-      "label": "AI基础设施建设",
+      "label": "AI算力运营/云",
       "color": "#06b6d4",
       "symbols": [
         "IREN",
@@ -126,8 +126,7 @@
         "CIFR",
         "POWL",
         "AGX",
-        "HUT",
-        "BB"
+        "HUT"
       ]
     },
     "power_cooling": {
@@ -137,26 +136,17 @@
         "VST",
         "CEG",
         "ETR",
-        "NRG",
-        "EXC",
-        "AES",
         "GEV",
-        "GTLS",
         "ETN",
         "GNRC",
         "PWR",
         "FIX",
-        "EME",
-        "OKLO",
-        "LEU",
         "BE",
         "FCEL",
         "FLNC",
-        "PSIX",
         "DGXX",
         "MOD",
         "AAON",
-        "VICR",
         "TE"
       ]
     }
@@ -257,16 +247,6 @@
       "name": "Harmonic",
       "suggest_group": "ai_networking",
       "note": "C·视频宽带网,非AI数据中心",
-      "industry": null,
-      "sector": null,
-      "market_cap_b": null,
-      "revenue_growth": null
-    },
-    {
-      "symbol": "VSH",
-      "name": "Vishay",
-      "suggest_group": "semicon_equip",
-      "note": "C·通用被动元件",
       "industry": null,
       "sector": null,
       "market_cap_b": null,
@@ -408,13 +388,28 @@
     "ON",
     "MSI",
     "HUBB",
-    "ZBRA"
+    "ZBRA",
+    "IONQ",
+    "NTAP",
+    "PSTG",
+    "BB",
+    "PSIX",
+    "VICR",
+    "GTLS",
+    "EXC",
+    "AES",
+    "OKLO",
+    "LEU",
+    "NRG",
+    "EME"
   ],
   "trade_priority": {
     "UCTT": false,
     "LRCX": true,
     "POWI": false,
     "CALX": false,
-    "OKLO": false
+    "PENG": false,
+    "MKSI": true,
+    "VSH": false
   }
 }

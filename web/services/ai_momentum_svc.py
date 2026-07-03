@@ -289,7 +289,9 @@ def _do_scan() -> dict:
     _logger.info(f'[AIMomentum] 扫描 {len(all_syms)} 只...')
 
     store = DataStore()
-    start_d = str(date.today() - timedelta(days=60))
+    # 400 天窗口:短线动能只需 ~40 天,但 RS 动量分(实盘口径)要 63 日 RS + 252 日 drawdown,
+    # 故按更长历史加载(本地 parquet 读取,auto_update=False,多读行近乎零成本)。
+    start_d = str(date.today() - timedelta(days=400))
     price_map = store.get(all_syms + ['SPY'], start=start_d, auto_update=False)
 
     spy_df = price_map.get('SPY')
@@ -300,6 +302,32 @@ def _do_scan() -> dict:
     spy_3d = _pct_change(spy_close, 3)
     spy_5d = _pct_change(spy_close, 5)
     spy_10d = _pct_change(spy_close, 10)
+
+    # ── auto_trader 同口径 RS 动量分(entry_score)预备 ───────────────────────
+    # 目标:动能轮动面板可按「实盘下单口径」对全员排序,与 auto_trader/因子看板一致。
+    # rs_score(63日RS) / vol_ratio(当日量÷vol_ma20) / drawdown_from_high(252日) 三项
+    # 完全复现 auto_trader.scan_signals,再走 core.pool_policy.entry_score_from_config。
+    from strategies.factors.rs_score import compute_rs_score
+    from strategies.factors.drawdown import compute_drawdown_filter
+    from core.pool_policy import (
+        load_ai_priority_set, load_ai_tracker_boost_map, entry_score_from_config,
+    )
+    import config
+    try:
+        from web.services.factor_svc import get_factor_params_from_db
+        _rs_params = get_factor_params_from_db('rs_score')
+    except Exception:
+        _rs_params = {}
+    _rs_period  = int(_rs_params.get('period', 63))
+    _rs_weights = str(_rs_params.get('weights', '') or '')
+    _ai_set     = load_ai_priority_set()
+    _boost_map  = load_ai_tracker_boost_map()
+    try:
+        from core.insider import get_insider_buys
+        _insider_map = get_insider_buys(days=config.INSIDER_DAYS,
+                                        min_value_k=config.INSIDER_MIN_VALUE_K)
+    except Exception:
+        _insider_map = {}
 
     # 第一遍：算原始指标
     raw_rows: list[dict] = []
@@ -328,6 +356,35 @@ def _do_scan() -> dict:
 
         last_close = float(close.iloc[-1])
 
+        # ── auto_trader 同口径 RS 动量分 ──────────────────────────────
+        # 与 scan_signals 完全一致:rs_score=63日RS、vol_ratio=当日量÷vol_ma20、
+        # drawdown_from_high=252日回撤;再走 entry_score_from_config(权重从 DB)。
+        rs_score_at = None
+        entry_score_at = None
+        try:
+            _r = compute_rs_score(df.copy(), spy_close, _rs_period, weights=_rs_weights)
+            rs_v = _r['rs_score'].iloc[-1]
+            rs_score_at = float(rs_v) if pd.notna(rs_v) else None
+        except Exception:
+            rs_score_at = None
+        if rs_score_at is not None:
+            _vol = df['volume']
+            vol_ma20 = _vol.iloc[-20:].mean() if len(_vol) >= 20 else None
+            at_vol_ratio = float(_vol.iloc[-1] / vol_ma20) if (vol_ma20 and vol_ma20 > 0) else 1.0
+            try:
+                _dd = compute_drawdown_filter(df.copy())['drawdown_from_high'].iloc[-1]
+                ddown = float(_dd) if pd.notna(_dd) else -0.15
+            except Exception:
+                ddown = -0.15
+            _sig = {
+                'rs_score':           rs_score_at,
+                'vol_ratio':          at_vol_ratio,
+                'drawdown_from_high': ddown,
+                'insider_score':      _insider_map.get(sym, {}).get('score', 0),
+                'ai_tracker_boost':   _boost_map.get(sym, 0.0),
+            }
+            entry_score_at = round(entry_score_from_config(_sig), 4)
+
         raw_rows.append({
             'symbol':       sym,
             'group':        sym_to_group[sym],
@@ -345,6 +402,11 @@ def _do_scan() -> dict:
             'up_vol_ratio': flow['up_vol_ratio'],
             'flow_score':   flow_score,
             'accel':        accel,
+            # RS 动量分(实盘口径):rs_score=63日RS,entry_score=排序分,rank_tier=0(AI优先池)/1
+            'rs_score':     rs_score_at,
+            'entry_score':  entry_score_at,
+            'rank_tier':    0 if sym in _ai_set else 1,
+            'ai_priority':  sym in _ai_set,
         })
 
     # 第二遍：组内中位数（rs_vs_group_5d）
@@ -390,15 +452,22 @@ def _do_scan() -> dict:
 
     # ── 子组聚合 ──────────────────────────────────────────
     groups_summary: list[dict] = []
+
+    def _grp_median(members, field):
+        vals = [r[field] for r in members if r[field] is not None]
+        return float(np.median(vals)) if vals else None
+
+    def _grp_adv(members, field):
+        return sum(1 for r in members if (r[field] or 0) > 0)
+
     for gk, gv in groups_cfg.items():
         members = [r for r in raw_rows if r['group'] == gk]
         if not members:
             continue
-        rs5_vals = [r['rs_5d'] for r in members if r['rs_5d'] is not None]
         mom5_vals = [r['mom_5d'] for r in members if r['mom_5d'] is not None]
         flow_vals_g = [r['flow_score'] for r in members]
-        advance = sum(1 for r in members if (r['rs_5d'] or 0) > 0)
-        decline = len(members) - advance
+        n = len(members)
+        adv3, adv5, adv10 = _grp_adv(members, 'rs_3d'), _grp_adv(members, 'rs_5d'), _grp_adv(members, 'rs_10d')
         leaders = sorted(members, key=lambda x: x['composite'], reverse=True)[:3]
         median_flow = float(np.median(flow_vals_g)) if flow_vals_g else 5.0
         flow_signal = 'inflow' if median_flow > 6 else ('outflow' if median_flow < 4 else 'neutral')
@@ -406,11 +475,17 @@ def _do_scan() -> dict:
             'key':            gk,
             'label':          gv['label'],
             'color':          gv.get('color', '#94a3b8'),
-            'count':          len(members),
-            'median_mom_5d':  float(np.median(mom5_vals)) if mom5_vals else None,
-            'median_rs_5d':   float(np.median(rs5_vals)) if rs5_vals else None,
-            'advance':        advance,
-            'decline':        decline,
+            'count':          n,
+            'median_mom_5d':  float(np.median([r['mom_5d'] for r in members if r['mom_5d'] is not None])) if mom5_vals else None,
+            # 各窗口板块中位超额（前端热力卡按 3/5/10 日切换取值）
+            'median_rs_3d':   _grp_median(members, 'rs_3d'),
+            'median_rs_5d':   _grp_median(members, 'rs_5d'),
+            'median_rs_10d':  _grp_median(members, 'rs_10d'),
+            'advance':        adv5,            # 兼容旧字段（=5 日口径）
+            'decline':        n - adv5,
+            'advance_3d':     adv3,  'decline_3d':  n - adv3,
+            'advance_5d':     adv5,  'decline_5d':  n - adv5,
+            'advance_10d':    adv10, 'decline_10d': n - adv10,
             'flow_score':     round(median_flow, 2),
             'flow_signal':    flow_signal,
             'leaders':        [{'symbol': r['symbol'], 'composite': r['composite']} for r in leaders],
@@ -421,12 +496,20 @@ def _do_scan() -> dict:
     basket = _compute_basket_flow(price_map, all_syms)
 
     # ── Top-N ────────────────────────────────────────────
+    # top4   = 短线动能口径(composite 降序,raw_rows 已按 composite 排好)
+    # top4_rs= RS 动量分口径(rank_tier 升序→entry_score 降序,与 auto_trader 下单次序一致)
     top4 = [r['symbol'] for r in raw_rows[:4]]
+    _rs_ranked = sorted(
+        [r for r in raw_rows if r.get('entry_score') is not None],
+        key=lambda r: (r['rank_tier'], -r['entry_score']),
+    )
+    top4_rs = [r['symbol'] for r in _rs_ranked[:4]]
 
     result = _clean_floats({
         'rows':          raw_rows,
         'groups':        groups_summary,
         'basket':        basket,
+        'top4_rs':       top4_rs,
         'top4':          top4,
         'spy':           {'mom_3d': spy_3d, 'mom_5d': spy_5d, 'mom_10d': spy_10d},
         'total':         len(raw_rows),

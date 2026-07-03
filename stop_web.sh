@@ -38,3 +38,14 @@ for PORT in 3001 5178; do
         kill -9 $PIDS 2>/dev/null
     fi
 done
+
+# 兜底2：清理仍持有「调度锁」的残留进程。
+# --reload 残留的孤儿 worker 会丢掉 3001 监听(躲过端口清理)、命令行也不含 "web.server"
+# (是 multiprocessing.spawn 形态，pkill 匹配不到)，但只要它还在跑调度器，就必然 flock 着
+# data/.scheduler.lock —— 按这个精准揪，且不会误伤手动跑的 auto_trader.py 等(它们不持此锁)。
+LOCKF="$(pwd)/data/.scheduler.lock"
+LOCKPIDS=$(lsof -t "$LOCKF" 2>/dev/null)
+if [ -n "$LOCKPIDS" ]; then
+    echo "清理仍持有调度锁的残留进程 (PID: $LOCKPIDS)..."
+    kill -9 $LOCKPIDS 2>/dev/null
+fi

@@ -58,7 +58,9 @@ def get_comparison(symbols: list[str], start: str, end: str | None = None) -> di
 
     try:
         # min_rows=2：放行新上市的 ETF（如 DRAM 仅 22 个交易日）
-        data = store.get(symbols, start=fetch_start, end=end, min_rows=2)
+        # allow_stale=True：对比是研究视图，只要本地有历史就展示，不套用退市过滤
+        #   （如 MUU 这类小众杠杆 ETF，yfinance 最近几天缺数据但本地有完整历史）
+        data = store.get(symbols, start=fetch_start, end=end, min_rows=2, allow_stale=True)
     except Exception as e:
         _logger.error(f'[ComparisonSvc] 获取数据失败: {e}')
         raise

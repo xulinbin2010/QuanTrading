@@ -358,9 +358,9 @@ export default function MarketScan() {
             </div>
           )}
 
-          <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-x-auto">
+          <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-x-auto max-h-[70vh]">
             <table className="w-full text-sm">
-              <thead>
+              <thead className="sticky top-0 z-10 bg-slate-800">
                 <tr className="text-slate-400 text-xs border-b border-slate-700 bg-slate-800/80">
                   {['#', '股票', '收盘价', 'RS 强度', '量比', '突破', '放量', '趋势', '信号',
                     ...activeFundCols.map(c => c.label),
@@ -419,9 +419,9 @@ export default function MarketScan() {
 
           {!insiderLoading && (insiderRows as any[]).length > 0 && (
             <>
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto max-h-[70vh]">
                 <table className="w-full text-sm">
-                  <thead>
+                  <thead className="sticky top-0 z-10 bg-slate-800">
                     <tr className="text-slate-400 text-xs border-b border-slate-700">
                       <th className="px-3 py-2 text-left font-medium">#</th>
                       <th className="px-3 py-2 text-left font-medium">股票</th>
@@ -503,9 +503,9 @@ export default function MarketScan() {
                 {tbData.rows?.length === 0 ? (
                   <div className="text-xs text-slate-500 py-6 text-center">无符合条件的股票</div>
                 ) : (
-                  <div className="overflow-x-auto">
+                  <div className="overflow-x-auto max-h-[70vh]">
                     <table className="w-full text-sm">
-                      <thead>
+                      <thead className="sticky top-0 z-10 bg-slate-800">
                         <tr className="text-slate-400 text-xs border-b border-slate-700">
                           <th className="px-3 py-2 text-left font-medium">#</th>
                           <th className="px-3 py-2 text-left font-medium">股票</th>

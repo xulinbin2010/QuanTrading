@@ -575,3 +575,5 @@ def get_signals(universe: str = 'sp500') -> dict:
         for s in signals.get('sell', [])
     ]
     return {"buy": buy, "sell": sell, "spy_brake": signals.get('spy_brake', False)}
+
+

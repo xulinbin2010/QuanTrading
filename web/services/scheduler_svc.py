@@ -79,14 +79,6 @@ DEFAULT_TASKS = [
         'description': '扫描所有缓存数据，自动修复历史缺失/价格偏移/退市等问题',
     },
     {
-        'task_id':  'production_signals',
-        'name':     '生产信号扫描(因子看板 top10)',
-        'command':  f'{PYTHON} -m web.services.production_signal_svc',
-        'cron_expr': '50 8 * * 1-5',   # 美东 8:50（纽约时区），开盘前 40 分钟
-        'enabled':  False,
-        'description': '复用 auto_trader.scan_signals 全套(双路扫描+过滤+排名),写 top10 缓存供因子看板「生产信号」展示',
-    },
-    {
         'task_id':  'market_scan',
         'name':     '市场扫描预热(因子裸值表)',
         'command':  f'{PYTHON} -m web.services.factor_svc --universe ai --top 50',

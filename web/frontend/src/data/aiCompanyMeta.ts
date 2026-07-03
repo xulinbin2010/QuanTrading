@@ -53,7 +53,7 @@ export const AI_COMPANY_META: Record<string, { name: string; desc: string }> = {
   CAMT: { name: 'Camtek', desc: '先进封装检测' },
   GFS:  { name: 'GlobalFoundries', desc: '晶圆代工' },
 
-  // ── 数据中心基础设施 ──
+  // ── 服务器/数据中心硬件 ──
   SMCI: { name: '超微', desc: 'AI服务器整机' },
   DELL: { name: '戴尔', desc: '服务器/AI机柜' },
   HPE:  { name: '慧与', desc: '服务器/HPC' },
@@ -88,7 +88,7 @@ export const AI_COMPANY_META: Record<string, { name: string; desc: string }> = {
   SITM: { name: 'SiTime', desc: '精密时钟芯片' },
   MXL:  { name: 'MaxLinear', desc: '连接/接口芯片' },
 
-  // ── AI基础设施建设 ──
+  // ── AI算力运营/云 ──
   IREN: { name: 'IREN', desc: '绿电算力数据中心' },
   NBIS: { name: 'Nebius', desc: 'AI GPU云' },
   CRWV: { name: 'CoreWeave', desc: 'GPU云算力' },

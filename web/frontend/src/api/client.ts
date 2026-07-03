@@ -28,7 +28,7 @@ export const placeSellOrder = (body: {
 export const cancelOrders = (symbol: string) =>
   api.post('/portfolio/cancel-orders', { symbol }).then(r => r.data)
 
-// ── 因子看板 ──────────────────────────────────────────────
+// ── 因子 / 个股详情 ──────────────────────────────────────
 
 export const getUniverses  = () => api.get('/factors/universes').then(r => r.data)
 export const getTickers    = (universe: string) =>
@@ -47,17 +47,6 @@ export const clearFactorCache = (universe?: string) =>
   api.delete('/factors/cache', { params: { universe } }).then(r => r.data)
 export const getFactorRegistry = () =>
   api.get('/factors/registry').then(r => r.data)
-export const updateFactor = (key: string, body: { enabled?: boolean; params?: Record<string, any> }) =>
-  api.put(`/factors/registry/${key}`, body).then(r => r.data)
-export const previewFactorSignals = (universe: string, factors: string[], top = 100) =>
-  api.post('/factors/preview', { universe, factors, top }).then(r => r.data)
-export const checkTrailStops = (positions: { symbol: string; avg_cost: number }[]) =>
-  api.post('/factors/trail-stop-check', positions).then(r => r.data)
-
-export const getProductionSignals = () =>
-  api.get('/factors/production-signals').then(r => r.data)
-export const runProductionSignalsNow = () =>
-  api.post('/factors/production-signals/run-now').then(r => r.data)
 
 // A 股动能轮动回测
 export const submitAStockBacktest = (body: {
@@ -208,8 +197,8 @@ export const getRunLog          = (runId: number) =>
   api.get(`/scheduler/runs/${runId}/log`).then(r => r.data)
 export const deleteTaskRun      = (runId: number) =>
   api.delete(`/scheduler/runs/${runId}`).then(r => r.data)
-export const getCronPreview     = (expr: string, count = 5) =>
-  api.get('/scheduler/cron-preview', { params: { expr, count } }).then(r => r.data)
+export const getCronPreview     = (expr: string, count = 5, tz = 'Asia/Shanghai') =>
+  api.get('/scheduler/cron-preview', { params: { expr, count, tz } }).then(r => r.data)
 
 // ── 收益对比 ──────────────────────────────────────────────
 
@@ -243,10 +232,8 @@ export const getEarningsCompare = (symbols: string[], force = false) =>
   api.get('/ai/earnings-compare', { params: { symbols: symbols.join(','), force }, timeout: 60_000 }).then(r => r.data)
 
 // A 股动能扫描
-export const getAStockMomentum = (mode: 'sw' | 'theme' = 'sw', force = false) =>
+export const getAStockMomentum = (mode: 'theme' = 'theme', force = false) =>
   api.get('/astock/momentum', { params: { mode, force }, timeout: 180_000 }).then(r => r.data)
-export const getAStockUniverse = () =>
-  api.get('/astock/universe', { timeout: 120_000 }).then(r => r.data)
 export const getAStockDetail   = (code: string, days = 120) =>
   api.get(`/astock/stock/${code}`, { params: { days }, timeout: 60_000 }).then(r => r.data)
 export const classifyAStock    = (code: string) =>
@@ -255,6 +242,26 @@ export const addAStockTheme    = (code: string, group: string) =>
   api.post('/astock/themes/add', { code, group }).then(r => r.data)
 export const removeAStockTheme = (code: string) =>
   api.post('/astock/themes/remove', { code }).then(r => r.data)
+
+// A 股半自动交易（信号 + 人工下单，不接券商）
+export const getAStockTradeSettings = () =>
+  api.get('/astock/trade/settings').then(r => r.data)
+export const updateAStockTradeSettings = (patch: Record<string, unknown>) =>
+  api.put('/astock/trade/settings', patch).then(r => r.data)
+export const getAStockHoldings = () =>
+  api.get('/astock/trade/holdings', { timeout: 60_000 }).then(r => r.data)
+export const setAStockPosition = (body: { code: string; qty: number; avg_cost: number; name?: string }) =>
+  api.post('/astock/trade/position', body).then(r => r.data)
+export const deleteAStockPosition = (code: string) =>
+  api.delete(`/astock/trade/position/${code}`).then(r => r.data)
+export const genAStockPlan = (force_scan = false) =>
+  api.post('/astock/trade/plan', { force_scan }, { timeout: 180_000 }).then(r => r.data)
+export const getAStockPlan = (plan_date?: string) =>
+  api.get('/astock/trade/plan', { params: plan_date ? { plan_date } : {} }).then(r => r.data)
+export const confirmAStockFill = (body: { order_id: number; filled_qty: number; filled_price: number }) =>
+  api.post('/astock/trade/fill', body).then(r => r.data)
+export const setAStockOrderStatus = (order_id: number, status: string) =>
+  api.post(`/astock/trade/order/${order_id}/status`, { status }).then(r => r.data)
 
 // 单股回测（EMA21 补仓）
 export type SingleBacktestParams = {
@@ -265,6 +272,8 @@ export type SingleBacktestParams = {
   stop_ema_period?: number; ema_fast?: number
   entry_mode?: 'rs_momentum' | 'ema_relaxed'
   allow_margin?: boolean; max_leverage?: number; margin_rate?: number
+  retrace_max_leverage?: number; retrace_rsi_boost?: boolean
+  retrace_levels?: number[][]
 }
 export const runSingleBacktest    = (params: SingleBacktestParams) =>
   api.post('/single-bt/run', params).then(r => r.data as { task_id: string })
@@ -278,3 +287,20 @@ export const getSingleBtHistory   = (limit = 30) =>
 // ── 风险温度计 ──────────────────────────────────────────────
 export const getRiskThermometer = (force = false) =>
   api.get('/risk/thermometer', { params: force ? { force: true } : {} }).then(r => r.data)
+
+// ── 盘前简报 ─────────────────────────────────────────────────
+export type PremarketConfig = {
+  core: Array<{ ticker: string; cost?: string; weight?: string; thesis?: string }>
+  swing: Array<{ ticker: string; entry?: string; stop?: string; reason?: string }>
+  watchlist: Array<{ ticker: string; trigger?: string; reason?: string }>
+}
+export const getPremarketConfig = () =>
+  api.get('/premarket/config').then(r => r.data as PremarketConfig)
+export const savePremarketConfig = (cfg: PremarketConfig) =>
+  api.put('/premarket/config', cfg).then(r => r.data as PremarketConfig)
+export const getPremarketSnapshot = () =>
+  api.get('/premarket/snapshot').then(r => r.data)
+export const getPremarketScan = () =>
+  api.get('/premarket/scan').then(r => r.data)
+export const generatePremarketBriefing = () =>
+  api.post('/premarket/briefing', {}, { timeout: 300_000 }).then(r => r.data)

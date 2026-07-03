@@ -24,18 +24,24 @@ _LOG_DIR  = os.path.join(ROOT, 'logs')
 _LOG_FILE = os.path.join(_LOG_DIR, 'server.log')
 os.makedirs(_LOG_DIR, exist_ok=True)
 
-_file_handler = TimedRotatingFileHandler(
-    _LOG_FILE, when='midnight', backupCount=30, encoding='utf-8'
-)
-_file_handler.setFormatter(logging.Formatter(
-    '%(asctime)s | %(levelname)-5s | %(name)s | %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S',
-))
-_file_handler.setLevel(logging.DEBUG)
-
-# root logger 兜底：propagate=True 的模块都会写入 server.log
+# 幂等添加：`python -m web.server` 会把本模块当 __main__ 跑一遍，uvicorn 的
+# 'web.server:app' 又会把它作为 web.server 再 import 一遍 —— 同进程下顶层代码执行两次。
+# 若不去重，root 会挂上两个相同的文件 handler，导致每行日志写两遍（看起来像任务双跑）。
+# 用 tag 标记，root 上已存在则跳过。
+_QT_LOG_TAG = 'quantrading_server_file'
 logging.root.setLevel(logging.DEBUG)
-logging.root.addHandler(_file_handler)
+if not any(getattr(h, '_qt_tag', None) == _QT_LOG_TAG for h in logging.root.handlers):
+    _file_handler = TimedRotatingFileHandler(
+        _LOG_FILE, when='midnight', backupCount=30, encoding='utf-8'
+    )
+    _file_handler.setFormatter(logging.Formatter(
+        '%(asctime)s | %(levelname)-5s | %(name)s | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S',
+    ))
+    _file_handler.setLevel(logging.DEBUG)
+    _file_handler._qt_tag = _QT_LOG_TAG   # type: ignore[attr-defined]
+    # root logger 兜底：propagate=True 的模块都会写入 server.log
+    logging.root.addHandler(_file_handler)
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -55,7 +61,9 @@ from web.api.comparison  import router as comparison_router
 from web.api.ai_tracker  import router as ai_tracker_router
 from web.api.single_backtest import router as single_backtest_router
 from web.api.astock import router as astock_router
+from web.api.astock_trade import router as astock_trade_router
 from web.api.risk import router as risk_router
+from web.api.premarket import router as premarket_router
 
 
 @asynccontextmanager
@@ -109,7 +117,9 @@ app.include_router(comparison_router)
 app.include_router(ai_tracker_router)
 app.include_router(single_backtest_router)
 app.include_router(astock_router)
+app.include_router(astock_trade_router)
 app.include_router(risk_router)
+app.include_router(premarket_router)
 
 
 @app.get('/api/health')

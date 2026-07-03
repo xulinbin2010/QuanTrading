@@ -3,8 +3,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createContext, useContext, useState } from 'react'
 import Layout from './components/Layout'
 import { StockChartProvider } from './components/StockChartProvider'
+import { PremarketBriefingProvider } from './components/PremarketBriefingProvider'
 import Portfolio from './pages/Portfolio'
-import FactorDashboard from './pages/FactorDashboard'
 import MarketScan from './pages/MarketScan'
 import StockAnalysis from './pages/StockAnalysis'
 import Optimizer from './pages/Optimizer'
@@ -30,11 +30,11 @@ export default function App() {
     <AccountContext.Provider value={{ selectedAccount, setSelectedAccount }}>
       <QueryClientProvider client={queryClient}>
         <StockChartProvider>
+        <PremarketBriefingProvider>
         <BrowserRouter>
           <Routes>
             <Route element={<Layout />}>
               <Route index element={<Portfolio />} />
-              <Route path="factors" element={<FactorDashboard />} />
               <Route path="scanner"   element={<MarketScan />} />
               <Route path="analysis"  element={<StockAnalysis />} />
               <Route path="optimizer" element={<Optimizer />} />
@@ -49,6 +49,7 @@ export default function App() {
             </Route>
           </Routes>
         </BrowserRouter>
+        </PremarketBriefingProvider>
         </StockChartProvider>
       </QueryClientProvider>
     </AccountContext.Provider>

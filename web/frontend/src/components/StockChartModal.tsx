@@ -150,6 +150,7 @@ export default function StockChartModal({ symbol, market = 'us', onClose }: {
   const _prevBar = _ohlcv[_ohlcv.length - 2]
   const lastChg = (_lastBar && _prevBar && _prevBar.close)
     ? (_lastBar.close - _prevBar.close) / _prevBar.close : null
+  const ytd: number | null = data?.ytd ?? null   // 年初至今涨跌幅（后端计算）
 
   const TABS = [
     { key: 'tech',    label: '技术分析' },
@@ -165,16 +166,6 @@ export default function StockChartModal({ symbol, market = 'us', onClose }: {
           <div className="text-white font-semibold">
             {data?.info?.name && <span>{data.info.name} </span>}
             <span className="font-mono text-sm text-slate-400">{symbol}</span> {isAStock ? '🇨🇳' : ''}
-            {_lastBar && (
-              <span className="ml-2 font-mono text-sm font-normal">
-                <span className="text-slate-200">{_lastBar.close}</span>
-                {lastChg != null && (
-                  <span className={`ml-1.5 ${lastChg >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                    {lastChg >= 0 ? '▲' : '▼'}{lastChg >= 0 ? '+' : ''}{(lastChg * 100).toFixed(2)}%
-                  </span>
-                )}
-              </span>
-            )}
             <span className="text-slate-500 text-sm font-normal"> — 个股详情</span>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white text-lg leading-none">✕</button>
@@ -228,9 +219,13 @@ export default function StockChartModal({ symbol, market = 'us', onClose }: {
                       </div>
                     )}
 
-                    {/* 技术指标状态 */}
-                    <div className={`grid ${isAStock ? 'grid-cols-5' : 'grid-cols-4'} gap-3`}>
-                      {(isAStock ? [
+                    {/* 技术指标状态（现价/今日涨幅/YTD 置于首三格） */}
+                    <div className={`grid ${isAStock ? 'grid-cols-8' : 'grid-cols-7'} gap-1.5`}>
+                      {([
+                        { label: '现价',  value: <span className="font-mono text-xs text-slate-200">{_lastBar?.close ?? '—'}</span> },
+                        { label: '今日',  value: <FmtPct v={lastChg} decimals={2} /> },
+                        { label: 'YTD',   value: <FmtPct v={ytd} decimals={1} /> },
+                        ...(isAStock ? [
                         { label: 'RS（沪深300·5日）', value: <FmtPct v={info.rs_5d} /> },
                         { label: '均线状态',          value: <EmaStateBadge state={info.ema_state} /> },
                         { label: '换手率',            value: <FmtNum v={info.turnover} decimals={1} suffix="%" /> },
@@ -241,9 +236,9 @@ export default function StockChartModal({ symbol, market = 'us', onClose }: {
                         { label: '趋势向上', value: <BoolIcon v={last.uptrend} /> },
                         { label: '价格突破', value: <BoolIcon v={last.breakout} /> },
                         { label: '放量',     value: <BoolIcon v={last.vol_surge} /> },
-                      ]).map(({ label, value }) => (
-                        <div key={label} className="bg-slate-700/50 rounded p-2">
-                          <div className="text-xs text-slate-400 mb-1">{label}</div>
+                      ])]).map(({ label, value }) => (
+                        <div key={label} className="bg-slate-700/50 rounded p-1.5">
+                          <div className="text-[11px] text-slate-400 mb-0.5 truncate" title={label}>{label}</div>
                           <div>{value}</div>
                         </div>
                       ))}

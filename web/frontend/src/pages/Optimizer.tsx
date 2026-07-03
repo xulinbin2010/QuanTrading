@@ -149,9 +149,9 @@ function OptimizerResult({ taskId, mandatory, registryMap, onVerify }: {
         )}
       </div>
 
-      <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-x-auto">
+      <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-x-auto max-h-[70vh]">
         <table className="w-full text-xs">
-          <thead>
+          <thead className="sticky top-0 z-10 bg-slate-800">
             <tr className="text-slate-400 border-b border-slate-700 bg-slate-800/80">
               {isWF
                 ? ['#', '因子组合', '数量', '稳定性', '均过拟合', '均训练Sharpe', '均测试Sharpe', '±std', '年化收益', '均窗口收益', '均超额收益', '均回撤', '均交易数', '有效窗口', '验证'].map(h => (

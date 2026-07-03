@@ -26,7 +26,8 @@ function persistCustomPresets(list: CustomPreset[]) {
 }
 
 // ── 日期预设 ───────────────────────────────────────────────
-const DATE_PRESETS = [
+const DATE_PRESETS: { label: string; days?: number; ytd?: boolean }[] = [
+  { label: 'YTD', ytd: true },
   { label: '6M', days: 180 },
   { label: '1Y', days: 365 },
   { label: '2Y', days: 730 },
@@ -38,6 +39,11 @@ function daysAgo(n: number) {
   const d = new Date()
   d.setDate(d.getDate() - n)
   return dateToStr(d)
+}
+
+/** 今年 1 月 1 日（YTD 起点） */
+function startOfYear() {
+  return dateToStr(new Date(new Date().getFullYear(), 0, 1))
 }
 
 function pct(v: number, digits = 1) {
@@ -151,8 +157,8 @@ function CorrMatrix({ matrix }: { matrix: { symbols: string[]; values: number[][
 // ── 主页面 ─────────────────────────────────────────────────
 export default function Comparison() {
   const [symbols, setSymbols] = useState('NVDA,NVDL,SPY')
-  const [startDate, setStartDate] = useState(daysAgo(365))
-  const [activeDatePreset, setActiveDatePreset] = useState('1Y')
+  const [startDate, setStartDate] = useState(startOfYear())
+  const [activeDatePreset, setActiveDatePreset] = useState('YTD')
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<any>(null)
   const [error, setError] = useState('')
@@ -212,10 +218,10 @@ export default function Comparison() {
     run(preset.symbols, startDate)
   }
 
-  const handleDatePreset = (label: string, days: number) => {
-    const d = daysAgo(days)
+  const handleDatePreset = (p: { label: string; days?: number; ytd?: boolean }) => {
+    const d = p.ytd ? startOfYear() : daysAgo(p.days!)
     setStartDate(d)
-    setActiveDatePreset(label)
+    setActiveDatePreset(p.label)
     run(symbols, d)
   }
 
@@ -314,7 +320,7 @@ export default function Comparison() {
               {DATE_PRESETS.map((p, i) => (
                 <button
                   key={p.label}
-                  onClick={() => handleDatePreset(p.label, p.days)}
+                  onClick={() => handleDatePreset(p)}
                   className={`px-3 py-1.5 text-xs transition-colors
                     ${i > 0 ? 'border-l border-slate-600' : ''}
                     ${activeDatePreset === p.label
@@ -464,7 +470,7 @@ export default function Comparison() {
           )}
 
           {/* 说明 */}
-          <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50 text-xs text-slate-500 space-y-1">
+          <div className="bg-slate-800/50 rounded-lg p-3 border border-slate-700/50 text-sm text-slate-400 space-y-1">
             <div>· 收益曲线以对比区间第一个共同交易日为基准（归一化为 0%），展示累计收益率变化</div>
             <div>· 杠杆 ETF 因每日再平衡（复利磨损），长期收益未必恰好是正股的 2 倍；震荡市中实际表现可能更差</div>
             <div>· 数据来源：yfinance，已做复权调整</div>

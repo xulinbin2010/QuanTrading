@@ -42,6 +42,11 @@ Always respond in Chinese (中文). Do not mix Korean or other languages into re
   - 全局 modal 由 `<StockChartProvider>` 在 `App.tsx` 注入，无需在子组件再包一层
   - 不要再写本地 StockDetailPanel / K 线弹窗组件，统一复用 `components/StockChartModal.tsx`
 
+- **页面底部「说明」文字字号**：每页底部那一段灰色说明/图例文字必须**清晰可读**，统一用 `text-sm`（14px）+ 颜色不低于 `text-slate-400`，容器间距用 `space-y-1`。
+  - **禁止**用 `text-xs`（12px）或更小、以及 `text-slate-500/600` 这种过暗颜色做整段说明（用户反馈看不清）。
+  - 适用范围：各页 `{/* 说明 */}` 注释下的 footer 说明块（AITracker / AStockTracker / Backtest / Comparison 等）。
+  - 表格内单元格、角标、芯片（badge）等紧凑元素不受此限，可继续用 `text-xs` 及更小。
+
 - **K 线图均线**：系统内所有 K 线图（美股 + A 股，含 StockChartModal / StockAnalysis / Portfolio）的均线统一使用 **EMA7 / EMA21**，禁止再用 MA10 / MA20。
   - 后端在 stock detail 的 `factors[].ma_fast`（=EMA7）/ `ma_slow`（=EMA21）字段输出，前端图例与线名显示为 `EMA7` / `EMA21`
   - 美股：`web/services/factor_svc.py::get_stock_factors`；A 股：`web/services/astock_momentum_svc.py::get_astock_detail`，均用 `close.ewm(span=N, adjust=False).mean()`
@@ -115,12 +120,11 @@ cd web/frontend && npm install && npm run build && cd ../..
 | 模块 | URL | IB 依赖 | 说明 |
 |------|-----|---------|------|
 | 持仓总览 | `/#/` | 可选 | 余额/持仓/资产配比需 IB；订单历史/净值曲线不需要；支持 CSV 导出 |
-| 因子看板 | `/#/factors` | 否 | 因子注册表管理 + 每日生产信号 Top 10(`production_signal_svc`,复用 `auto_trader.scan_signals`) |
 | 市场扫描 | `/#/scanner` | 否 | 全股票池因子扫描 + 内幕买入面板，缓存1小时，点行展开K线详情 |
 | 因子优化 | `/#/optimizer` | 否 | 穷举因子组合 × 参数网格，按 Sharpe 排名，含预计算加速 |
 | 策略回测 | `/#/backtest` | 否 | 4 tab：策略回测 / 单股回测 / 收益对比 / **A 股动能轮动**(每周一 rebalance,4 个策略可选) |
-| AI 追踪 | `/#/ai` | 否 | 3 tab：产业图谱(universe 策展,GPU/网络/电力) / 动能轮动 / **财报对比**(最多3只横向比营收/净利/EPS);成员自动获得 `auto_trader` 优先池待遇 |
-| A 股追踪 | `/#/astock` | 否 | A 股动能扫描(主题板块/申万行业),188 只 AI 硬件,含板块强度排名 |
+| 美股AI追踪 | `/#/ai` | 否 | 3 tab：产业图谱(universe 策展,GPU/网络/电力) / 动能轮动 / **财报对比**(最多3只横向比营收/净利/EPS);成员自动获得 `auto_trader` 优先池待遇 |
+| A股AI追踪 | `/#/astock` | 否 | A 股动能扫描(主题板块/申万行业),188 只 AI 硬件,含板块强度排名 |
 | 任务调度 | `/#/scheduler` | 否 | 管理定时任务，查看执行日志 |
 | 系统配置 | `/#/config` | 否 | 风控/策略参数实时修改，持久化到 DB |
 
@@ -130,7 +134,15 @@ cd web/frontend && npm install && npm run build && cd ../..
 - 价格获取用 `reqHistoricalData`（不依赖 Level 1 行情订阅），盘中/盘后均可用
 - ib_insync 在 FastAPI AnyIO 线程中通过 `ThreadPoolExecutor` + 固定 event loop 调用
 
-**AI 追踪页「财报对比」tab 关键实现：**
+**策略回测页「单股回测」tab 关键实现：**
+- 后端 `strategies/ema_pullback.py::run_ema_pullback_backtest` → `single_backtest_svc`（异步）→ `POST /api/single-bt/run`，T 日触发 / T+1 开盘成交
+- 一次回测跑多策略对照：`ema_pullback`(EMA21 补仓) / `retrace_add`(逢跌加仓) / `rs_only`(RSMomentum) / `buy_hold`(满仓 B&H) / `buy_hold_base`(同底仓 B&H) / SPY
+- **`retrace_add`（逢跌加仓）— 单边强趋势股「增厚 B&H」对照策略**：满仓底仓 + 从滚动峰值回撤分档加仓(默认 -12%/-20%/-28% 各 0.4x) + **只买不卖**(退出靠人工看基本面，无自动止损)。加仓走 margin，总杠杆上限 `retrace_max_leverage`(默认 2.0)，可选 `retrace_rsi_boost`(回撤档触发时 RSI<40 加码×1.5)。`_simulate_retrace_add` 实现，每档整段回测仅触发一次
+  - **设计依据**：纯单边牛股(如 MU YTD +260%)上，主动减仓/止损/高抛都是负 alpha(卖了买不回)，唯一有正期望的增厚动作是「逢大跌加仓、从不高抛」，回测可超满仓 B&H，代价是杠杆放大回撤
+  - 回撤按**滚动峰值**算(非相对成本)，故加仓价可能高于底仓价(上升途中回调照买)；前端可调档位/杠杆/RSI 加码，权益曲线金色线 + 「加仓明细」表
+  - 反面教训：EMA21 补仓默认 `base_pct=0.5` + EMA50 硬止损，在单边股上必跑输 B&H(底仓踏空 + 止损被甩出后高位追回)；想贴近 B&H 要调高 `base_pct`、放宽或禁用止损
+
+**美股AI追踪页「财报对比」tab 关键实现：**
 - 后端 `ai_momentum_svc.get_earnings_compare(symbols)` → `GET /api/ai/earnings-compare`，最多 3 只
 - 数据：快照(营收/盈利 YoY、PE/PS/毛利/市值，复用 `get_stock_info`) + 最近 5 季营收/净利/EPS(yfinance `quarterly_income_stmt`，pickle 缓存 24h `data/.earnings_compare_cache.pkl`)
 - 三列独立卡片(各公司营收/净利柱状 + EPS 行) + 下方三股合并图(营收/净利各一张折线，蓝/绿/橙固定配色)
@@ -144,7 +156,7 @@ web/
   server.py           FastAPI 入口（端口 3001）
   api/                路由：portfolio / factors / backtest / scheduler / config / optimizer
   services/           服务层：封装现有 Python 模块
-    factor_svc.py     因子扫描、预览、内幕数据
+    factor_svc.py     因子扫描、内幕数据、移动止损检查
     backtest_svc.py   异步回测执行
     optimizer_svc.py  因子组合优化（含预计算缓存）
     performance_svc.py 净值/业绩指标计算
@@ -283,23 +295,18 @@ strategies/
   base.py            # 抽象基类：generate_signals(df) → df（含 signal 列）
   rs_momentum.py     # 主策略：调用 factors/ 模块组合计算，输出买卖信号
                      #   支持 extra_filters 参数（注册表 filter 因子，验证后可推入生产）
-  dynamic_factor.py  # Web 预览用：从注册表动态组合因子，支持 set_sector_etf()
+  dynamic_factor.py  # Web 回测「单股回测」因子组合用：从注册表动态组合技术因子
   precompute.py      # 优化器专用：预计算全股票池因子，加速组合回测
   ma_crossover.py    # 均线交叉策略（辅助/测试用）
-  factors/           # 因子模块库（每个因子独立文件）
-    registry.py      # 因子注册表：get_registry() 返回所有因子元数据（共 20 个因子）
+  ema_pullback.py    # 单股回测引擎：EMA21补仓 / 逢跌加仓 / RSMomentum / B&H 多策略对照（web「单股回测」tab 用）
+  factors/           # 因子模块库（每个因子独立文件，瘦身后仅保留生产用技术因子）
+    registry.py      # 因子注册表：get_registry() 返回所有因子元数据（共 8 个）
     rs_score.py      # 相对强度因子（个股 vs SPY）
     breakout.py      # 价格突破因子
     volume.py        # 成交量均线 / 放量突破 / 量价背离
-    volume_profile.py # OBV 趋势因子（obv_trend）
     trend.py         # 趋势过滤（MA10 > MA20，短期趋势）
     drawdown.py      # 崩跌过滤（距高点最大回撤）
     atr.py           # ATR 波动率（供自适应止损使用，is_dependency）
-    volatility.py    # 波动率过滤（atr_pct / vol_ok，ATR/价格过高则排除）
-    momentum_quality.py # 动量质量（log价格线性回归 R²，衡量趋势平稳性）
-    sector_rs.py     # 行业相对强度（sector_rs / stock_vs_sector，用11个行业ETF代理）
-    earnings_avoid.py # 财报回避（display_only，在市场扫描面板标记临近财报）
-    fundamental.py   # 基本面因子（PE/PB/ROE 等，仅展示，不参与时序信号）
 
 # ── 运维工具 ─────────────────────────────────────────────
 tools/
@@ -350,7 +357,7 @@ start_web.sh         # 一键启动脚本
 
 **卖出信号（量价背离）：** 价格创50日新高但成交量低于均量 × `VOL_SHRINK_RATIO`（顶部信号，`SELL_ON_ALERT=True` 时自动下卖单）
 
-> **AI 优先池如何维护**：在 Web UI「AI 基建追踪器」(`/#/ai`) 增删股票即可写入 `data/ai_universe.json`；`auto_trader` 每次扫描自动加载（无需重启）。用户的主观判断（看好 MU/NVDA/AVGO）通过这个接口传给系统。
+> **AI 优先池如何维护**：在 Web UI「美股AI追踪」(`/#/ai`) 增删股票即可写入 `data/ai_universe.json`；`auto_trader` 每次扫描自动加载（无需重启）。用户的主观判断（看好 MU/NVDA/AVGO）通过这个接口传给系统。
 
 ---
 
@@ -536,7 +543,7 @@ VIX得分    = clip((30 - VIX) / 100, -0.2, +0.2)      → [-0.2, +0.2]
 
 ## 因子系统架构
 
-**因子注册表**（`strategies/factors/registry.py`）是整个因子体系的核心，当前共 20 个因子：
+**因子注册表**（`strategies/factors/registry.py`）是整个因子体系的核心。**已瘦身**：只保留 RSMomentum 生产策略实际用到的 8 个技术因子（5 个买卖条件 + 2 个依赖项 + 1 个卖出报警），不再收录从未投产的实验因子（动量质量 / OBV / 波动率过滤 / 行业相对强度）和基本面快照因子。
 
 | 因子 key | 类型 | signal_type | 说明 |
 |----------|------|-------------|------|
@@ -548,26 +555,13 @@ VIX得分    = clip((30 - VIX) / 100, -0.2, +0.2)      → [-0.2, +0.2]
 | `trend_filter` | technical | filter | MA10 > MA20 短期趋势过滤 |
 | `drawdown_filter` | technical | filter | 崩跌过滤（距高点最大回撤） |
 | `atr` | technical | score | ATR14（is_dependency，供止损用） |
-| `volatility_filter` | technical | filter | ATR/价格 > max_atr_pct 则过滤（默认5%） |
-| `momentum_quality` | technical | score | log价格线性回归 R²，衡量趋势平稳性 |
-| `obv_trend` | technical | score | OBV 斜率归一化，正值=资金流入 |
-| `sector_rs` | technical | score | 个股 vs 行业ETF vs SPY（双层相对强度） |
-| `revenue_growth` | fundamental | score | 营收增长率（快照，display_only 效果） |
-| `earnings_growth` | fundamental | score | 盈利增长率（快照） |
-| `roe` | fundamental | score | ROE 净资产收益率（快照） |
-| `debt_to_equity` | fundamental | score | 负债权益比（快照） |
-| `fcf_yield` | fundamental | score | 自由现金流收益率（快照） |
-| `pe_ratio` | fundamental | score | 市盈率 PE（快照） |
-| `pb_ratio` | fundamental | score | 市净率 PB（快照） |
-| `earnings_avoid` | fundamental | filter | 财报临近标记（display_only=True） |
 
 **关键设计原则：**
-- `RSMomentum`（生产策略）硬编码核心5个条件，不读注册表。支持 `extra_filters` 参数传入额外注册表因子，用于将验证通过的因子推入生产：`RSMomentum(extra_filters=['volatility_filter'])`
-- `DynamicFactorStrategy`（Web 预览/优化器）从注册表动态组合，支持 `set_spy()` 和 `set_sector_etf()`
-- **基本面因子和 `earnings_avoid` 只做展示，不参与时序回测**（快照数据无法逐日计算）
-- **新因子推荐工作流**：加入注册表（默认关闭）→ Web 因子看板/优化器实验 → 验证后通过 `extra_filters` 推入 RSMomentum
-- 因子开关（`FACTOR_*_ENABLED`）存在 DB `config_store` 表，通过 Web UI 因子看板管理
-- `sector_rs` 依赖 11 个行业 ETF 价格（`_load_price_map` 统一预加载），各行业映射见 `strategies/factors/sector_rs.py::SECTOR_ETFS`
+- `RSMomentum`（生产策略）硬编码核心5个条件，不读注册表。仍支持 `extra_filters` 参数传入额外注册表 filter 因子（机制保留，但当前注册表内 filter 因子已全部是核心条件）
+- `DynamicFactorStrategy`（Web 回测「单股回测」因子组合 / 优化器）从注册表动态组合技术因子，支持 `set_spy()`
+- **基本面快照（PE/PB/ROE/营收·盈利增长/FCF 等）不在注册表里**：由 `core.universe.get_stock_info` 直接产出，在市场扫描表 / K 线详情基本面 tab 展示，不参与时序信号 / 回测 / 优化
+- 因子开关（`FACTOR_*_ENABLED`）存在 DB `config_store` 表，只影响「市场扫描 / 优化器 / 单股回测」用的 `DynamicFactorStrategy`，**不影响实盘 RSMomentum**（它硬编码核心条件不读注册表）。原「因子看板」管理 UI 已移除，如需增删开关/调参直接改 DB `config_store`
+- 市场扫描的「临近财报标记」(`earnings_safe`) 由 `FACTOR_earnings_avoid_ENABLED` 配置驱动 + `factor_svc._earnings_safe`，独立于注册表（默认关闭）
 
 ---
 
@@ -658,7 +652,7 @@ python -m tools.compare_data --symbols AAPL --start 2024-01-01 --port 9999
 20 个手动维护板块（`data/astock_themes.json`），约 186-188 只，覆盖 AI 硬件全链：
 GPU/算力芯片、CCL、玻纤、半导体材料/设备、模拟/电源芯片、功率半导体、存储、晶圆代工、封测、被动元件、服务器、光模块、光纤、PCB、连接、液冷、电源、IDC、电网。
 
-Web UI「A 股追踪」(`/#/astock`) 增删股票 → 自动写入 themes.json → 扫描/回测立即生效。`astock_universe.add_theme_stock` / `remove_theme_stock` 为后端接口。
+Web UI「A股AI追踪」(`/#/astock`) 增删股票 → 自动写入 themes.json → 扫描/回测立即生效。`astock_universe.add_theme_stock` / `remove_theme_stock` 为后端接口。
 
 ### 评分公式 composite（0-10 综合分）
 

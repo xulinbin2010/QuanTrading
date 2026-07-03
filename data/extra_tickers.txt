@@ -13,7 +13,6 @@ AAOI
 AMKR
 RMBS
 ENTG
-NBIS
 APLD
 OKLO
 CLS
@@ -36,7 +35,6 @@ NOK
 BE
 PL
 axti
-alab
 cpsh
 fcel
 iren

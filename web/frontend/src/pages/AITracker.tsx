@@ -299,11 +299,12 @@ export default function AITracker() {
                           const meta = AI_COMPANY_META[sym]
                           const isMega = MEGA_CAPS.has(sym)
                           const isSmall = SMALL_CAPS.has(sym)
-                          // 市值档位视觉权重：龙头亮+👑，小盘暗淡，其余默认
+                          // 市值档位视觉权重：龙头明显提亮(亮底+亮边+阴影+👑)，
+                          // 微小盘明显沉降(更暗底+低透明度+降饱和)，其余默认。暗色下三档须拉开对比。
                           const tierCls = isMega
-                            ? 'bg-slate-700/80 border-slate-500'
+                            ? 'bg-slate-500/70 border-slate-300 ring-1 ring-slate-300/40 shadow-md shadow-black/40'
                             : isSmall
-                              ? 'bg-slate-800/30 border-slate-800 opacity-55 hover:opacity-100'
+                              ? 'bg-slate-900/60 border-slate-800/50 opacity-45 saturate-50 hover:opacity-100 hover:saturate-100'
                               : 'bg-slate-800/70 border-slate-700/60'
                           return (
                             <div key={sym}
@@ -328,12 +329,12 @@ export default function AITracker() {
                                     onClick={e => { e.stopPropagation(); tpMutation.mutate({ symbol: sym, enabled: !isTradePriority(sym) }) }}
                                     disabled={tpMutation.isPending}
                                     title={isTradePriority(sym)
-                                      ? '实盘优先池成员（auto_trader 走宽松扫描+置顶+行业豁免）。点击转为仅研究观察'
-                                      : '仅研究观察，未进实盘优先池。点击纳入实盘优先'}
+                                      ? 'AI 优先池成员（auto_trader 走宽松扫描+置顶+行业豁免；动能轮动里标 ⭐）。点击转为仅研究观察'
+                                      : '仅研究观察，未进 AI 优先池。点击纳入优先池'}
                                     className={`text-[8px] leading-tight px-1 rounded transition-colors ${isTradePriority(sym)
                                       ? 'bg-emerald-900/60 text-emerald-300 hover:bg-emerald-800/70'
                                       : 'bg-slate-700/70 text-slate-500 hover:bg-slate-600/70'}`}>
-                                    {isTradePriority(sym) ? '实盘' : '观察'}
+                                    {isTradePriority(sym) ? '优先池' : '观察'}
                                   </button>
                                   {sp500Set.has(sym) && <span title="S&P 500 成分" className="text-[8px] leading-tight px-1 rounded bg-blue-900/50 text-blue-300">S&P</span>}
                                   {ndxSet.has(sym) && <span title="Nasdaq 100 成分" className="text-[8px] leading-tight px-1 rounded bg-purple-900/50 text-purple-300">100</span>}
@@ -416,11 +417,11 @@ export default function AITracker() {
 
 
       {/* 说明 */}
-      <div className="text-xs text-slate-600 space-y-0.5">
+      <div className="text-sm text-slate-400 space-y-1">
         <div>· 产业图谱按上下游分层展示，公司业务为人工标注（data/aiCompanyMeta.ts）；增删即时写入 ai_universe.json（auto_trader 优先池）</div>
-        <div>· 每只右侧 <span className="px-1 rounded bg-emerald-900/60 text-emerald-300">实盘</span>/<span className="px-1 rounded bg-slate-700/70 text-slate-500">观察</span> 切换是否纳入 auto_trader 实盘 AI 优先池：<span className="text-slate-400">实盘</span>=宽松扫描+置顶+行业豁免；<span className="text-slate-400">观察</span>=仅研究不下单。新增成员默认「观察」，老成员默认「实盘」（向后兼容）</div>
+        <div>· 每只右侧 <span className="px-1 rounded bg-emerald-900/60 text-emerald-300">优先池</span>/<span className="px-1 rounded bg-slate-700/70 text-slate-500">观察</span> 切换是否纳入 auto_trader 的 AI 优先池：<span className="text-slate-400">优先池</span>=宽松扫描+置顶+行业豁免（动能轮动里标 ⭐）；<span className="text-slate-400">观察</span>=仅研究不下单。新增成员默认「观察」，老成员默认「优先池」（向后兼容）</div>
         <div>· 「手动加入」识别行业并归组；待定区（图谱最下方）选分组「加入」转正；评分/动量数据见「动能轮动」</div>
-        <div>· <span className="text-slate-400">👑</span> 大盘龙头（约 ≥ $100B）卡片高亮，<span className="opacity-55">暗淡卡</span>为微小盘（约 ≤ $5B）；<span className="text-blue-300">S&P</span>=标普500 / <span className="text-purple-300">100</span>=纳指100 成分</div>
+        <div>· <span className="text-slate-400">👑</span> 大盘龙头（约 ≥ $100B）卡片<span className="px-1 rounded bg-slate-500/70 ring-1 ring-slate-300/40 text-white">提亮+描边</span>，<span className="opacity-45 saturate-50">暗淡卡</span>为微小盘（约 ≤ $5B）；<span className="text-blue-300">S&P</span>=标普500 / <span className="text-purple-300">100</span>=纳指100 成分</div>
       </div>
     </div>
   )
@@ -442,12 +443,19 @@ type MomentumRow = {
   accel: boolean
   composite: number; rank: number
   z_mom_5d: number; z_mom_3d: number; z_rs_group: number; z_vol_ratio: number
+  // RS 动量分(实盘口径,与 auto_trader 同算法)
+  rs_score: number | null; entry_score: number | null
+  rank_tier: number; ai_priority: boolean
 }
 
 type GroupSummary = {
   key: string; label: string; color: string; count: number
-  median_mom_5d: number | null; median_rs_5d: number | null
+  median_mom_5d: number | null
+  median_rs_3d: number | null; median_rs_5d: number | null; median_rs_10d: number | null
   advance: number; decline: number
+  advance_3d: number; decline_3d: number
+  advance_5d: number; decline_5d: number
+  advance_10d: number; decline_10d: number
   flow_score: number; flow_signal: 'inflow' | 'neutral' | 'outflow'
   leaders: { symbol: string; composite: number }[]
 }
@@ -463,6 +471,8 @@ type BasketFlow = {
 function MomentumTab() {
   const qc = useQueryClient()
   const [window, setWindow] = useState<'3d' | '5d' | '10d'>('5d')
+  // 排序口径:'momentum'=短线动能复合分(默认,5日为主) / 'rs'=RS动量分(实盘/auto_trader 同口径,可切换对照)
+  const [sortMode, setSortMode] = useState<'rs' | 'momentum'>('momentum')
   const [groupFilter, setGroupFilter] = useState<string>('all')
   const [holdings, setHoldings] = useState<string>('')   // 逗号分隔的持仓
   const [forcing, setForcing] = useState(false)
@@ -489,35 +499,62 @@ function MomentumTab() {
 
   // 隐藏组的票/板块不进动能轮动
   const rows: MomentumRow[] = (data?.rows ?? []).filter((r: MomentumRow) => !hidden.has(r.group))
-  const groups: GroupSummary[] = (data?.groups ?? []).filter((g: GroupSummary) => !hidden.has(g.key))
+  // 热力卡按所选窗口的板块中位超额取值并排序（3/5/10 日跟随切换）
+  const grpRsKey: keyof GroupSummary = window === '3d' ? 'median_rs_3d' : window === '10d' ? 'median_rs_10d' : 'median_rs_5d'
+  const groups: GroupSummary[] = (data?.groups ?? [])
+    .filter((g: GroupSummary) => !hidden.has(g.key))
+    .slice()
+    .sort((a: GroupSummary, b: GroupSummary) => ((b[grpRsKey] as number) ?? -1) - ((a[grpRsKey] as number) ?? -1))
   const basket: BasketFlow | null = data?.basket ?? null
   const top4: string[] = data?.top4 ?? []
 
   const holdingsSet = new Set(
     holdings.split(/[,\s，]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
   )
-  // 选窗口对应的相对 SPY 字段，并据此重新排序（5d 用复合分，其他用窗口动能）
+  // 选窗口对应的相对 SPY 字段（仅影响展示列高亮，不一定影响排序）
   const rsField: keyof MomentumRow = window === '3d' ? 'rs_3d' : window === '5d' ? 'rs_5d' : 'rs_10d'
   const momField: keyof MomentumRow = window === '3d' ? 'mom_3d' : window === '5d' ? 'mom_5d' : 'mom_10d'
-  const sortKey: keyof MomentumRow = window === '5d' ? 'composite' : momField
+  // 排序：RS 动量分口径 = (rank_tier 升序, entry_score 降序)，与 auto_trader 下单次序一致；
+  //       短线动能口径 = 5d 用复合分，其他窗口用对应窗口动能（原行为）。
+  const momSortKey: keyof MomentumRow = window === '5d' ? 'composite' : momField
+  const sortFn = sortMode === 'rs'
+    ? (a: MomentumRow, b: MomentumRow) => {
+        if (a.rank_tier !== b.rank_tier) return a.rank_tier - b.rank_tier
+        return (b.entry_score ?? -999) - (a.entry_score ?? -999)
+      }
+    : (a: MomentumRow, b: MomentumRow) =>
+        ((b[momSortKey] as number) ?? -999) - ((a[momSortKey] as number) ?? -999)
   const filteredRows = rows
     .filter(r => groupFilter === 'all' || r.group === groupFilter)
     .slice()
-    .sort((a, b) => ((b[sortKey] as number) ?? -999) - ((a[sortKey] as number) ?? -999))
+    .sort(sortFn)
 
   const windowLabel = window === '3d' ? '3 日' : window === '5d' ? '5 日' : '10 日'
 
-  // Top-4 vs 持仓对比
-  const sellSuggest = Array.from(holdingsSet).filter(s => !top4.includes(s))
-  const buySuggest = top4.filter(s => !holdingsSet.has(s))
+  // Top-4 推荐：跟随当前排序口径（不受板块筛选影响，取全篮子排序前 4）
+  const rankedTop4: string[] = sortMode === 'rs'
+    ? ((data?.top4_rs as string[] | undefined) ?? top4)
+    : top4
+  const sellSuggest = Array.from(holdingsSet).filter(s => !rankedTop4.includes(s))
+  const buySuggest = rankedTop4.filter(s => !holdingsSet.has(s))
 
   return (
     <div className="space-y-4">
       <div className="text-[11px] text-slate-500 bg-slate-900/40 border border-slate-700/50 rounded px-2.5 py-1.5 leading-relaxed">
-        <span className="text-slate-400">研究/择时视图</span>：AI 篮子内短线动能 + 资金流复合分排名（与「A 股动能扫描」同方法）。<span className="text-slate-300">独立打分，不接入实盘下单</span>——auto_trader 用的是 RS 动量（见因子看板），与此处 composite 是两套口径。
+        默认按 <span className="text-slate-300">短线动能（复合分，5日为主）</span> 排序——0.35×5日 + 0.20×3日相对SPY + 子组内排名 + 量比 + 资金流（研究/择时视图，反应更快）。切「RS动量分(实盘)」可看与 auto_trader 下单完全同算法的实盘口径（63日RS × 量比/近高点/内幕/AI加成，AI 优先池置顶）。两套口径同股票池（ai_universe.json），仅排序逻辑不同。
       </div>
       {/* 操作栏 */}
       <div className="flex items-center gap-3 flex-wrap">
+        {/* 排序口径切换 */}
+        <div className="flex gap-1">
+          {([['rs', 'RS动量分(实盘)'], ['momentum', '短线动能']] as const).map(([m, label]) => (
+            <button key={m} onClick={() => setSortMode(m)}
+              className={`px-3 py-1 text-xs rounded transition-colors ${
+                sortMode === m ? 'bg-emerald-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="flex gap-1">
           {(['3d', '5d', '10d'] as const).map(w => (
             <button key={w} onClick={() => setWindow(w)}
@@ -555,6 +592,9 @@ function MomentumTab() {
       {basket && <BasketFlowPanel basket={basket} />}
 
       {/* 子组热力 */}
+      <div className="text-[11px] text-slate-500">
+        板块热力 · 按 <span className="text-slate-300">{windowLabel}</span> 相对 SPY 超额中位数（绿=跑赢 / 红=跑输，强弱随上方 3/5/10 日切换）
+      </div>
       <div className="grid grid-cols-4 lg:grid-cols-8 gap-2">
         {groups.map(g => (
           <GroupCard key={g.key} g={g} window={window} active={groupFilter === g.key}
@@ -571,9 +611,9 @@ function MomentumTab() {
             className="w-full bg-slate-700 border border-slate-600 rounded px-3 py-1.5 text-sm text-white focus:outline-none focus:border-blue-500" />
         </div>
         <div className="bg-slate-800 rounded-lg border border-slate-700 p-3 space-y-1.5">
-          <div className="text-xs text-slate-400">Top-4 推荐</div>
+          <div className="text-xs text-slate-400">Top-4 推荐{sortMode === 'rs' ? '（RS动量分）' : '（短线动能）'}</div>
           <div className="flex flex-wrap gap-1.5">
-            {top4.map(s => (
+            {rankedTop4.map(s => (
               <SymbolLink key={s} symbol={s}
                 className={`px-2 py-0.5 text-xs rounded font-mono ${
                   holdingsSet.has(s) ? 'bg-emerald-700 text-emerald-100' : 'bg-blue-700 text-blue-100'}`}>
@@ -599,19 +639,21 @@ function MomentumTab() {
       </div>
 
       {/* 个股排行表 */}
-      <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-x-auto">
+      <div className="bg-slate-800 rounded-lg border border-slate-700 overflow-hidden">
         <div className="px-3 py-1.5 text-[11px] text-slate-500 border-b border-slate-700">
-          当前窗口：<span className="text-blue-300 font-medium">{windowLabel}</span>
-          {window === '5d'
-            ? ' — 按复合分排序（5 日为复合分主权重）'
-            : ` — 按 ${windowLabel}动能 降序排序（复合分仍为 5 日基准，供横向对比）`}
+          {sortMode === 'rs'
+            ? <>排序：<span className="text-emerald-300 font-medium">RS 动量分（实盘口径）</span> — rank_tier(AI优先池置顶) → entry_score 降序，与 auto_trader 下单次序一致</>
+            : <>排序：<span className="text-blue-300 font-medium">短线动能（{windowLabel}）</span>{window === '5d' ? ' — 按复合分（5 日主权重）' : ' — 按对应窗口动能降序'}</>}
         </div>
+        {/* 滚动盒：限高 + 双向滚动，配合 thead sticky 实现冻结表头 */}
+        <div className="overflow-auto max-h-[70vh]">
         <table className="w-full text-sm">
-          <thead>
+          <thead className="sticky top-0 z-10 bg-slate-800">
             <tr className="text-xs text-slate-400 border-b border-slate-700">
               <th className="text-left  px-3 py-2 font-medium">#</th>
               <th className="text-left  px-3 py-2 font-medium">标的</th>
-              <th className="text-center px-2 py-2 font-medium">复合分</th>
+              <th className={`text-center px-2 py-2 font-medium ${sortMode === 'rs' ? 'entry-score-th bg-emerald-900/40 text-emerald-200' : ''}`}>实盘分</th>
+              <th className={`text-center px-2 py-2 font-medium ${sortMode === 'momentum' ? 'bg-blue-900/40 text-blue-200' : ''}`}>复合分</th>
               <th className={`text-right px-2 py-2 font-medium ${window === '3d'  ? 'bg-blue-900/40 text-blue-200' : ''}`}>3 日</th>
               <th className={`text-right px-2 py-2 font-medium ${window === '5d'  ? 'bg-blue-900/40 text-blue-200' : ''}`}>5 日</th>
               <th className={`text-right px-2 py-2 font-medium ${window === '10d' ? 'bg-blue-900/40 text-blue-200' : ''}`}>10 日</th>
@@ -626,14 +668,20 @@ function MomentumTab() {
           <tbody>
             {filteredRows.map((r, idx) => {
               const isHold = holdingsSet.has(r.symbol)
-              const isTop = top4.includes(r.symbol)
+              const isTop = rankedTop4.includes(r.symbol)
+              // 微小盘（产业图谱里淡显的「灰色」卡）→ 此处行也淡显，优先级放低，hover 恢复
+              const isSmall = SMALL_CAPS.has(r.symbol)
               const rsVs = r[rsField] as number | null
               return (
-                <tr key={r.symbol} className={`border-b border-slate-700/50 hover:bg-slate-750 ${isHold ? 'bg-slate-750/40' : ''}`}>
+                <tr key={r.symbol} className={`border-b border-slate-700/50 hover:bg-slate-750 ${isHold ? 'bg-slate-750/40' : ''} ${isSmall ? 'opacity-45 saturate-50 hover:opacity-100 hover:saturate-100 transition-opacity' : ''}`}>
                   <td className="px-3 py-1.5 text-slate-500 text-xs">{idx + 1}</td>
                   <td className="px-3 py-1.5">
                     <SymbolLink symbol={r.symbol} className="font-medium text-white" />
+                    {r.ai_priority && <span className="text-[10px] text-amber-400 ml-1" title="AI 实盘优先池(rank_tier=0)">⭐</span>}
                     <GroupBadge label={r.group_label} color={r.group_color} />
+                  </td>
+                  <td className={`px-2 py-1.5 text-center font-mono text-xs ${sortMode === 'rs' ? 'entry-score-active bg-emerald-900/20' : ''} ${(r.entry_score ?? 0) > 0 ? 'entry-score-pos text-emerald-300' : 'text-slate-500'}`}>
+                    {r.entry_score != null ? r.entry_score.toFixed(2) : '—'}
                   </td>
                   <td className="px-2 py-1.5 text-center">
                     <CompositeBadge score={r.composite} />
@@ -660,18 +708,21 @@ function MomentumTab() {
               )
             })}
             {filteredRows.length === 0 && (
-              <tr><td colSpan={12} className="text-center py-8 text-slate-500 text-sm">暂无数据</td></tr>
+              <tr><td colSpan={13} className="text-center py-8 text-slate-500 text-sm">暂无数据</td></tr>
             )}
           </tbody>
         </table>
+        </div>
       </div>
 
       {/* 说明 */}
-      <div className="text-xs text-slate-600 space-y-0.5">
+      <div className="text-sm text-slate-400 space-y-1">
+        <div>· <span className="text-emerald-400">实盘分(entry_score)</span> = 63日RS × (1+量比加成+近高点加成+内幕加成+AI加成)，与 auto_trader 下单完全同算法；⭐=AI 实盘优先池（排序绝对置顶）</div>
         <div>· 复合分 = 0.35×5日相对SPY + 0.20×3日相对SPY + 0.20×子组内排名 + 0.15×量比 + 0.10×资金流 (z-score 归一化到 0-10)</div>
         <div>· 加速 ▲：3日日均收益 &gt; 5日日均收益，说明动能在加快</div>
         <div>· 资金流分：OBV 5日斜率（标准化）+ 上涨日量/下跌日量比，绿=资金净流入、红=净流出</div>
         <div>· A/D 线：篮子内每日"上涨家数 - 下跌家数"累计；金额加权资金流：每日 sign(Δ价) × 价 × 量 求和</div>
+        <div>· 微小盘（约 ≤ $5B，产业图谱里淡显的「灰色」卡）行淡显、优先级放低，鼠标悬停恢复</div>
         <div>· 30 分钟缓存，刷新强制重算</div>
       </div>
     </div>
@@ -715,12 +766,16 @@ function pctColor(v: number | null | undefined): string {
 }
 
 function GroupCard({ g, window, active, onClick }: { g: GroupSummary; window: '3d' | '5d' | '10d'; active: boolean; onClick: () => void }) {
-  const rs5 = g.median_rs_5d ?? 0
-  const intensity = Math.max(-1, Math.min(1, rs5 / 0.05))   // ±5% 满色
+  const rsKey: keyof GroupSummary = window === '3d' ? 'median_rs_3d' : window === '10d' ? 'median_rs_10d' : 'median_rs_5d'
+  const rsVal = g[rsKey] as number | null
+  const rs = rsVal ?? 0
+  const advance = window === '3d' ? g.advance_3d : window === '10d' ? g.advance_10d : g.advance_5d
+  const decline = window === '3d' ? g.decline_3d : window === '10d' ? g.decline_10d : g.decline_5d
+  const intensity = Math.max(-1, Math.min(1, rs / 0.05))   // ±5% 满色
   const bg = intensity > 0
     ? `rgba(16, 185, 129, ${0.15 + Math.abs(intensity) * 0.35})`
     : `rgba(239, 68, 68, ${0.15 + Math.abs(intensity) * 0.35})`
-  const tone = rs5 >= 0 ? 'pos' : 'neg'
+  const tone = rs >= 0 ? 'pos' : 'neg'
   return (
     <button onClick={onClick}
       className={`group-card group-card-${tone} text-left rounded-lg border p-2.5 transition-colors ${
@@ -730,11 +785,11 @@ function GroupCard({ g, window, active, onClick }: { g: GroupSummary; window: '3
         <span className="w-2 h-2 rounded-full" style={{ background: g.color }} />
         <span className="gc-label text-[11px] text-slate-200 font-medium truncate">{g.label}</span>
       </div>
-      <div className={`gc-rs font-mono text-sm font-bold ${rs5 >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
-        {pctFmt(g.median_rs_5d)}
+      <div className={`gc-rs font-mono text-sm font-bold ${rs >= 0 ? 'text-emerald-300' : 'text-red-300'}`}>
+        {pctFmt(rsVal)}
       </div>
       <div className="gc-ad text-[10px] text-slate-400 mt-0.5">
-        涨 <span className="gc-up text-emerald-300">{g.advance}</span> / 跌 <span className="gc-dn text-red-300">{g.decline}</span>
+        涨 <span className="gc-up text-emerald-300">{advance}</span> / 跌 <span className="gc-dn text-red-300">{decline}</span>
       </div>
       <div className="flex items-center gap-1 mt-1">
         <span className={`gc-flow text-[10px] px-1 rounded ${
@@ -748,8 +803,6 @@ function GroupCard({ g, window, active, onClick }: { g: GroupSummary; window: '3
             <SymbolLink key={l.symbol} symbol={l.symbol} className="text-slate-400" />
           ))}
         </span>
-        {/* 抑制 unused 警告 */}
-        {window === '5d' && null}
       </div>
     </button>
   )
@@ -876,10 +929,13 @@ function EarningsCompareTab() {
         <div className="flex flex-wrap gap-1">
           {allSyms.map(s => {
             const on = input.split(/[,\s]+/).map(x => x.trim().toUpperCase()).includes(s)
+            // 微小盘（产业图谱里淡显的「灰色」卡）→ 快速选芯片也淡显，优先级放低；选中或 hover 恢复
+            const isSmall = SMALL_CAPS.has(s)
             return (
               <button key={s} onClick={() => toggleChip(s)}
                 className={`text-[11px] px-1.5 py-0.5 rounded font-mono transition-colors ${
-                  on ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'}`}>{s}</button>
+                  on ? 'bg-blue-600 text-white' : 'bg-slate-800 text-slate-400 hover:bg-slate-700'} ${
+                  isSmall && !on ? 'opacity-45 saturate-50 hover:opacity-100' : ''}`}>{s}</button>
             )
           })}
         </div>

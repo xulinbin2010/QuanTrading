@@ -6,12 +6,11 @@ import { useAccount } from '../App'
 
 const NAV = [
   { to: '/',          label: '持仓总览', icon: '📊' },
-  { to: '/factors',   label: '因子看板', icon: '🔬' },
   { to: '/scanner',   label: '市场扫描', icon: '🔭' },
   { to: '/optimizer', label: '因子优化', icon: '⚗️'  },
   { to: '/backtest',  label: '回测',     icon: '📈' },
-  { to: '/ai',         label: 'AI 追踪', icon: '🤖'  },
-  { to: '/astock',     label: 'A股扫描',  icon: '🇨🇳' },
+  { to: '/ai',         label: '美股AI追踪', icon: '🇺🇸' },
+  { to: '/astock',     label: 'A股AI追踪',  icon: '🇨🇳' },
   { to: '/scheduler', label: '任务调度', icon: '⏰' },
   { to: '/config',    label: '系统配置', icon: '⚙️'  },
 ]

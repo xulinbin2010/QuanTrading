@@ -21,6 +21,45 @@ const SEV = {
 } as const
 
 const fmt = (v: any) => (v == null || isNaN(Number(v)) ? '—' : Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 }))
+
+// 文本 token → 数字（容忍 $ , % 空格），非数字返回 null
+const numOf = (s: string): number | null => {
+  const c = s.replace(/[$,%\s]/g, '')
+  return /^-?\d+(\.\d+)?$/.test(c) ? Number(c) : null
+}
+// 账户字段关键词 → 字段名
+const ACC_KW: [RegExp, string][] = [
+  [/净清算|net.?liq/i, 'net_liq'],
+  [/维持保证金|maint/i, 'maint_margin'],
+  [/剩余流动性|excess/i, 'excess_liquidity'],
+  [/已结算现金|settled/i, 'settled_cash'],
+  [/未实现|unreali/i, 'unrealized_pnl'],
+]
+// 粘贴文本 → {positions, account}。每行「代码 市值 [主题] [杠杆]」，或账户字段行「净清算 77551」
+function parsePasteText(text: string): { positions: Pos[]; account: Account; skipped: number } {
+  const positions: Pos[] = []
+  const account: Account = {}
+  let skipped = 0
+  // 先剥离数字内的千分位逗号（如 4,096 → 4096），避免与"逗号作字段分隔符"冲突
+  text = text.replace(/(?<=\d),(?=\d{3}(\D|$))/g, '')
+  for (const raw of text.split('\n')) {
+    const line = raw.trim()
+    if (!line) continue
+    const tokens = line.split(/[\s,\t]+/).filter(Boolean)
+    const nums = tokens.map(numOf).filter((n): n is number => n !== null)
+    // 账户字段行：命中关键词且有数字
+    const accHit = ACC_KW.find(([re]) => re.test(line))
+    if (accHit && nums.length) { (account as any)[accHit[1]] = nums[nums.length - 1]; continue }
+    // 持仓行：首 token 为代码，其后第一个数字为市值
+    const symbol = tokens[0]
+    const restNums = tokens.slice(1).map(numOf).filter((n): n is number => n !== null)
+    const restTxt = tokens.slice(1).filter((t) => numOf(t) === null)
+    if (!symbol || !restNums.length) { skipped++; continue }
+    const lev = restNums.length >= 2 ? restNums[1] : 1
+    positions.push({ symbol, market_value_usd: restNums[0], theme: restTxt[0] || '其它', leverage_factor: lev, is_leveraged: lev > 1 })
+  }
+  return { positions, account, skipped }
+}
 const PIE = ['#2f80b8', '#3aa0a0', '#c99a3a', '#b5654a', '#8a6fb0', '#7aa055', '#c56b8a', '#5b8bd0', '#9aa0a8']
 
 function fileToImg(f: File): Promise<DoctorImage> {
@@ -45,6 +84,8 @@ export default function AccountDoctor() {
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const [dragOver, setDragOver] = useState(false)
+  const [showPaste, setShowPaste] = useState(false)
+  const [pasteText, setPasteText] = useState('')
   const fileRef = useRef<HTMLInputElement>(null)
 
   // 载入上次诊断（本地缓存），预填输入表
@@ -90,6 +131,17 @@ export default function AccountDoctor() {
     setPositions((ps) => ps.map((p, j) => (j === i ? { ...p, [k]: v } : p)))
   const addRow = () => setPositions((ps) => [...ps, { symbol: '', theme: '其它', leverage_factor: 1 }])
   const rmRow = (i: number) => setPositions((ps) => ps.filter((_, j) => j !== i))
+
+  function applyPaste() {
+    setError(null)
+    const { positions: ps, account: acc, skipped } = parsePasteText(pasteText)
+    if (!ps.length && !Object.keys(acc).length) { setError('没解析出内容。每行格式：代码 市值 [主题] [杠杆]，如 "MU 39065 存储 1"'); return }
+    if (ps.length) setPositions(ps)
+    if (Object.keys(acc).length) setAccount((a) => ({ ...a, ...acc }))
+    const accN = Object.keys(acc).length
+    setNote(`已解析 ${ps.length} 只持仓${accN ? ` + ${accN} 个账户字段` : ''}${skipped ? `（跳过 ${skipped} 行无效）` : ''}，核对后点「开始诊断」`)
+    setShowPaste(false); setPasteText('')
+  }
 
   async function runDiagnose() {
     setError(null); setDiagnosing(true)
@@ -167,8 +219,29 @@ export default function AccountDoctor() {
       <div className="bg-slate-800/50 border border-slate-700 rounded-xl p-4 space-y-4">
         <div className="flex items-center justify-between">
           <div className="text-sm font-medium text-slate-200">持仓（可编辑核对）</div>
-          <button onClick={addRow} className="text-xs text-blue-400 hover:text-blue-300">+ 加一行</button>
+          <div className="flex items-center gap-3">
+            <button onClick={() => setShowPaste((v) => !v)} className="text-xs text-blue-400 hover:text-blue-300">📋 粘贴文本</button>
+            <button onClick={addRow} className="text-xs text-blue-400 hover:text-blue-300">+ 加一行</button>
+          </div>
         </div>
+
+        {showPaste && (
+          <div className="bg-slate-900/60 border border-slate-700 rounded-lg p-3 space-y-2">
+            <div className="text-xs text-slate-400 leading-relaxed">
+              每行一只：<span className="font-mono text-slate-300">代码 市值 [主题] [杠杆]</span>（空格/逗号/Tab 均可，市值可带 $ 和千分位）。
+              账户字段单独成行，如 <span className="font-mono text-slate-300">净清算 77551</span> / <span className="font-mono text-slate-300">剩余流动性 24037</span>。纯本地解析，不走 API。
+            </div>
+            <textarea
+              value={pasteText} onChange={(e) => setPasteText(e.target.value)} rows={7}
+              placeholder={'MU 39065 存储 1\nMUU 7473 存储 2\n000660 14364 存储 1\n净清算 77551\n维持保证金 53505\n剩余流动性 24037'}
+              className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-slate-200 text-sm font-mono focus:outline-none focus:border-blue-500 resize-y placeholder:text-slate-600"
+            />
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => { setShowPaste(false); setPasteText('') }} className="text-xs text-slate-400 hover:text-slate-200 px-3 py-1.5">取消</button>
+              <button onClick={applyPaste} className="text-xs bg-blue-600 hover:bg-blue-700 text-white rounded px-4 py-1.5 font-medium">解析填入</button>
+            </div>
+          </div>
+        )}
         <div className="overflow-x-auto">
           <table className="w-full text-sm min-w-[640px]">
             <thead>

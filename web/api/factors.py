@@ -1,31 +1,10 @@
 """因子看板 API 路由"""
 from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
-from typing import Optional, List
 from web.services import factor_svc
-from web.services import production_signal_svc
 from core.universe import get_tickers
 
 router = APIRouter(prefix='/api/factors', tags=['factors'])
-
-
-@router.get('/production-signals')
-def production_signals():
-    """每日生产信号 top10:复用 auto_trader.scan_signals(含 AI 双路 + 过滤 + 排名)。"""
-    try:
-        return production_signal_svc.get_signals()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post('/production-signals/run-now')
-def production_signals_run_now():
-    """触发后台扫描,立即返回当前缓存 + scanning=True。"""
-    try:
-        return production_signal_svc.trigger_scan_background()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.get('/universes')
@@ -48,24 +27,6 @@ def factor_registry():
         return factor_svc.get_factor_registry()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
-
-class FactorUpdateRequest(BaseModel):
-    enabled: Optional[bool] = None
-    params: Optional[dict] = None
-
-
-@router.put('/registry/{factor_key}')
-def update_factor(factor_key: str, body: FactorUpdateRequest):
-    """更新因子开关或参数"""
-    ok = factor_svc.update_factor_config(
-        key=factor_key,
-        enabled=body.enabled,
-        params=body.params,
-    )
-    if not ok:
-        raise HTTPException(status_code=400, detail=f"更新因子 {factor_key} 失败，请检查 key 是否合法")
-    return {'status': 'ok', 'key': factor_key}
 
 
 @router.get('/scan')
@@ -128,39 +89,3 @@ def clear_cache(universe: str = Query(None)):
     """手动清除因子缓存"""
     factor_svc.invalidate_cache(universe)
     return {'status': 'ok'}
-
-
-class PreviewRequest(BaseModel):
-    universe: str = 'sp500'
-    factors: List[str]
-    top: int = 100
-
-
-class PositionItem(BaseModel):
-    symbol: str
-    avg_cost: float
-
-
-@router.post('/trail-stop-check')
-def trail_stop_check(positions: List[PositionItem]):
-    """对传入的持仓列表检查移动止损状态"""
-    try:
-        return factor_svc.check_trail_stops([{'symbol': p.symbol.upper(), 'avg_cost': p.avg_cost}
-                                             for p in positions])
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.post('/preview')
-def preview_signals(body: PreviewRequest):
-    """用自定义因子组合预览当日信号（不缓存，不影响生产扫描）"""
-    if not body.factors:
-        raise HTTPException(status_code=400, detail='至少选择一个因子')
-    try:
-        return factor_svc.preview_signals(
-            universe=body.universe,
-            factors=body.factors,
-            top=body.top,
-        )
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))

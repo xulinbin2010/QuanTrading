@@ -17,7 +17,6 @@ from core import data_store as _data_store           # noqa: F401
 from core import universe as _universe               # noqa: F401
 from core import earnings as _earnings               # noqa: F401
 from strategies import rs_momentum as _rs_momentum   # noqa: F401
-from strategies.factors import sector_rs as _sector_rs   # noqa: F401
 
 
 def _clean_floats(obj):
@@ -144,42 +143,6 @@ def _parse_bool(val, default=False) -> bool:
     return str(val).lower() in ('true', '1', 'yes')
 
 
-def update_factor_config(key: str, enabled: bool | None = None, params: dict | None = None) -> bool:
-    """更新因子开关或参数，写入 config_store"""
-    import config
-    import sqlite3
-    ok = True
-    if enabled is not None:
-        cfg_key = f'FACTOR_{key}_ENABLED'
-        ok = config.set_param(cfg_key, enabled) and ok
-    # 因子参数更新：直接写入 config_store（不经过 config.set_param，因为这些 key 不在 _DEFAULTS 注册表里）
-    if params:
-        try:
-            conn = sqlite3.connect(config.DB_PATH, timeout=3)
-            conn.isolation_level = None  # autocommit
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS config_store (
-                    key         TEXT PRIMARY KEY,
-                    value       TEXT NOT NULL,
-                    type        TEXT DEFAULT 'str',
-                    category    TEXT,
-                    description TEXT,
-                    updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                )
-            """)
-            for pname, pval in params.items():
-                cfg_key = f'FACTOR_{key}_PARAM_{pname}'
-                conn.execute("""
-                    INSERT INTO config_store (key, value, type, category, description, updated_at)
-                    VALUES (?, ?, 'str', '因子', ?, CURRENT_TIMESTAMP)
-                    ON CONFLICT(key) DO UPDATE SET value=excluded.value, updated_at=CURRENT_TIMESTAMP
-                """, (cfg_key, str(pval), f'因子 {key} 参数 {pname}'))
-            conn.close()
-        except Exception:
-            ok = False
-    return ok
-
-
 def get_factor_params_from_db(key: str) -> dict:
     """从 DB 读取某因子的参数覆盖值"""
     import config
@@ -216,20 +179,17 @@ def _load_price_map(universe: str):
     加载股票池价格数据。
 
     返回：(tickers, price_map, spy_close, stock_info)
-      price_map 包含股票 + SPY + 11 个行业 ETF（供 sector_rs 因子使用）。
+      price_map 包含股票 + SPY（rs_score 基准）。
     """
     from core.data_store import DataStore
     from core.universe import get_tickers, get_stock_info
-    from strategies.factors.sector_rs import ALL_SECTOR_ETFS
 
     tickers = get_tickers(universe)
     end_date = date.today().strftime('%Y-%m-%d')
     start_date = (date.today() - timedelta(days=300)).strftime('%Y-%m-%d')
 
     store = DataStore()
-    # 一并加载 SPY 和所有行业 ETF
-    extra = ['SPY'] + ALL_SECTOR_ETFS
-    price_map = store.get(tickers + extra, start=start_date, end=end_date,
+    price_map = store.get(tickers + ['SPY'], start=start_date, end=end_date,
                           min_rows=60, auto_update=True)
 
     spy_df = price_map.get('SPY')
@@ -299,7 +259,6 @@ def _do_scan(universe: str, top: int) -> dict:
     }
     """
     from strategies.rs_momentum import RSMomentum
-    from strategies.factors.sector_rs import SECTOR_ETFS, ALL_SECTOR_ETFS
     import config
 
     earnings_avoid_enabled = _parse_bool(config.get('FACTOR_earnings_avoid_ENABLED'))
@@ -311,35 +270,6 @@ def _do_scan(universe: str, top: int) -> dict:
     if earnings_avoid_enabled:
         from core.earnings import prefetch_earnings
         earnings_cache = prefetch_earnings(tickers)
-
-    sector_rs_enabled = _parse_bool(config.get('FACTOR_sector_rs_ENABLED'))
-
-    # ── 预计算 sector_rs（在循环外一次性完成，避免逐股滚动运算）────
-    sector_rs_pre: dict[str, tuple] = {}   # sym -> (sector_rs, stock_vs_sector)
-    if sector_rs_enabled and spy_close is not None and len(spy_close) > 63:
-        spy_ret63 = float(spy_close.iloc[-1] / spy_close.iloc[-64] - 1)
-        etf_ret63: dict[str, float] = {}
-        for etf_sym in ALL_SECTOR_ETFS:
-            etf_df = price_map.get(etf_sym)
-            if etf_df is not None and len(etf_df) > 63:
-                etf_ret63[etf_sym] = float(
-                    etf_df['close'].iloc[-1] / etf_df['close'].iloc[-64] - 1
-                )
-        for sym in tickers:
-            df = price_map.get(sym)
-            if df is None or len(df) <= 63:
-                continue
-            info     = stock_info.get(sym, {})
-            etf_sym  = SECTOR_ETFS.get(info.get('sector', ''))
-            sect_ret = etf_ret63.get(etf_sym) if etf_sym else None
-            stk_ret  = float(df['close'].iloc[-1] / df['close'].iloc[-64] - 1)
-            if sect_ret is not None:
-                sector_rs_pre[sym] = (
-                    round(sect_ret - spy_ret63, 4),
-                    round(stk_ret  - sect_ret,  4),
-                )
-            else:
-                sector_rs_pre[sym] = (0.0, round(stk_ret - spy_ret63, 4))
 
     rs_params = get_factor_params_from_db('rs_score')
     strategy = RSMomentum(
@@ -367,7 +297,6 @@ def _do_scan(universe: str, top: int) -> dict:
                 if cap is not None and (cap < 10.0 or cap > 500.0):
                     continue
 
-            sr_vals = sector_rs_pre.get(sym, (None, None))
             row = {
                 "symbol":        sym,
                 "close":         round(float(last['close']), 2),
@@ -389,8 +318,6 @@ def _do_scan(universe: str, top: int) -> dict:
                 "fcf_yield":       _compute_fcf_yield(info),
                 "pe_ratio":        info.get('pe_ratio'),
                 "pb_ratio":        info.get('pb_ratio'),
-                "sector_rs":       sr_vals[0],
-                "stock_vs_sector": sr_vals[1],
                 "earnings_safe": (
                     _earnings_safe(sym, earnings_cache, earnings_avoid_days)
                     if earnings_avoid_enabled else None
@@ -421,93 +348,6 @@ def _do_scan(universe: str, top: int) -> dict:
     return _clean_floats({'rows': top_rows, 'coverage': coverage, 'total': n})
 
 
-# ── 自定义因子组合信号预览 ─────────────────────────────────
-
-def preview_signals(universe: str, factors: list[str], top: int = 100) -> dict:
-    """
-    用 DynamicFactorStrategy(factors) 扫描股票池，返回各股当日信号。
-    不缓存（预览是临时实验），不影响生产 RSMomentum 缓存。
-
-    返回格式：
-    {
-        'rows': [{'symbol', 'close', 'signal', 'rs_score', ...}, ...],
-        'factors': [...],   # 实际使用的因子列表
-        'buy_count': N,
-        'sell_count': N,
-        'total': N,
-    }
-    """
-    from strategies.dynamic_factor import DynamicFactorStrategy
-    from strategies.factors.sector_rs import SECTOR_ETFS
-
-    tickers, price_map, spy_close, stock_info = _load_price_map(universe)
-    sector_rs_enabled = 'sector_rs' in factors
-
-    strategy = DynamicFactorStrategy(factors)
-    if spy_close is not None:
-        strategy.set_spy(spy_close)
-
-    rows = []
-    for sym in tickers:
-        df = price_map.get(sym)
-        if df is None or len(df) < 60:
-            continue
-        try:
-            # 为 sector_rs 因子传入对应行业 ETF 数据
-            if sector_rs_enabled:
-                info = stock_info.get(sym, {})
-                etf_sym = SECTOR_ETFS.get(info.get('sector', ''))
-                etf_df  = price_map.get(etf_sym) if etf_sym else None
-                strategy.set_sector_etf(
-                    info.get('sector'),
-                    etf_df['close'] if etf_df is not None else None,
-                )
-            sig_df = strategy.generate_signals(df)
-            last = sig_df.iloc[-1]
-
-            # 动态提取所有因子列（只取数值/布尔，跳过 OHLCV）
-            skip = {'open', 'high', 'low', 'close', 'volume', 'signal',
-                    'vol_ma20', 'ma_fast', 'ma_slow', 'atr14', 'prev_high'}
-            factor_vals: dict = {}
-            for col in sig_df.columns:
-                if col in skip:
-                    continue
-                v = last.get(col)
-                if v is None:
-                    continue
-                try:
-                    fv = v.item() if hasattr(v, 'item') else v
-                    if isinstance(fv, float) and fv != fv:   # NaN
-                        fv = None
-                    factor_vals[col] = fv
-                except Exception:
-                    pass
-
-            rows.append({
-                'symbol':   sym,
-                'close':    round(float(last['close']), 2),
-                'signal':   int(last.get('signal', 0)),
-                **factor_vals,
-            })
-        except Exception:
-            continue
-
-    # 排序：买入优先，其次按 rs_score
-    rows.sort(key=lambda r: (-(r.get('signal', 0)), -float(r.get('rs_score') or 0)))
-    top_rows = rows[:top] if top else rows
-
-    buy_count  = sum(1 for r in rows if r['signal'] == 1)
-    sell_count = sum(1 for r in rows if r['signal'] == -1)
-
-    return {
-        'rows':       top_rows,
-        'factors':    factors,
-        'buy_count':  buy_count,
-        'sell_count': sell_count,
-        'total':      len(rows),
-    }
-
-
 def _compute_fcf_yield(info: dict) -> float | None:
     fcf = info.get('free_cashflow')
     mc  = info.get('market_cap_b')
@@ -518,40 +358,6 @@ def _compute_fcf_yield(info: dict) -> float | None:
     except (TypeError, ValueError):
         pass
     return None
-
-
-def _compute_sector_rs_vals(
-    sym: str,
-    info: dict,
-    price_map: dict,
-    spy_close,
-    enabled: bool,
-) -> dict:
-    """计算单股的行业相对强度值，供 scan_factors 行数据使用。"""
-    if not enabled or spy_close is None:
-        return {"sector_rs": None, "stock_vs_sector": None}
-
-    from strategies.factors.sector_rs import SECTOR_ETFS, compute_sector_rs
-
-    df = price_map.get(sym)
-    if df is None:
-        return {"sector_rs": None, "stock_vs_sector": None}
-
-    etf_sym = SECTOR_ETFS.get(info.get('sector', ''))
-    etf_df  = price_map.get(etf_sym) if etf_sym else None
-    sector_etf_close = etf_df['close'] if etf_df is not None else None
-
-    try:
-        result_df = compute_sector_rs(df.copy(), sector_etf_close, spy_close)
-        last = result_df.iloc[-1]
-        sr   = last.get('sector_rs')
-        svs  = last.get('stock_vs_sector')
-        return {
-            "sector_rs":       round(float(sr),  4) if sr  is not None and sr  == sr  else None,
-            "stock_vs_sector": round(float(svs), 4) if svs is not None and svs == svs else None,
-        }
-    except Exception:
-        return {"sector_rs": None, "stock_vs_sector": None}
 
 
 def _earnings_safe(
@@ -570,6 +376,31 @@ def _earnings_safe(
 
 
 # ── 单股因子时序 ───────────────────────────────────────────
+
+def _compute_ytd(df) -> float | None:
+    """年初至今涨跌幅 = 最新收盘 / 去年最后一个交易日收盘 - 1。
+
+    无去年数据时退回今年首个交易日收盘为基准。df 需为 DatetimeIndex 的完整历史。"""
+    if df is None or len(df) == 0:
+        return None
+    try:
+        idx = df.index
+        cur_year = idx[-1].year
+        last_close = float(df['close'].iloc[-1])
+        prev = df[idx.year < cur_year]
+        if len(prev) > 0:
+            base = float(prev['close'].iloc[-1])
+        else:
+            this_year = df[idx.year == cur_year]
+            if len(this_year) < 2:
+                return None
+            base = float(this_year['close'].iloc[0])
+        if base <= 0:
+            return None
+        return (last_close - base) / base
+    except Exception:
+        return None
+
 
 def get_stock_factors(symbol: str, days: int = 120) -> dict:
     """返回单股 OHLCV + 全因子时序数据"""
@@ -661,68 +492,11 @@ def get_stock_factors(symbol: str, days: int = 120) -> dict:
         "symbol": symbol,
         "industry": info.get('industry'),
         "sector": info.get('sector'),
+        "ytd": _fmt(_compute_ytd(df)),   # 年初至今涨跌幅（用完整 df,基准=去年最后收盘）
         "ohlcv": ohlcv,
         "factors": factors_list,
         "fundamental": fundamental,
     }
-
-
-# ── 移动止损检查 ───────────────────────────────────────────
-
-def check_trail_stops(positions: list[dict]) -> list[dict]:
-    """
-    对持仓列表检查移动止损状态。
-    positions: [{'symbol': 'NVDA', 'avg_cost': 850.0}, ...]
-    返回每只股票的止损分析结果。
-    """
-    import config
-    from core.data_store import DataStore
-    from datetime import date, timedelta
-
-    ACTIVATE = config.TRAIL_STOP_ACTIVATE_PCT
-    TRAIL    = config.TRAIL_STOP_PCT
-
-    symbols  = [p['symbol'] for p in positions]
-    start    = (date.today() - timedelta(days=400)).strftime('%Y-%m-%d')
-    end      = date.today().strftime('%Y-%m-%d')
-    store    = DataStore()
-    all_data = store.get(symbols, start=start, end=end, auto_update=False)
-
-    results = []
-    for pos in positions:
-        sym      = pos['symbol']
-        avg_cost = float(pos['avg_cost'])
-        df       = all_data.get(sym)
-
-        if df is None or df.empty:
-            results.append({'symbol': sym, 'avg_cost': avg_cost,
-                            'status': 'no_data', 'trigger': False})
-            continue
-
-        cur_price = float(df['close'].iloc[-1])
-        # 只取入场价以上的峰值，避免买前历史高点干扰
-        peak      = float(df['close'][df['close'] >= avg_cost].max()) if (df['close'] >= avg_cost).any() else avg_cost
-        ret       = (cur_price - avg_cost) / avg_cost
-        peak_ret  = (peak - avg_cost) / avg_cost
-        trail_ret = (cur_price - peak) / peak
-        trigger   = peak_ret >= ACTIVATE and trail_ret <= TRAIL
-
-        results.append({
-            'symbol':    sym,
-            'avg_cost':  round(avg_cost, 2),
-            'cur_price': round(cur_price, 2),
-            'peak':      round(peak, 2),
-            'ret':       round(ret, 4),
-            'peak_ret':  round(peak_ret, 4),
-            'trail_ret': round(trail_ret, 4),
-            'activate':  ACTIVATE,
-            'trail':     TRAIL,
-            'trigger':   trigger,
-            'status':    'triggered' if trigger else (
-                         'watching' if peak_ret >= ACTIVATE else 'not_activated'),
-        })
-
-    return results
 
 
 # ── 内部人买入 ─────────────────────────────────────────────

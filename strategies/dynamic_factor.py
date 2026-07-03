@@ -42,7 +42,6 @@ class DynamicFactorStrategy(Strategy):
         self.factor_params = factor_params or {}
         self.score_threshold = score_threshold
         self._spy_close: pd.Series | None = None
-        self._sector_etf_close: pd.Series | None = None
 
     @property
     def name(self) -> str:
@@ -50,10 +49,6 @@ class DynamicFactorStrategy(Strategy):
 
     def set_spy(self, spy_close: pd.Series):
         self._spy_close = spy_close
-
-    def set_sector_etf(self, sector: str | None, sector_etf_close: pd.Series | None):
-        """为 sector_rs 因子提供行业 ETF 数据。sector 用于记录日志，sector_etf_close 是价格序列。"""
-        self._sector_etf_close = sector_etf_close
 
     def generate_signals(self, df: pd.DataFrame) -> pd.DataFrame:
         registry = get_registry()
@@ -86,13 +81,6 @@ class DynamicFactorStrategy(Strategy):
                 period  = params.get('period',  meta.params['period'][0])
                 weights = params.get('weights', meta.params.get('weights', ('',))[0])
                 df = meta.compute_fn(df, self._spy_close, period=period, weights=weights)
-            # sector_rs 需要 sector_etf_close + spy_close
-            elif key == 'sector_rs':
-                period = params.get('period', meta.params['period'][0])
-                df = meta.compute_fn(df,
-                                     sector_etf_close=self._sector_etf_close,
-                                     spy_close=self._spy_close,
-                                     period=period)
             else:
                 # 使用注册表默认值填充缺失参数
                 for pname, (pdefault, _ptype, _pdesc) in meta.params.items():

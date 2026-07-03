@@ -11,3 +11,4 @@ fastapi
 uvicorn[standard]
 apscheduler
 python-dotenv
+anthropic

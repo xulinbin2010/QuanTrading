@@ -1,26 +1,18 @@
 """账户诊断（桌面医生）服务。
 
-用户不接 IB 实盘 API（正式账户隐私考量），改用**截图**把持仓/保证金喂进来：
-  ① parse_screenshots：Claude 视觉解析 IB 持仓/余额截图 → 结构化 JSON（持仓 + 保证金字段
-     + 每只标的的行业/主题/是否杠杆分类）。用户可在前端表格核对/修改。
-  ② diagnose：**纯 Python 确定性计算**（不依赖模型做数值）——集中度、经济敞口 vs 净值、
-     杠杆识别、保证金压力测试、风险清单。可复算、可解释。
-
-⚠️ 截图会发送到 Anthropic API（用户已知悉并选择该方式）；诊断结果存本地 data/account_doctor.json，
-   不外传第三方。
+用户不接 IB 实盘 API（正式账户隐私考量），改用手动填表 / 前端「粘贴文本」把持仓/保证金喂进来。
+diagnose：**纯 Python 确定性计算**（不依赖模型做数值）——集中度、经济敞口 vs 净值、杠杆识别、
+保证金压力测试、风险清单。可复算、可解释。数据全程本地，不外传第三方；结果存 data/account_doctor.json。
 """
 from __future__ import annotations
 
 import json
-import os
-import re
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parents[2]
 STORE_PATH = ROOT / 'data' / 'account_doctor.json'
-MODEL = 'claude-opus-4-8'
 
 # 每日重置杠杆 ETF 回撤系数：实测 2x（MUU/MU 回撤 = 75.1/42.8 ≈ 1.75，因下行凸性 <2）。
 # 折算成每 1 倍杠杆的系数 0.875，故 dd_mult = leverage_factor × 0.875（2x→1.75，3x→2.625），
@@ -30,108 +22,6 @@ LEV_DD_PER_X = 0.875
 SAME_THEME_BETA = 1.0     # 与主导风险同主题的标的，随冲击 1:1
 CROSS_THEME_BETA = 0.5    # 其它标的：相关但半程
 SHOCKS = [0.20, 0.30, 0.40, 0.50]
-
-
-class MissingAPIKey(Exception):
-    pass
-
-
-# ────────────────────────────── 截图解析（Claude 视觉）──────────────────────────────
-
-_PARSE_SYSTEM = """你是券商持仓截图解析器。用户会给你一张或多张 Interactive Brokers（或类似券商）的
-持仓/余额截图。请**只输出一个 JSON 对象**（不要任何解释、不要 markdown 代码围栏），schema 如下：
-
-{
-  "account": {
-    "net_liq": number|null,            // 净清算价值 (USD)
-    "settled_cash": number|null,       // 已结算现金 (USD，可能为负=融资负债)
-    "unrealized_pnl": number|null,     // 未实现盈亏 (USD)
-    "maint_margin": number|null,       // 维持保证金 (USD)
-    "excess_liquidity": number|null,   // 剩余流动性 (USD)
-    "buying_power": number|null        // 购买力 (USD)
-  },
-  "positions": [
-    {
-      "symbol": "MU",                  // 代码（去交易所后缀）
-      "name": "美光科技",               // 简称
-      "shares": 40,                    // 持仓股数
-      "last_price": 976.63,            // 最新价（原币种）
-      "currency": "USD",               // 计价币种
-      "market_value_usd": 39065,       // **换算成美元的市值**（非美元请按合理汇率折算）
-      "sector": "半导体",              // 行业大类
-      "theme": "存储",                 // 更细的风险主题（如 存储/AI算力/半导体设备/电力/其它）
-      "is_leveraged": false,           // 是否杠杆/反向 ETF
-      "leverage_factor": 1,            // 杠杆倍数（2x ETF=2，普通=1）
-      "underlying": "MU"               // 杠杆 ETF 的底层标的；普通股填自己
-    }
-  ]
-}
-
-识别规则：
-- 名称含 "2X"/"BULL"/"BEAR"/"LEVERAGE"/"DIREXION DAILY"/"T-REX"/"3X" 的是杠杆 ETF，设 is_leveraged=true、leverage_factor 相应值。
-- theme 用于把"同一个赌注"归组：把美光/海力士/闪迪/存储 ETF 都归 "存储"；ARM/半导体设备等归 "半导体"；GPU/AI 算力归 "AI算力"。拿不准填 "其它"。
-- 数字去掉千分位逗号。读不到的字段填 null，不要编造。
-- market_value_usd 必填（非美元按你已知汇率折算，宁可近似也要给数）。"""
-
-
-def parse_screenshots(images: list[dict]) -> dict:
-    """images: [{'media_type': 'image/png', 'data': <base64 str>}, ...] → 结构化 draft。"""
-    try:
-        from dotenv import load_dotenv
-        load_dotenv(override=False)
-    except Exception:
-        pass
-    if not os.environ.get('ANTHROPIC_API_KEY'):
-        raise MissingAPIKey(
-            '未配置 ANTHROPIC_API_KEY。请在项目根目录 .env 中加入 ANTHROPIC_API_KEY=sk-ant-...，'
-            '并确认已 pip install anthropic（重启 Web 服务后生效）。')
-    try:
-        import anthropic
-    except ImportError:
-        raise MissingAPIKey('未安装 anthropic SDK。请在 .venv 中执行：pip install anthropic')
-
-    content: list = []
-    for img in images:
-        content.append({
-            'type': 'image',
-            'source': {
-                'type': 'base64',
-                'media_type': img.get('media_type', 'image/png'),
-                'data': img['data'],
-            },
-        })
-    content.append({'type': 'text', 'text': '解析这些截图，按 system 里的 schema 只输出 JSON。'})
-
-    client = anthropic.Anthropic()
-    msg = client.messages.create(
-        model=MODEL,
-        max_tokens=4000,
-        system=_PARSE_SYSTEM,
-        messages=[{'role': 'user', 'content': content}],
-    )
-    text = '\n'.join(b.text for b in msg.content if getattr(b, 'type', None) == 'text').strip()
-    data = _extract_json(text)
-    if not isinstance(data, dict):
-        raise ValueError('模型未返回可解析的 JSON，请重试或改用手动填写。')
-    data.setdefault('account', {})
-    data.setdefault('positions', [])
-    return data
-
-
-def _extract_json(text: str):
-    """从模型输出里抠出 JSON（容忍 ```json 围栏 / 前后杂字）。"""
-    text = text.strip()
-    m = re.search(r'```(?:json)?\s*(\{.*\})\s*```', text, re.S)
-    if m:
-        text = m.group(1)
-    else:
-        i, j = text.find('{'), text.rfind('}')
-        if i != -1 and j != -1:
-            text = text[i:j + 1]
-    try:
-        return json.loads(text)
-    except Exception:
-        return None
 
 
 # ────────────────────────────── 诊断（纯 Python）──────────────────────────────

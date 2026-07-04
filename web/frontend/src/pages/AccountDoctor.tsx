@@ -1,9 +1,6 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import ReactECharts from 'echarts-for-react'
-import {
-  parseAccountScreenshots, diagnoseAccount, getAccountDoctorLatest,
-  type DoctorImage,
-} from '../api/client'
+import { diagnoseAccount, getAccountDoctorLatest } from '../api/client'
 
 type Pos = {
   symbol: string; name?: string; market_value_usd?: number | string
@@ -62,31 +59,15 @@ function parsePasteText(text: string): { positions: Pos[]; account: Account; ski
 }
 const PIE = ['#2f80b8', '#3aa0a0', '#c99a3a', '#b5654a', '#8a6fb0', '#7aa055', '#c56b8a', '#5b8bd0', '#9aa0a8']
 
-function fileToImg(f: File): Promise<DoctorImage> {
-  return new Promise((res, rej) => {
-    const r = new FileReader()
-    r.onload = () => {
-      const s = String(r.result)
-      const comma = s.indexOf(',')
-      res({ media_type: f.type || 'image/png', data: comma >= 0 ? s.slice(comma + 1) : s })
-    }
-    r.onerror = rej
-    r.readAsDataURL(f)
-  })
-}
-
 export default function AccountDoctor() {
   const [positions, setPositions] = useState<Pos[]>([])
   const [account, setAccount] = useState<Account>({})
-  const [parsing, setParsing] = useState(false)
   const [diagnosing, setDiagnosing] = useState(false)
   const [result, setResult] = useState<any>(null)
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
-  const [dragOver, setDragOver] = useState(false)
   const [showPaste, setShowPaste] = useState(false)
   const [pasteText, setPasteText] = useState('')
-  const fileRef = useRef<HTMLInputElement>(null)
 
   // 载入上次诊断（本地缓存），预填输入表
   useEffect(() => {
@@ -105,27 +86,6 @@ export default function AccountDoctor() {
       }
     }).catch(() => {})
   }, [])
-
-  async function handleFiles(files: FileList | null) {
-    if (!files || !files.length) return
-    setError(null); setNote(null); setParsing(true)
-    try {
-      const imgs = await Promise.all(Array.from(files).map(fileToImg))
-      const draft = await parseAccountScreenshots(imgs)
-      const ps: Pos[] = (draft.positions || []).map((p: any) => ({
-        symbol: p.symbol || '', name: p.name || '', market_value_usd: p.market_value_usd,
-        theme: p.theme || '其它', leverage_factor: p.leverage_factor ?? 1,
-        is_leveraged: !!p.is_leveraged, currency: p.currency || 'USD',
-      }))
-      if (ps.length) setPositions(ps)
-      if (draft.account) setAccount((a) => ({ ...a, ...draft.account }))
-      setNote(`已从截图解析出 ${ps.length} 只持仓，请核对下方表格后点「开始诊断」`)
-    } catch (e: any) {
-      setError(e.response?.data?.detail || '截图解析失败，可改用手动填写')
-    } finally {
-      setParsing(false)
-    }
-  }
 
   const upd = (i: number, k: keyof Pos, v: any) =>
     setPositions((ps) => ps.map((p, j) => (j === i ? { ...p, [k]: v } : p)))
@@ -194,25 +154,10 @@ export default function AccountDoctor() {
     <div className="space-y-6">
       <div>
         <h1 className="text-lg font-semibold text-white">账户诊断 <span className="text-slate-400 font-normal">🩺 桌面医生</span></h1>
-        <p className="text-sm text-slate-400 mt-1">不接实盘 API：拖入 IB 持仓/余额截图，自动解析持仓与保证金，诊断集中度、杠杆与爆仓风险。</p>
-        <p className="text-xs text-amber-400/90 mt-1">⚠️ 截图会发送到 Anthropic API 做视觉解析；诊断结果仅存本地。不想外发可跳过上传、直接手动填表。</p>
+        <p className="text-sm text-slate-400 mt-1">不接实盘 API：手动填表或「📋 粘贴文本」录入持仓与保证金，诊断集中度、杠杆与爆仓风险。数据全程本地，不外传。</p>
       </div>
 
-      {/* 上传区 */}
-      <div
-        onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
-        onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => { e.preventDefault(); setDragOver(false); handleFiles(e.dataTransfer.files) }}
-        onClick={() => fileRef.current?.click()}
-        className={`rounded-xl border-2 border-dashed px-6 py-8 text-center cursor-pointer transition-colors ${dragOver ? 'border-blue-500 bg-blue-900/10' : 'border-slate-600 hover:border-slate-500'}`}
-      >
-        <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => handleFiles(e.target.files)} />
-        {parsing
-          ? <div className="text-blue-300 text-sm animate-pulse">Claude 正在解析截图…</div>
-          : <div className="text-slate-300 text-sm">拖入 或 点击上传 IB「持仓」和「余额」截图<div className="text-xs text-slate-500 mt-1">可一次多张 · 也可跳过直接在下方手填</div></div>}
-      </div>
-
-      {note && <div className="text-sm text-emerald-300 bg-emerald-900/15 border border-emerald-800/50 rounded-lg px-3 py-2">{note}</div>}
+      {note &&<div className="text-sm text-emerald-300 bg-emerald-900/15 border border-emerald-800/50 rounded-lg px-3 py-2">{note}</div>}
       {error && <div className="text-sm text-red-300 bg-red-900/20 border border-red-800/50 rounded-lg px-3 py-2">{error}</div>}
 
       {/* 输入表 */}

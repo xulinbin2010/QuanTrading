@@ -1,6 +1,6 @@
-"""账户诊断（桌面医生）路由：截图→Claude视觉解析(draft) + 纯Python诊断。
+"""账户诊断（桌面医生）路由：手输/粘贴 → 纯Python诊断。
 
-不接 IB 实盘 API；数据靠用户截图/手输喂入。截图解析会外发到 Anthropic API，
+不接 IB 实盘 API；数据靠用户手填或前端粘贴文本录入（不外传）。
 诊断结果存本地 data/account_doctor.json。
 """
 from fastapi import APIRouter, HTTPException
@@ -11,31 +11,9 @@ from web.services import account_doctor_svc as svc
 router = APIRouter(prefix='/api/account-doctor', tags=['account-doctor'])
 
 
-class ImageIn(BaseModel):
-    media_type: str = 'image/png'
-    data: str  # base64（不含 data:...; 前缀）
-
-
-class ParseBody(BaseModel):
-    images: list[ImageIn] = []
-
-
 class DiagnoseBody(BaseModel):
     account: dict = {}
     positions: list[dict] = []
-
-
-@router.post('/parse')
-def parse(body: ParseBody):
-    """截图 → Claude 视觉解析出持仓/保证金 draft（供前端表格预填、用户核对）。"""
-    if not body.images:
-        raise HTTPException(status_code=400, detail='未提供截图。')
-    try:
-        return svc.parse_screenshots([img.model_dump() for img in body.images])
-    except svc.MissingAPIKey as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f'解析失败：{e}')
 
 
 @router.post('/diagnose')

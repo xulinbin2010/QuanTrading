@@ -8,7 +8,7 @@
 import { useEffect, useState } from 'react'
 import {
   getPremarketConfig, savePremarketConfig, getPremarketScan,
-  getPositions, type PremarketConfig,
+  getPositions, getCoreCards, generateCoreCards, type PremarketConfig,
 } from '../api/client'
 
 const EMPTY: PremarketConfig = { core: [], swing: [], watchlist: [] }
@@ -20,6 +20,8 @@ const COLS: Record<keyof PremarketConfig, Col[]> = {
     { key: 'cost', label: '成本价', w: 'w-20', ph: '120' },
     { key: 'weight', label: '仓位%', w: 'w-16', ph: '25%' },
     { key: 'thesis', label: '持有逻辑', ph: 'AI capex 主线' },
+    { key: 'invalidation', label: '失效条件', ph: 'HBM 报价连续两季下跌' },
+    { key: 'catalysts', label: '催化剂日历', ph: '12/18 财报；CES 1/6' },
   ],
   swing: [
     { key: 'ticker', label: '代码', w: 'w-20', ph: 'PLTR' },
@@ -51,19 +53,41 @@ function chgCls(v: any) {
   return v > 0 ? 'text-emerald-400' : v < 0 ? 'text-red-400' : 'text-slate-300'
 }
 
+// 论点检查档位 → 徽章配色
+const VERDICT_CLS: Record<string, string> = {
+  '强化':     'bg-emerald-500/20 text-emerald-300 border-emerald-500/40',
+  '中性':     'bg-slate-600/40 text-slate-300 border-slate-500/40',
+  '削弱':     'bg-amber-500/20 text-amber-300 border-amber-500/40',
+  '失效预警': 'bg-red-500/20 text-red-300 border-red-500/40',
+}
+
 export default function PremarketBriefingModal({ onClose }: { onClose: () => void }) {
-  const [tab, setTab] = useState<'scan' | 'config'>('scan')
+  const [tab, setTab] = useState<'scan' | 'cards' | 'config'>('scan')
   const [cfg, setCfg] = useState<PremarketConfig>(EMPTY)
   const [saved, setSaved] = useState('')
 
   const [scan, setScan] = useState<any>(null)
   const [scanLoading, setScanLoading] = useState(false)
 
+  const [cards, setCards] = useState<any>(null)
+  const [cardsBusy, setCardsBusy] = useState(false)
+  const [cardsMsg, setCardsMsg] = useState('')
+
   useEffect(() => {
     getPremarketConfig().then(c => setCfg({ ...EMPTY, ...c })).catch(() => {})
+    getCoreCards().then(d => { if (d?.cards?.length) setCards(d) }).catch(() => {})
     refreshScan()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const genCards = () => {
+    setCardsBusy(true)
+    setCardsMsg('')
+    generateCoreCards()
+      .then(setCards)
+      .catch(e => setCardsMsg(e.response?.data?.detail || '生成失败（网络/API key/额度？）'))
+      .finally(() => setCardsBusy(false))
+  }
 
   const refreshScan = () => {
     setScanLoading(true)
@@ -154,10 +178,10 @@ export default function PremarketBriefingModal({ onClose }: { onClose: () => voi
         <div className="flex items-center gap-3 px-5 py-3 border-b border-slate-700">
           <div className="text-base font-bold text-white">📋 盘前扫描（实时）</div>
           <div className="flex gap-1">
-            {(['scan', 'config'] as const).map(t => (
+            {(['scan', 'cards', 'config'] as const).map(t => (
               <button key={t} onClick={() => setTab(t)}
                 className={`px-3 py-1 text-sm rounded ${tab === t ? 'bg-blue-600 text-white' : 'bg-slate-700 text-slate-300 hover:bg-slate-600'}`}>
-                {t === 'scan' ? '盘前扫描' : '清单配置'}
+                {t === 'scan' ? '盘前扫描' : t === 'cards' ? '核心票情报卡' : '清单配置'}
               </button>
             ))}
           </div>
@@ -165,7 +189,7 @@ export default function PremarketBriefingModal({ onClose }: { onClose: () => voi
         </div>
 
         <div className="overflow-y-auto p-5">
-          {tab === 'scan' ? (
+          {tab === 'scan' && (
             <>
               <div className="flex items-center gap-2 mb-2">
                 <div className="text-sm font-semibold text-slate-200">实时宏观快照</div>
@@ -209,10 +233,52 @@ export default function PremarketBriefingModal({ onClose }: { onClose: () => voi
 
               <div className="text-sm text-slate-400 space-y-1 mt-3">
                 <div>· Pre-market 报价流动性稀薄，可能与开盘价显著偏离，仅供参考。</div>
-                <div>· 隔夜新闻 / 财报 / 美联储讲话 / 行动建议（模块 2/4）需接 LLM，当前未启用；给 Anthropic 开发者账户充值后可一键恢复「生成简报」。</div>
+                <div>· 隔夜新闻 / 财报 / 行动建议的大盘简报（模块 2/4）未启用；核心票的联网情报用「核心票情报卡」tab（走本机 Claude 订阅，无 API 费用）。</div>
               </div>
             </>
-          ) : (
+          )}
+          {tab === 'cards' && (
+            <>
+              <div className="flex items-center gap-2 mb-3">
+                <div className="text-sm font-semibold text-slate-200">核心票每日情报卡</div>
+                {cards?.as_of && <span className="text-xs text-slate-500">生成于 {cards.as_of}</span>}
+                <button onClick={genCards} disabled={cardsBusy}
+                  className="ml-auto px-3 py-1 rounded text-sm bg-blue-600 text-white hover:bg-blue-500 disabled:opacity-50">
+                  {cardsBusy ? '联网检索中（约 2-5 分钟）…' : cards ? '重新生成' : '生成情报卡'}
+                </button>
+              </div>
+              {cardsMsg && <div className="mb-3 text-sm text-red-400">{cardsMsg}</div>}
+              {!cards?.cards?.length && !cardsBusy && !cardsMsg && (
+                <div className="text-sm text-slate-500 space-y-1">
+                  <div>还没有情报卡。先到「清单配置」把核心持仓（含持有逻辑 / 失效条件 / 催化剂日历）填好并保存，再点「生成情报卡」。</div>
+                  <div>每张卡：隔夜要闻 · 产业链/同行动向 · 华尔街评级 · 催化剂倒计时 + 对照你的论点给出「强化 / 中性 / 削弱 / 失效预警」检查结论。</div>
+                  <div>也可在「任务调度」开启 core_intel_cards 任务，每天美东 8:15 盘前自动生成（默认走本机 Claude 订阅额度，无 API 费用）。</div>
+                </div>
+              )}
+              <div className="space-y-3">
+                {(cards?.cards ?? []).map((c: any) => (
+                  <div key={c.ticker} className="border border-slate-700 bg-slate-800/60 rounded-lg p-4">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="text-base font-bold font-mono text-white">{c.ticker}</span>
+                      {c.verdict && (
+                        <span className={`text-xs px-1.5 py-0.5 rounded border ${VERDICT_CLS[c.verdict] ?? VERDICT_CLS['中性']}`}>
+                          论点检查：{c.verdict}
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm text-slate-300 whitespace-pre-wrap leading-relaxed">{c.text}</div>
+                  </div>
+                ))}
+              </div>
+              {cards?.cards?.length > 0 && (
+                <div className="text-sm text-slate-400 space-y-1 mt-4">
+                  <div>· 情报由 Claude 联网检索生成，来源以卡内标注为准；「论点检查」对照的是你在清单配置里手填的持有逻辑与失效条件。</div>
+                  <div>· 出现「削弱 / 失效预警」时建议人工核实原始新闻源后再决策，不要只凭卡片行动。</div>
+                </div>
+              )}
+            </>
+          )}
+          {tab === 'config' && (
             <>
               <div className="flex items-center gap-3 mb-3">
                 <button onClick={save} className="px-3 py-1 rounded text-sm bg-blue-600 text-white hover:bg-blue-500">保存清单</button>
@@ -242,6 +308,7 @@ export default function PremarketBriefingModal({ onClose }: { onClose: () => voi
               ))}
               <div className="text-sm text-slate-400 space-y-1 mt-3">
                 <div>· 核心持仓可点「从 IB 导入」自动拉 ticker + 成本（需 IB 已连接），再补持有逻辑/仓位%。</div>
+                <div>· 「失效条件」写清楚什么情况下承认看错（如：HBM 报价连续两季下跌）、「催化剂日历」写日期+事件；这两栏是「核心票情报卡」做论点检查的依据，写得越具体，Claude 的检查越有用。</div>
                 <div>· 保存后「盘前扫描」tab 会自动按新清单刷新逐只报价。</div>
               </div>
             </>

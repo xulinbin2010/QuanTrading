@@ -290,7 +290,7 @@ export const getRiskThermometer = (force = false) =>
 
 // ── 盘前简报 ─────────────────────────────────────────────────
 export type PremarketConfig = {
-  core: Array<{ ticker: string; cost?: string; weight?: string; thesis?: string }>
+  core: Array<{ ticker: string; cost?: string; weight?: string; thesis?: string; invalidation?: string; catalysts?: string }>
   swing: Array<{ ticker: string; entry?: string; stop?: string; reason?: string }>
   watchlist: Array<{ ticker: string; trigger?: string; reason?: string }>
 }
@@ -304,6 +304,26 @@ export const getPremarketScan = () =>
   api.get('/premarket/scan').then(r => r.data)
 export const generatePremarketBriefing = () =>
   api.post('/premarket/briefing', {}, { timeout: 300_000 }).then(r => r.data)
+
+// ── 半自动出场（触发→待人工确认）────────────────────────────
+export type PendingExit = {
+  id: number; symbol: string; qty: number; avg_cost?: number
+  trigger_price?: number; ret?: number; rule?: string; reason?: string
+  status: string; intel_json?: string | null; intel_at?: string | null
+  triggered_at?: string; updated_at?: string; decided_at?: string | null
+}
+export const getExits = () =>
+  api.get('/exits').then(r => r.data as { pending: PendingExit[]; recent: PendingExit[] })
+export const decideExit = (id: number, action: 'sell' | 'keep') =>
+  api.post(`/exits/${id}/decide`, { action }).then(r => r.data)
+export const refreshExitIntel = (id: number) =>
+  api.post(`/exits/${id}/intel`, {}, { timeout: 300_000 }).then(r => r.data as PendingExit)
+
+// ── 核心票每日情报卡 ─────────────────────────────────────────
+export const getCoreCards = () =>
+  api.get('/premarket/core-cards').then(r => r.data)
+export const generateCoreCards = () =>
+  api.post('/premarket/core-cards', {}, { timeout: 600_000 }).then(r => r.data)
 
 // ── 账户诊断（桌面医生）──────────────────────────────────────
 export const diagnoseAccount = (account: any, positions: any[]) =>

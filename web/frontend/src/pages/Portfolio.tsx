@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { useAccount } from '../App'
 import SymbolLink from '../components/SymbolLink'
 import RiskThermometer from '../components/RiskThermometer'
+import PendingExitsPanel from '../components/PendingExitsPanel'
 import AccountDoctor from './AccountDoctor'
 
 // ── 复用辅助组件 ──────────────────────────────────────────────
@@ -1154,6 +1155,9 @@ export default function Portfolio() {
           IB Gateway 未连接，账户余额/持仓不可用。订单历史和净值记录仍正常显示。
         </div>
       )}
+
+      {/* 待确认出场（半自动止损：触发后等人工点卖出/保留） */}
+      <PendingExitsPanel />
 
       {/* 余额卡片 */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-3">

@@ -248,7 +248,7 @@ python auto_trader.py --dry-run --universe nasdaq100     # 切换股票池
 | 常量 | 值 | 说明 |
 |------|----|------|
 | `CASH_EQUIV` | `{'SGOV','BIL','USFR'}` | 现金等价 ETF 白名单 |
-| `SELL_ON_ALERT` | False | 已废弃：量价背离自动卖出已下线，恒 False（实盘出场仅 -15% 硬止损 + EMA21 两日破位） |
+| `SELL_ON_ALERT` | False | 已废弃：量价背离自动卖出已下线，恒 False（实盘出场见「止损体系（半自动版）」） |
 
 ---
 
@@ -278,7 +278,7 @@ core/
   trading.py         # 下单：market_buy/sell、limit_buy/sell，支持 tif=DAY/OPG
   account.py         # 账户余额 + 持仓查询，自动快照存库
   market_data.py     # 实时行情订阅 + 价格报警
-  database.py        # MySQL：orders / account_snapshots / signals / scheduled_tasks / config_store
+  database.py        # SQLite：orders / account_snapshots / signals / scheduled_tasks / config_store / pending_exits（半自动出场待确认）
                      #   注：klines 表已移除，K 线数据统一由 DataStore / IBKRDataStore 管理
   historical_data.py # IBKR K 线拉取封装，完全委托 IBKRDataStore（Parquet），db 参数已废弃
   universe.py        # 股票池：get_tickers(universe) 支持 sp500/nasdaq100/russell2000
@@ -355,7 +355,7 @@ start_web.sh         # 一键启动脚本
 | 崩跌过滤 (`max_drawdown=-30%`) | ✅ 必须 | ✅ 必须（保留防御） |
 | 趋势 MA10>MA20 | ✅ 必须 | ✅ 必须 |
 
-**卖出信号（量价背离）：** 价格创50日新高但成交量低于均量 × `VOL_SHRINK_RATIO`（顶部信号）。**实盘已不据此自动卖出**（`SELL_ON_ALERT=False`，出场仅 -15% 硬止损 + EMA21 两日破位）；该信号现仅供 `sp500_scanner` 报警参考。
+**卖出信号（量价背离）：** 价格创50日新高但成交量低于均量 × `VOL_SHRINK_RATIO`（顶部信号）。**实盘已不据此自动卖出**（`SELL_ON_ALERT=False`，出场见「止损体系（半自动版）」：-15%/EMA21 触发→人工确认，-25% 灾难线全自动）；该信号现仅供 `sp500_scanner` 报警参考。
 
 > **AI 优先池如何维护**：在 Web UI「美股AI追踪」(`/#/ai`) 增删股票即可写入 `data/ai_universe.json`；`auto_trader` 每次扫描自动加载（无需重启）。用户的主观判断（看好 MU/NVDA/AVGO）通过这个接口传给系统。
 
@@ -431,20 +431,43 @@ ai_priority_bonus  = +0.5（AI 优先池成员绝对置顶；rs_score 通常 [-0
 
 ---
 
-### 止损体系（实盘精简版：只有 2 条规则）
+### 止损体系（半自动版：触发 → 人工确认，仅灾难线全自动）
 
-实盘 `auto_trader._execute_inner` 的出场只保留两条，按顺序检查，任一触发即挂 OPG 限价卖出（现金等价 ETF 跳过）：
+实盘 `auto_trader._execute_inner` 的出场按顺序检查（现金等价 ETF 跳过）。设计动机：纯数学止损不区分「个股利空」vs「板块被外围带崩后龙头已反弹」（SNDK 误割教训），卖/留判断交给人 + Claude 情报，程序只负责触发与灾难兜底：
 
-| 优先级 | 类型 | 触发条件 | 卖出方式 |
+| 优先级 | 类型 | 触发条件 | 处理方式 |
 |--------|------|----------|----------|
-| 1 | 灾难硬止损 | 浮亏 `ret ≤ STOP_LOSS_PCT`（默认 -15%，按现价/盘前价算） | OPG限价（入场价×0.95下限）|
-| 2 | EMA21 两日破位 | 最近两根**已收盘**日线（T-1、T-2）收盘均 < 各自当日 `EMA21`（`EMA_EXIT_PERIOD=21`，代码内常量） | OPG限价（收盘×0.95下限）|
+| 0 | **灾难硬止损（不可否决）** | 浮亏 `ret ≤ DISASTER_STOP_PCT`（默认 **-25%**） | **全自动**直接挂卖单（OPG限价/盘中市价），并写 `pending_exits` 审计记录（status=auto_sold） |
+| 1 | 硬止损 | 浮亏 `ret ≤ STOP_LOSS_PCT`（默认 -15%，按现价/盘前价算） | **写 `pending_exits` 待确认记录，不下单** |
+| 2 | EMA21 两日破位 | 最近两根**已收盘**日线（T-1、T-2）收盘均 < 各自当日 `EMA21`（`EMA_EXIT_PERIOD=21`，代码内常量） | 同上，待人工确认 |
+
+**半自动确认流程（规则 1/2）：**
+- 触发后 auto_trader 写 DB `pending_exits` 表（同一 symbol 当日 upsert 去重，9:00 OPG 与 9:35 exits-only 双跑不重复），随后 best-effort 调 `web/services/intel_svc.py` 拉 Claude 情报（个股新闻/板块龙头动向/是否系统性恐慌，约 1-3 分钟，失败不影响记录）
+- Web UI 持仓页顶部出「待确认出场」卡片（导航栏红点计数，60s 轮询 `/api/exits`）：触发原因 + Claude 情报 + 「确认卖出 / 保留持仓」按钮
+- **确认卖出** → `web/api/exits.py` 走 `portfolio_svc.place_sell_order`（盘中 MKT/DAY，盘外 LMT/OPG 下限=触发价×0.95）；下单成功才标记 sold
+- **保留持仓** → 标记 kept，**当日**不再重复提醒；次日触发条件仍成立会重新建记录提醒
+- **未确认默认保留**（不卖、不腾槽、不回笼资金），下跌风险由灾难线兜底；触发条件消失（反弹/已手动卖出）的旧记录每轮自动标记 expired
 
 > **历史多层止损（ATR自适应 / EMA8破位 / 移动止损 / 时间止损 / 量价背离卖出）已从实盘下线。** `SELL_ON_ALERT` 恒 False。这些机制仍存在于两处，**不影响实盘执行**：
 > - `tests/backtest_rs.py --exit-mode legacy`（默认，与「回测业绩参考」表一致；`--exit-mode simple` 才对齐实盘 2 条规则）
 > - `sp500_scanner.py` 的移动止损是**持仓报警**（提示用），不下单
 >
 > `ATR_STOP_MULTIPLIER` / `ATR_STOP_FLOOR` 在实盘仍被使用，但仅用于**仓位计算**（风险法 qty），不再作为出场条件。`TRAIL_STOP_*` / `TIME_STOP_*` / `EMA_STOP_PERIOD` 参数保留是给回测 legacy 模式和扫描器报警用。
+
+---
+
+### 定向个股情报引擎（`web/services/intel_svc.py`）
+
+**双引擎自动选择**（env `INTEL_ENGINE`=auto/cli/api，默认 auto）：
+- **cli（默认优先）**：本机 `claude` CLI 无头模式（`-p` + WebSearch），走 **Claude 订阅额度**（OAuth），零 API 费用；子进程剥掉 `ANTHROPIC_API_KEY` 防误走 API 计费；模型默认 sonnet（env `INTEL_CLI_MODEL` 可改）
+- **api 兜底**：Anthropic API（claude-opus-4-8 + web_search server tool），需 API key 且有余额（用户账户当前无额度且不打算充值，故实际走 cli）
+
+两条业务线共用（另有零成本兜底：待确认出场卡片始终显示 yfinance/SEC 新闻标题，不经 LLM）：
+
+1. **出场情报**（`generate_exit_intel` / `enrich_pending_exits`）：对触发出场的持仓检索个股新闻、板块龙头动向（如存储链看 SK 海力士），判断下跌归因（个股利空/板块拖累/系统性恐慌），给「卖出/保留/减半观察」倾向建议。auto_trader 触发后自动拉，Web UI 待确认卡可手动重试
+2. **核心票每日情报卡**（`generate_core_cards`，CLI `python -m web.services.intel_svc --core-cards`）：对盘前清单 core 组每只票出卡（隔夜要闻/产业链同行/华尔街/催化剂倒计时），并对照手填的**持有逻辑+失效条件**给论点检查档位（强化/中性/削弱/失效预警）。缓存 `data/.core_cards_cache.json`；入口：顶栏「盘前扫描」modal →「核心票情报卡」tab；调度任务 `core_intel_cards`（默认关闭，美东 8:15）
+   - core 组配置在 `data/premarket_config.json`（「清单配置」tab 手填），字段：ticker/cost/weight/thesis/**invalidation（失效条件）**/**catalysts（催化剂日历）**——后两个字段是论点检查的依据
+   - 每次生成 = 一次 Claude+联网调用；cli 引擎消耗订阅额度（无现金成本），api 引擎 5 只票约 $0.5-1.5
 
 ---
 
@@ -487,7 +510,8 @@ VIX得分    = clip((30 - VIX) / 100, -0.2, +0.2)      → [-0.2, +0.2]
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `STOP_LOSS_PCT` | -0.15 | 硬止损线（跌破入场价此幅度强制卖出） |
+| `STOP_LOSS_PCT` | -0.15 | 硬止损触发线（触发后挂「待确认出场」，人工决定卖/留） |
+| `DISASTER_STOP_PCT` | -0.25 | 灾难硬止损线（不可否决，触发即自动卖出兜底） |
 | `ATR_STOP_MULTIPLIER` | 2.5 | ATR自适应止损倍数 |
 | `ATR_STOP_FLOOR` | -0.20 | ATR止损最大亏损下限（防止高波动股止损太宽） |
 | `EMA_STOP_PERIOD` | 8 | EMA 破位止损周期（收盘 < EMA-N 触发，0=禁用） |

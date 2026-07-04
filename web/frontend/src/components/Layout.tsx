@@ -1,6 +1,6 @@
 import { NavLink, Outlet } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { getIBStatus } from '../api/client'
+import { getIBStatus, getExits } from '../api/client'
 import { useEffect, useState } from 'react'
 import { useAccount } from '../App'
 
@@ -241,6 +241,15 @@ export default function Layout() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebarCollapsed') === '1')
   useEffect(() => { localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0') }, [collapsed])
 
+  // 待确认出场红点：止损触发等人工决策时在「持仓总览」入口提醒
+  const { data: exitsData } = useQuery({
+    queryKey: ['exits-badge'],
+    queryFn: getExits,
+    refetchInterval: 60_000,
+    retry: false,
+  })
+  const pendingExits = exitsData?.pending?.length ?? 0
+
   return (
     <div className="flex h-screen bg-slate-900 text-slate-200 overflow-hidden">
       {/* 侧边栏 */}
@@ -271,8 +280,19 @@ export default function Layout() {
                 }`
               }
             >
-              <span className="text-base">{item.icon}</span>
+              <span className="text-base relative">
+                {item.icon}
+                {item.to === '/' && pendingExits > 0 && collapsed && (
+                  <span className="absolute -top-1 -right-1.5 w-2.5 h-2.5 rounded-full bg-red-500 border border-slate-800" />
+                )}
+              </span>
               {!collapsed && <span>{item.label}</span>}
+              {!collapsed && item.to === '/' && pendingExits > 0 && (
+                <span className="ml-auto min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[11px] font-bold flex items-center justify-center"
+                  title={`${pendingExits} 条待确认出场`}>
+                  {pendingExits}
+                </span>
+              )}
             </NavLink>
           ))}
         </nav>

@@ -120,6 +120,26 @@ class Database:
                 description TEXT,
                 updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
+
+            CREATE TABLE IF NOT EXISTS pending_exits (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol        TEXT NOT NULL,
+                qty           INTEGER NOT NULL,
+                avg_cost      REAL,
+                trigger_price REAL,
+                ret           REAL,
+                rule          TEXT,
+                reason        TEXT,
+                status        TEXT DEFAULT 'pending',
+                intel_json    TEXT,
+                intel_at      TIMESTAMP,
+                decided_at    TIMESTAMP,
+                triggered_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at    TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_pending_exits_status
+                ON pending_exits(status, symbol);
         """)
 
     # ---------- orders ----------
@@ -175,6 +195,120 @@ class Database:
         n = self.cursor.rowcount
         self.conn.commit()
         return n
+
+    # ---------- pending_exits（半自动出场：触发→待人工确认）----------
+
+    def _pe_rows(self) -> list:
+        cols = [d[0] for d in self.cursor.description]
+        return [dict(zip(cols, r)) for r in self.cursor.fetchall()]
+
+    def upsert_pending_exit(self, symbol: str, qty: int, avg_cost: float,
+                            trigger_price: float, ret: float,
+                            rule: str, reason: str):
+        """登记/刷新一条待确认出场。返回 (id, created)；当日已被人工「保留」则跳过返回 (None, False)。
+        - 已有 pending 记录：刷新价格/浮亏/规则（保留已生成的情报），支持隔日重提醒
+        - 当日已决策为 kept：不再重复提醒（次日触发条件仍成立会重新建新记录）
+        - 9:00 OPG 与 9:35 exits-only 双跑天然去重"""
+        if not self._ensure_conn():
+            return None, False
+        self.cursor.execute(
+            "SELECT id FROM pending_exits WHERE symbol = ? AND status = 'pending'", (symbol,))
+        row = self.cursor.fetchone()
+        if row:
+            self.cursor.execute("""
+                UPDATE pending_exits
+                   SET qty = ?, avg_cost = ?, trigger_price = ?, ret = ?,
+                       rule = ?, reason = ?, updated_at = datetime('now', 'localtime')
+                 WHERE id = ?
+            """, (qty, avg_cost, trigger_price, ret, rule, reason, row[0]))
+            return row[0], False
+        self.cursor.execute("""
+            SELECT id FROM pending_exits
+             WHERE symbol = ? AND status = 'kept'
+               AND DATE(decided_at) = DATE('now', 'localtime')
+        """, (symbol,))
+        if self.cursor.fetchone():
+            return None, False
+        self.cursor.execute("""
+            INSERT INTO pending_exits (symbol, qty, avg_cost, trigger_price, ret, rule, reason,
+                                       triggered_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, datetime('now','localtime'), datetime('now','localtime'))
+        """, (symbol, qty, avg_cost, trigger_price, ret, rule, reason))
+        return self.cursor.lastrowid, True
+
+    def record_auto_exit(self, symbol: str, qty: int, avg_cost: float,
+                         trigger_price: float, ret: float, rule: str, reason: str):
+        """灾难硬止损等全自动卖出的审计记录（status=auto_sold，不需要确认）。
+        同时把该股尚存的 pending 记录标记为已自动处理。"""
+        if not self._ensure_conn():
+            return
+        self.cursor.execute("""
+            UPDATE pending_exits SET status = 'auto_sold',
+                   decided_at = datetime('now','localtime'),
+                   updated_at = datetime('now','localtime')
+             WHERE symbol = ? AND status = 'pending'
+        """, (symbol,))
+        self.cursor.execute("""
+            INSERT INTO pending_exits (symbol, qty, avg_cost, trigger_price, ret, rule, reason,
+                                       status, decided_at, triggered_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 'auto_sold',
+                    datetime('now','localtime'), datetime('now','localtime'), datetime('now','localtime'))
+        """, (symbol, qty, avg_cost, trigger_price, ret, rule, reason))
+
+    def get_pending_exits(self, status: str = None, limit: int = 100) -> list:
+        """按状态查待确认出场（status=None 返回全部），新→旧。返回 dict 列表。"""
+        if not self._ensure_conn():
+            return []
+        if status:
+            self.cursor.execute("""
+                SELECT * FROM pending_exits WHERE status = ?
+                 ORDER BY updated_at DESC LIMIT ?""", (status, limit))
+        else:
+            self.cursor.execute(
+                "SELECT * FROM pending_exits ORDER BY updated_at DESC LIMIT ?", (limit,))
+        return self._pe_rows()
+
+    def set_pending_exit_intel(self, pe_id: int, intel_json: str):
+        if not self._ensure_conn():
+            return
+        self.cursor.execute("""
+            UPDATE pending_exits
+               SET intel_json = ?, intel_at = datetime('now','localtime'),
+                   updated_at = datetime('now','localtime')
+             WHERE id = ?
+        """, (intel_json, pe_id))
+
+    def decide_pending_exit(self, pe_id: int, decision: str):
+        """人工决策：decision ∈ {'sold','kept'}。返回该记录 dict（不存在/非 pending 返回 None）。"""
+        if not self._ensure_conn():
+            return None
+        self.cursor.execute(
+            "SELECT * FROM pending_exits WHERE id = ? AND status = 'pending'", (pe_id,))
+        rows = self._pe_rows()
+        if not rows:
+            return None
+        self.cursor.execute("""
+            UPDATE pending_exits
+               SET status = ?, decided_at = datetime('now','localtime'),
+                   updated_at = datetime('now','localtime')
+             WHERE id = ?
+        """, (decision, pe_id))
+        rows[0]['status'] = decision
+        return rows[0]
+
+    def expire_stale_pending_exits(self, active_symbols: list) -> int:
+        """出场扫描后调用：触发条件已不再成立（反弹回来了/持仓已卖出）的 pending 记录自动作废。
+        active_symbols 为本轮扫描仍触发出场的股票列表。返回作废条数。"""
+        if not self._ensure_conn():
+            return 0
+        act = [s.upper() for s in active_symbols]
+        ph = ','.join('?' * len(act)) if act else "''"
+        self.cursor.execute(f"""
+            UPDATE pending_exits
+               SET status = 'expired', updated_at = datetime('now','localtime')
+             WHERE status = 'pending' AND UPPER(symbol) NOT IN ({ph})
+        """, act)
+        return self.cursor.rowcount
 
     def get_orders(self, symbol=None, limit=50):
         if not self._ensure_conn():

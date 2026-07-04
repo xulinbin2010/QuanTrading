@@ -55,3 +55,22 @@ def briefing():
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f'生成失败：{e}')
+
+
+@router.get('/core-cards')
+def core_cards_cached():
+    """读取核心票情报卡缓存（无 LLM，秒回；未生成过返回空对象）。"""
+    from web.services import intel_svc
+    return intel_svc.get_cached_core_cards() or {}
+
+
+@router.post('/core-cards')
+def core_cards_generate():
+    """对 core 组每只票生成每日情报卡（web_search + claude-opus-4-8，耗时数分钟）。"""
+    from web.services import intel_svc
+    try:
+        return intel_svc.generate_core_cards()
+    except (premarket_svc.MissingAPIKey, ValueError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f'生成失败：{e}')

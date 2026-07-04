@@ -618,14 +618,18 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib, exits_only: bool 
     held_data   = DataStore().get(held_syms, start=dl_start, end=date.today().strftime('%Y-%m-%d'),
                                   auto_update=False) if held_syms else {}
 
-    # ── 出场体系（精简版：-15% 硬止损 + EMA21 两日破位）──────────────
-    # 设计依据：单边趋势票上频繁止损/高抛是负 alpha（见 CLAUDE.md 单股回测教训），
-    # 故只保留两条出场、给趋势充分空间：
-    #   规则1 灾难硬止损：浮亏 ≤ STOP_LOSS_PCT（默认 -15%，按现价/盘前价算）
-    #   规则2 趋势破位：最近两根【已收盘】日线（T-1、T-2）收盘均 < 各自当日 EMA21
-    #         盘前(9:00 ET)运行时当日 bar 未生成，只用已确认收盘，不把盘前现价算作一天
+    # ── 出场体系（半自动版）──────────────────────────────────────────
+    # 全自动只剩一条不可否决的灾难硬止损（DISASTER_STOP_PCT，默认 -25%）兜底；
+    # 原有两条规则（-15% 硬止损 / EMA21 两日破位）触发后不再直接卖出，改写
+    # pending_exits「待确认出场」记录，由 Web UI 持仓页人工点「确认卖出 / 保留」。
+    # 未确认默认保留（不卖、不腾槽），触发条件次日仍成立则刷新记录重新提醒。
+    # 设计依据：纯数学止损不区分「个股利空」vs「板块被外围带崩后龙头已反弹」
+    # （SNDK 误割教训），卖/留判断交给人 + Claude 情报，程序只负责触发与灾难兜底。
     EMA_EXIT_PERIOD = 21
-    exit_list = []
+    # config.py 是各机器本地文件（gitignored），旧机器 _DEFAULTS 可能没有此键 → getattr 兜底
+    DISASTER_STOP_PCT = getattr(config, 'DISASTER_STOP_PCT', -0.25)
+    exit_list    = []   # 全自动卖出（仅灾难硬止损）
+    pending_list = []   # 半自动待确认（-15% 硬止损 / EMA21 两日破位）
     for sym, pos in stock_positions.items():
         if sym in CASH_EQUIV:
             continue
@@ -636,16 +640,25 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib, exits_only: bool 
             continue
         ret = (cur_price - avg_cost) / avg_cost
 
-        # 规则1：硬止损
-        if ret <= STOP_LOSS_PCT:
+        # 规则0：灾难硬止损（唯一保留全自动，人无法拦截）
+        if ret <= DISASTER_STOP_PCT:
             exit_list.append({
                 'symbol': sym, 'qty': qty, 'avg_cost': avg_cost,
-                'cur_price': cur_price, 'return': ret,
+                'cur_price': cur_price, 'return': ret, 'rule': 'disaster',
+                'reason': f'灾难硬止损（浮亏 {ret:+.1%} ≤ {DISASTER_STOP_PCT:.0%}，不可否决）',
+            })
+            continue
+
+        # 规则1：硬止损 → 待人工确认
+        if ret <= STOP_LOSS_PCT:
+            pending_list.append({
+                'symbol': sym, 'qty': qty, 'avg_cost': avg_cost,
+                'cur_price': cur_price, 'return': ret, 'rule': 'hard_stop',
                 'reason': f'硬止损（浮亏 {ret:+.1%} ≤ {STOP_LOSS_PCT:.0%}）',
             })
             continue
 
-        # 规则2：EMA21 连续两日破位（已收盘 T-1、T-2）
+        # 规则2：EMA21 连续两日破位（已收盘 T-1、T-2）→ 待人工确认
         df = held_data.get(sym)
         if df is None or len(df) < EMA_EXIT_PERIOD + 2:
             continue
@@ -656,25 +669,63 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib, exits_only: bool 
         except Exception:
             continue
         if c_t1 < e_t1 and c_t2 < e_t2:
-            exit_list.append({
+            pending_list.append({
                 'symbol': sym, 'qty': qty, 'avg_cost': avg_cost,
-                'cur_price': cur_price, 'return': ret,
+                'cur_price': cur_price, 'return': ret, 'rule': 'ema_exit',
                 'reason': (f'跌破EMA{EMA_EXIT_PERIOD}两日'
                            f'（收 {c_t2:.2f}/{c_t1:.2f} < EMA {e_t2:.2f}/{e_t1:.2f}）'),
             })
 
     print(f"\n{'='*54}")
     if exit_list:
-        print(f"  出场触发（-15%硬止损 / EMA{EMA_EXIT_PERIOD}两日破位）：{len(exit_list)} 只")
+        print(f"  灾难硬止损触发（{DISASTER_STOP_PCT:.0%}，不可否决，自动卖出）：{len(exit_list)} 只")
         print(f"{'='*54}")
         for s in exit_list:
             print(f"  [{s['symbol']}]  均价 ${s['avg_cost']:.2f} → 现价 ${s['cur_price']:.2f}  "
                   f"{s['return']:+.1%}  | {s['reason']}")
             _place_sell(s['symbol'], s['qty'], s['cur_price'], '出场单', 0.95)
+            if not dry_run:
+                db.record_auto_exit(s['symbol'], s['qty'], s['avg_cost'],
+                                    s['cur_price'], s['return'], s['rule'], s['reason'])
     else:
-        print(f"  无出场触发")
+        print(f"  无灾难止损（{DISASTER_STOP_PCT:.0%}）触发")
         print(f"{'='*54}")
     exit_orders.extend(exit_list)
+
+    # ── 待确认出场：只写 DB 记录（不下单、不腾槽），Web UI 确认后才真正卖出 ──
+    if pending_list:
+        print(f"\n  出场触发 → 待人工确认（-15%硬止损 / EMA{EMA_EXIT_PERIOD}两日破位）：{len(pending_list)} 只")
+        for s in pending_list:
+            print(f"  [{s['symbol']}]  均价 ${s['avg_cost']:.2f} → 现价 ${s['cur_price']:.2f}  "
+                  f"{s['return']:+.1%}  | {s['reason']}")
+            if dry_run:
+                print(f"  → [dry-run] 将挂「待确认出场」")
+                continue
+            pe_id, created = db.upsert_pending_exit(
+                s['symbol'], s['qty'], s['avg_cost'], s['cur_price'],
+                s['return'], s['rule'], s['reason'])
+            if pe_id is None:
+                print(f"  → 今日已人工选择「保留」，不重复提醒")
+            else:
+                print(f"  → 已挂待确认（#{pe_id}，{'新建' if created else '刷新'}），"
+                      f"请到 Web UI 持仓页确认卖出/保留")
+    if not dry_run:
+        # 触发条件已消失（反弹回来/已手动卖出）的旧待确认记录自动作废
+        n_exp = db.expire_stale_pending_exits([s['symbol'] for s in pending_list])
+        if n_exp:
+            print(f"  已自动作废 {n_exp} 条不再触发的旧待确认记录")
+
+    # Claude 情报（best-effort，约 1-3 分钟）：给缺情报的待确认记录拉
+    # 个股新闻/板块龙头动向/系统性恐慌判断；失败不影响待确认记录本身，
+    # Web UI 持仓页可手动重试。
+    if pending_list and not dry_run:
+        try:
+            from web.services.intel_svc import enrich_pending_exits
+            print(f"\n  [情报] 正在为待确认出场拉取 Claude 情报（新闻/龙头动向）…")
+            n_intel = enrich_pending_exits(db)
+            print(f"  [情报] 完成，补写 {n_intel} 条，Web UI 持仓页可见")
+        except Exception as e:
+            print(f"  [情报] 拉取失败（不影响待确认记录，可在 Web UI 手动重试）：{e}")
 
     # 移动止损/时间止损/量价背离/RS衰退止盈已下线：出场仅由上面两条规则驱动
     sell_list: list[dict] = []
@@ -701,7 +752,8 @@ def _execute_inner(signals: dict, dry_run: bool, db, conn, ib, exits_only: bool 
               f"  回笼资金 ${freed_cash:,.0f}  可用槽位 {slots} 个")
 
     if exits_only:
-        print(f"\n  [仅出场模式] 已处理全部止损/卖出共 {len(exiting_syms)} 只，跳过买入段。")
+        print(f"\n  [仅出场模式] 灾难止损自动卖出 {len(exiting_syms)} 只，"
+              f"待人工确认 {len(pending_list)} 只，跳过买入段。")
         return
 
     # ── 买入信号 ──────────────────────────────────────────────

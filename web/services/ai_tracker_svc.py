@@ -305,6 +305,90 @@ def _read_disk_cache() -> dict | None:
         return None
 
 
+def _us_market_open_now() -> bool:
+    """现在是否美股常规交易时段（美东 9:30–16:00，周一至五）。用于盘中刷新任务空转跳过。"""
+    try:
+        from zoneinfo import ZoneInfo
+        et = datetime.now(ZoneInfo('America/New_York'))
+    except Exception:
+        return True   # 时区不可用时不拦，交给外层 cron 控制
+    if et.weekday() >= 5:
+        return False
+    hm = et.hour * 60 + et.minute
+    return 9 * 60 + 30 <= hm <= 16 * 60
+
+
+def refresh_ai_intraday(force_full_if_missing: bool = True) -> dict:
+    """盘中轻量刷新：只用 yfinance 实时价覆盖已有缓存的 price + mom_1d/3d/5d/10d。
+
+    动机：`_do_ai_scan` 的价格/动量取自 DataStore，其 end 被 `_cap_end` 截到昨日，
+    盘中重跑也拿不到当日实时价（等于白刷）。本函数改用 yf.download 拉近月日线——
+    美股交易时段包含「当日 forming bar」，故 iloc[-1] 即当前实时价，动量随之刷新。
+    与 A 股 astock_update「实时快照覆盖当日 bar」同思路，但只补 US AI 池这几十只。
+
+    重活（基本面/insider/capex/news/AI 评分/分组结构）盘中不变，全部沿用缓存，
+    不触发重新计算，因此单次开销 ≈ 一次批量下载（~5s）。
+    无缓存时按 force_full_if_missing 决定是否退回全量 `_do_ai_scan`。
+    """
+    cached = None
+    if _AI_CACHE_FILE.exists():
+        try:
+            with open(_AI_CACHE_FILE, encoding='utf-8') as f:
+                cached = json.load(f)
+        except Exception:
+            cached = None
+    if not cached or not cached.get('rows'):
+        if force_full_if_missing:
+            _logger.info('[AITracker] 无缓存，盘中刷新退回全量扫描')
+            return _do_ai_scan()
+        return cached or {'rows': [], 'total': 0}
+
+    syms = [r['symbol'] for r in cached['rows']]
+    try:
+        import yfinance as yf
+        px = yf.download(syms, period='25d', progress=False, auto_adjust=True)['Close']
+    except Exception as e:
+        _logger.warning(f'[AITracker] 盘中刷新下载失败，保留旧缓存：{e}')
+        return cached
+
+    def _mom(s, lb: int):
+        if s is None or len(s) <= lb:
+            return None
+        cur, ref = s.iloc[-1], s.iloc[-1 - lb]
+        if pd.isna(cur) or pd.isna(ref) or ref == 0:
+            return None
+        return float(cur / ref - 1.0)
+
+    patched = 0
+    for r in cached['rows']:
+        sym = r['symbol']
+        try:
+            s = px[sym].dropna() if sym in getattr(px, 'columns', []) else None
+        except Exception:
+            s = None
+        if s is None and hasattr(px, 'name') and px.name == sym:
+            s = px.dropna()          # 单标的时 px 是 Series
+        if s is None or len(s) == 0:
+            continue
+        r['price']   = float(s.iloc[-1])
+        r['mom_1d']  = _mom(s, 1)
+        r['mom_3d']  = _mom(s, 3)
+        r['mom_5d']  = _mom(s, 5)
+        r['mom_10d'] = _mom(s, 10)
+        patched += 1
+
+    cached['last_updated'] = datetime.now().isoformat(timespec='seconds')
+    cached['intraday_patched'] = patched
+    result = _clean_floats(cached)
+    try:
+        with open(_AI_CACHE_FILE, 'w', encoding='utf-8') as f:
+            json.dump(result, f, ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+    _logger.info(f'[AITracker] 盘中实时价覆盖完成，{patched}/{len(syms)} 只')
+    return result
+
+
 def scan_ai_tracker(force: bool = False) -> dict:
     """扫描 AI 基建全股票池。
 
@@ -412,7 +496,9 @@ def _do_ai_scan() -> dict:
         closes   = df_sym['close'] if df_sym is not None and not df_sym.empty else None
         price    = float(closes.iloc[-1]) if closes is not None and len(closes) else None
         mom_1d   = _mom(closes, 1)
+        mom_3d   = _mom(closes, 3)
         mom_5d   = _mom(closes, 5)
+        mom_10d  = _mom(closes, 10)
         mom_20d  = _mom(closes, 20)
 
         total, bd = _score_ai(capex_g, rs, rev_g, news, tech)
@@ -427,7 +513,9 @@ def _do_ai_scan() -> dict:
             'breakdown':       bd,
             'price':           price,
             'mom_1d':          mom_1d,
+            'mom_3d':          mom_3d,
             'mom_5d':          mom_5d,
+            'mom_10d':         mom_10d,
             'mom_20d':         mom_20d,
             'capex_growth':    round(capex_g, 3) if capex_g is not None else None,
             'rs_score':        rs,
@@ -769,5 +857,29 @@ def auto_discover(limit: int = 20) -> list[dict]:
 
     save_universe(u)
     return suggestions
+
+
+# ── CLI 入口（供调度任务）──────────────────────────────────────
+if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser(description='美股 AI 追踪扫描（供调度任务）')
+    parser.add_argument('--intraday', action='store_true',
+                        help='盘中轻量刷新：仅用实时价覆盖 price/动量列（非交易时段自动跳过）')
+    parser.add_argument('--full', action='store_true',
+                        help='全量扫描：重算基本面/insider/评分/动量并写缓存')
+    args = parser.parse_args()
+
+    if args.full:
+        res = _do_ai_scan()
+        print(f'[AITracker] 全量扫描完成：{res.get("total")} 只')
+    elif args.intraday:
+        if not _us_market_open_now():
+            print('[AITracker] 非美股交易时段（美东 9:30–16:00），跳过盘中刷新')
+        else:
+            res = refresh_ai_intraday()
+            print(f'[AITracker] 盘中刷新完成：覆盖 {res.get("intraday_patched", 0)} 只，'
+                  f'as-of {res.get("last_updated")}')
+    else:
+        parser.print_help()
 
 

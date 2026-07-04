@@ -10,6 +10,34 @@
       ],
       "hidden": true
     },
+    "semicon_equip": {
+      "label": "半导体设备/材料",
+      "color": "#eab308",
+      "symbols": [
+        "LRCX",
+        "KLAC",
+        "AMAT",
+        "ASML",
+        "ONTO",
+        "TER",
+        "ENTG",
+        "AEHR",
+        "AXTI",
+        "CAMT",
+        "UCTT",
+        "MKSI"
+      ]
+    },
+    "foundry_osat": {
+      "label": "晶圆制造/封测",
+      "color": "#14b8a6",
+      "symbols": [
+        "TSM",
+        "GFS",
+        "TSEM",
+        "AMKR"
+      ]
+    },
     "gpu_compute": {
       "label": "GPU/算力芯片",
       "color": "#f97316",
@@ -20,18 +48,7 @@
         "AVGO",
         "MRVL",
         "QCOM",
-        "ALAB",
-        "TSM",
-        "ARM",
-        "TXN",
-        "ADI",
-        "MPWR",
-        "MCHP",
-        "NXPI",
-        "SWKS",
-        "NVTS",
-        "WOLF",
-        "POWI"
+        "ARM"
       ]
     },
     "memory_storage": {
@@ -43,47 +60,38 @@
         "WDC",
         "STX",
         "RMBS",
-        "DRAM",
         "SIMO"
       ]
     },
-    "semicon_equip": {
-      "label": "半导体设备/材料",
-      "color": "#eab308",
+    "analog_power": {
+      "label": "模拟/电源芯片",
+      "color": "#f43f5e",
       "symbols": [
-        "LRCX",
-        "KLAC",
-        "AMAT",
-        "ASML",
-        "ONTO",
-        "TER",
-        "AMKR",
-        "ENTG",
-        "AEHR",
-        "AXTI",
-        "TSEM",
-        "CAMT",
-        "GFS",
-        "UCTT",
-        "MKSI",
+        "TXN",
+        "ADI",
+        "MPWR",
+        "MCHP",
+        "NXPI",
+        "SWKS",
+        "NVTS",
+        "WOLF",
+        "POWI",
         "VSH"
       ]
     },
     "datacenter_infra": {
-      "label": "服务器/数据中心硬件",
+      "label": "服务器/整机EMS",
       "color": "#22c55e",
       "symbols": [
         "SMCI",
         "DELL",
         "HPE",
-        "VRT",
-        "EQIX",
-        "DLR",
-        "AMT",
         "CLS",
         "TTMI",
         "TEL",
-        "HPQ"
+        "JBL",
+        "FLEX",
+        "PENG"
       ]
     },
     "ai_networking": {
@@ -95,24 +103,21 @@
         "CIEN",
         "LITE",
         "VIAV",
-        "CALX",
         "AAOI",
         "CRDO",
         "LASR",
         "NOK",
-        "JBL",
         "GLW",
         "COHR",
         "SMTC",
         "LPTH",
         "SITM",
         "MXL",
-        "FLEX",
-        "PENG"
+        "ALAB"
       ]
     },
     "ai_infra_build": {
-      "label": "AI算力运营/云",
+      "label": "AI算力运营/IDC",
       "color": "#06b6d4",
       "symbols": [
         "IREN",
@@ -124,9 +129,10 @@
         "BTDR",
         "HIVE",
         "CIFR",
-        "POWL",
-        "AGX",
-        "HUT"
+        "HUT",
+        "EQIX",
+        "DLR",
+        "WYFI"
       ]
     },
     "power_cooling": {
@@ -147,7 +153,10 @@
         "DGXX",
         "MOD",
         "AAON",
-        "TE"
+        "TE",
+        "VRT",
+        "POWL",
+        "AGX"
       ]
     }
   },
@@ -333,16 +342,6 @@
       "revenue_growth": null
     },
     {
-      "symbol": "WYFI",
-      "name": "(待确认)",
-      "suggest_group": "ai_infra_build",
-      "note": "D·业务待确认",
-      "industry": null,
-      "sector": null,
-      "market_cap_b": null,
-      "revenue_growth": null
-    },
-    {
       "symbol": "TCAI",
       "name": "(待确认)",
       "suggest_group": "ai_infra_build",
@@ -407,9 +406,9 @@
     "UCTT": false,
     "LRCX": true,
     "POWI": false,
-    "CALX": false,
     "PENG": false,
     "MKSI": true,
-    "VSH": false
+    "VSH": false,
+    "WYFI": false
   }
 }

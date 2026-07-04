@@ -87,6 +87,26 @@ DEFAULT_TASKS = [
         'description': '全池逐股算因子裸值+覆盖率,写文件缓存供市场扫描页秒开,避免用户点开时现场跑',
     },
     {
+        'task_id':  'ai_scan_intraday',
+        'name':     '美股AI追踪盘中刷新（实时价覆盖）',
+        'command':  f'{PYTHON} -m web.services.ai_tracker_svc --intraday',
+        'cron_expr': '*/5 9-16 * * 1-5',   # 美东 9:00~16:55 每 5 分钟（纽约时区，自动夏/冬令时）
+        'enabled':  False,
+        'description': '交易时段每 5 分钟用 yfinance 实时价覆盖 AI 池的 price/动量列，'
+                       '让「产业图谱」热力图盘中跟着动（重活基本面/评分沿用缓存不重算，单次约 5 秒）。'
+                       '函数内含 9:30–16:00 时段闸门，盘前/盘后/午间多余的 cron tick 自动跳过。',
+    },
+    {
+        'task_id':  'core_intel_cards',
+        'name':     '核心票每日情报卡（Claude+联网检索）',
+        'command':  f'{PYTHON} -m web.services.intel_svc --core-cards',
+        'cron_expr': '15 8 * * 1-5',   # 美东 8:15（纽约时区），开盘前生成，「盘前扫描 → 情报卡」查看
+        'enabled':  False,
+        'description': '对盘前清单 core 组每只票做 Claude 联网检索（隔夜要闻/产业链同行/华尔街/催化剂 + 论点检查）。'
+                       '默认走本机 claude CLI 订阅额度（无 API 费用，INTEL_ENGINE 可切 api）。'
+                       '默认关闭：页面手动点「生成情报卡」即可；想每天盘前自动生成再开启此任务。',
+    },
+    {
         'task_id':  'astock_update',
         'name':     'A股盘中实时刷新 + 扫描(主题板块)',
         'command':  f'{PYTHON} -m web.services.astock_momentum_svc --mode theme',
@@ -114,7 +134,8 @@ DEFAULT_TASKS = [
 
 # 依赖美股交易时段的任务：cron 按美东时间书写，trigger 用 America/New_York（自动夏/冬令时）。
 # 其余任务（A 股 / 收盘后批处理 / 维护）用 Asia/Shanghai。
-NY_TASKS = {'dry_run', 'auto_trader', 'stop_exits', 'confirm_fills', 'market_scan'}
+NY_TASKS = {'dry_run', 'auto_trader', 'stop_exits', 'confirm_fills', 'market_scan',
+            'core_intel_cards', 'ai_scan_intraday'}
 
 # 默认任务 cron 调整（非 UTC 迁移）：task_id → 需被替换的旧默认 cron。
 # DB 里命中此旧值时升级到 DEFAULT_TASKS 当前 cron；用户手改过的自定义 cron 不受影响。

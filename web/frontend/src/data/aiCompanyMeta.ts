@@ -134,9 +134,10 @@ export const AI_COMPANY_META: Record<string, { name: string; desc: string }> = {
 /** AI 硬件产业链上下游分层（每层含若干子主题组 key，与 ai_universe.json 的 groups 对应）。 */
 export const AI_CHAIN_LAYERS: { title: string; flow: string; groups: string[] }[] = [
   { title: '上游 · 设备材料', flow: '造芯片的工具与原料', groups: ['semicon_equip'] },
-  { title: '上游 · 芯片',     flow: 'GPU / CPU / 存储',    groups: ['gpu_compute', 'memory_storage'] },
-  { title: '中游 · 服务器 / 网络', flow: '组装与互连',     groups: ['datacenter_infra', 'ai_networking'] },
-  { title: '下游 · 算力运营 / 云', flow: '把算力变成钱',   groups: ['ai_infra_build', 'hyperscalers'] },
+  { title: '上游 · 制造封测', flow: '代工厂与封装测试',   groups: ['foundry_osat'] },
+  { title: '上游 · 芯片设计', flow: '算力 / 存储 / 模拟电源', groups: ['gpu_compute', 'memory_storage', 'analog_power'] },
+  { title: '中游 · 整机 / 网络', flow: '组装与互连',       groups: ['datacenter_infra', 'ai_networking'] },
+  { title: '下游 · 算力运营 / IDC', flow: '把算力变成钱',  groups: ['ai_infra_build', 'hyperscalers'] },
   { title: '配套 · 电力 / 散热',   flow: '能源与冷却贯穿全链', groups: ['power_cooling'] },
 ]
 

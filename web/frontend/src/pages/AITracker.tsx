@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import SymbolLink from '../components/SymbolLink'
+import AIChainHeatmap from '../components/AIChainHeatmap'
 import { AI_COMPANY_META, AI_CHAIN_LAYERS, MEGA_CAPS, SMALL_CAPS } from '../data/aiCompanyMeta'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import ReactECharts from 'echarts-for-react'
@@ -50,7 +51,7 @@ function GroupBadge({ label, color }: { label: string; color: string }) {
 
 export default function AITracker() {
   const qc = useQueryClient()
-  const [tab, setTab] = useState<'tracker' | 'momentum' | 'compare'>('tracker')
+  const [tab, setTab] = useState<'tracker' | 'momentum' | 'compare' | 'manage'>('tracker')
   const [showAddTool, setShowAddTool] = useState(false)
   const [forcing, setForcing] = useState(false)
   const [addForm, setAddForm] = useState<{ symbol: string; group: string } | null>(null)
@@ -63,7 +64,8 @@ export default function AITracker() {
   const { data: scanData, isLoading } = useQuery({
     queryKey: ['ai-tracker-scan'],
     queryFn: () => scanAITracker(false),
-    staleTime: 4 * 3_600_000,
+    staleTime: 60_000,
+    refetchInterval: 3 * 60_000,   // 每 3 分钟拉一次缓存；配合 ai_scan_intraday 任务盘中热力图自动跟着动
     retry: false,
   })
 
@@ -194,6 +196,7 @@ export default function AITracker() {
           { key: 'tracker',  label: '产业图谱' },
           { key: 'momentum', label: '动能轮动' },
           { key: 'compare',  label: '财报对比' },
+          { key: 'manage',   label: '清单管理' },
         ].map(t => (
           <button key={t.key} onClick={() => setTab(t.key as any)}
             className={`px-4 py-2 text-sm border-b-2 transition-colors ${
@@ -207,11 +210,22 @@ export default function AITracker() {
 
       {/* ── Tab: 追踪清单（AI 硬件产业链图谱）─────────────────── */}
       {tab === 'tracker' && (
+        isLoading && !((scanData as any)?.rows?.length) ? (
+          <div className="bg-slate-800 rounded-lg border border-slate-700 p-10 text-center text-sm text-slate-500 animate-pulse">
+            首次扫描全池数据中（约 1-2 分钟），完成后自动显示…
+          </div>
+        ) : (
+          <AIChainHeatmap rows={(scanData as any)?.rows ?? []} universe={universe} idxMem={idxMem} />
+        )
+      )}
+
+      {/* ── Tab: 清单管理（增删股票 / 优先池 / 待定审核）──────────── */}
+      {tab === 'manage' && (
         <div className="space-y-4">
           {/* 说明 + 工具条 */}
           <div className="flex items-start gap-2 flex-wrap">
             <div className="text-[11px] text-slate-500 bg-slate-900/40 border border-slate-700/50 rounded px-2.5 py-1.5 leading-relaxed flex-1 min-w-[280px]">
-              <span className="text-slate-400">AI 硬件产业链图谱</span>：上下游分层 + 子主题分区，每张卡=一家公司主营。点代码看 K 线；评分/动量见「<span className="text-slate-300">动能轮动</span>」。卡片悬停可移除，子主题旁 <span className="text-slate-400">＋</span> 添加。
+              <span className="text-slate-400">清单管理</span>：上下游分层 + 子主题分区，每张卡=一家公司主营。点代码看 K 线。卡片悬停可移除，子主题旁 <span className="text-slate-400">＋</span> 添加。
             </div>
             <div className="flex items-center gap-2 shrink-0">
               <button onClick={() => setShowAddTool(v => !v)}

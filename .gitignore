@@ -1,5 +1,5 @@
-# 敏感配置
-config.py
+# 敏感配置（仅根目录本地配置，锚定 / 避免误伤 web/api/config.py 等同名源码）
+/config.py
 .env
 .web.pid
 

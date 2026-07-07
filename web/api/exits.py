@@ -23,8 +23,9 @@ _ET = ZoneInfo('America/New_York')
 
 
 def _market_open_now() -> bool:
+    from core.market_calendar import is_us_trading_day
     et = datetime.now(_ET)
-    if et.weekday() >= 5:
+    if not is_us_trading_day(et.date()):
         return False
     t = et.hour * 60 + et.minute
     return 9 * 60 + 30 <= t <= 16 * 60
@@ -49,6 +50,16 @@ def decide(pe_id: int, body: DecideBody):
         row = _db.decide_pending_exit(pe_id, 'kept')
         if row is None:
             raise HTTPException(status_code=404, detail='记录不存在或已被处理')
+        # 「保留」必须连 IB 上的遗留卖单一起撤掉：此前 auto_trader 或历史确认可能
+        # 已挂过该标的的 SELL 单（休市日顺延单尤其危险，2026-07-03 事故），
+        # 只标记 kept 不撤单，下一开盘仍会被卖出。best-effort：IB 未连不阻塞决策。
+        try:
+            from web.services import portfolio_svc
+            res = portfolio_svc.cancel_open_orders(row['symbol'], action='SELL')
+            row['cancelled_sells'] = res.get('count', 0)
+        except Exception as e:
+            row['cancelled_sells'] = None
+            row['cancel_error'] = f'撤销 IB 遗留卖单失败，请到持仓页/TWS 手动检查：{e}'
         return row
 
     if body.action != 'sell':

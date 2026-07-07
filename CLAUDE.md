@@ -270,6 +270,8 @@ python confirm_fills.py --date 2026-03-21    # 补确认历史某天
 sp500_scanner.py   # 【选股】RS 扫描器，独立运行，无需 IB
 auto_trader.py     # 【执行】自动交易，需要 IB Gateway
 confirm_fills.py   # 【确认】成交回报查询，9:35 AM ET 后运行
+                   #   历史遗留非终态订单逐笔与 IB 对账（已成交→回填 / 僵尸挂单→撤销 / 无踪迹→Expired），
+                   #   不再盲目按账龄标 Expired（防已成交漏记 + 休市日顺延僵尸单）
 config.py          # 统一配置：连接参数从 .env 读，风控参数从 DB config_store 读
 
 # ── 核心基础设施 ──────────────────────────────────────────
@@ -287,6 +289,9 @@ core/
   ibkr_data_store.py # Parquet 本地数据存储（IBKR），存 data/stocks_ibkr/，仅数据验证用
   earnings.py        # 财报日期查询 + 回避逻辑（prefetch_earnings / has_upcoming_earnings）
   insider.py         # OpenInsider 内幕买入数据抓取（20小时缓存）
+  market_calendar.py # 美股交易日历：is_us_trading_day()，NYSE 假日表 2025-2027（超范围 fail-open+日志提醒）
+                     #   auto_trader --run 休市日拒绝执行；market_is_open / exits._market_open_now 假日返回 False
+                     #   （修复 2026-07-03 独立日补休当天下的 MKT/DAY 单被 IB 顺延到 7/6 开盘、绕过人工决策误卖的事故）
   logger.py          # 全局日志模块：logs/trading.log，每天切割，保留30天
   fmt.py             # 终端输出格式化工具（lj/rj 对齐函数）
 
@@ -445,7 +450,7 @@ ai_priority_bonus  = +0.5（AI 优先池成员绝对置顶；rs_score 通常 [-0
 - 触发后 auto_trader 写 DB `pending_exits` 表（同一 symbol 当日 upsert 去重，9:00 OPG 与 9:35 exits-only 双跑不重复），随后 best-effort 调 `web/services/intel_svc.py` 拉 Claude 情报（个股新闻/板块龙头动向/是否系统性恐慌，约 1-3 分钟，失败不影响记录）
 - Web UI 持仓页顶部出「待确认出场」卡片（导航栏红点计数，60s 轮询 `/api/exits`）：触发原因 + Claude 情报 + 「确认卖出 / 保留持仓」按钮
 - **确认卖出** → `web/api/exits.py` 走 `portfolio_svc.place_sell_order`（盘中 MKT/DAY，盘外 LMT/OPG 下限=触发价×0.95）；下单成功才标记 sold
-- **保留持仓** → 标记 kept，**当日**不再重复提醒；次日触发条件仍成立会重新建记录提醒
+- **保留持仓** → 标记 kept，**并撤销 IB 上该标的全部遗留 SELL 挂单**（best-effort，撤单失败前端弹警告提示手动检查）；**当日**不再重复提醒；次日触发条件仍成立会重新建记录提醒
 - **未确认默认保留**（不卖、不腾槽、不回笼资金），下跌风险由灾难线兜底；触发条件消失（反弹/已手动卖出）的旧记录每轮自动标记 expired
 
 > **历史多层止损（ATR自适应 / EMA8破位 / 移动止损 / 时间止损 / 量价背离卖出）已从实盘下线。** `SELL_ON_ALERT` 恒 False。这些机制仍存在于两处，**不影响实盘执行**：

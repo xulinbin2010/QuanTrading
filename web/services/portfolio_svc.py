@@ -507,8 +507,8 @@ def place_sell_order(symbol: str, qty: int, order_type: str,
     }
 
 
-def cancel_open_orders(symbol: str) -> dict:
-    """撤销指定股票的全部未成交挂单。
+def cancel_open_orders(symbol: str, action: str | None = None) -> dict:
+    """撤销指定股票的未成交挂单。action='SELL'/'BUY' 只撤单边（None=全撤）。
     需 Web 连接为 master client（IB_WEB_CLIENT_ID 与 Gateway Master API client ID 一致），
     才能撤其他 client（如 auto_trader）下的单；否则只能撤本连接自己的单。
     按 symbol 级撤销，规避不同 client 的 orderId 重号问题。"""
@@ -522,6 +522,7 @@ def cancel_open_orders(symbol: str) -> dict:
         targets = [
             t for t in _ib.openTrades()
             if t.contract.symbol.upper() == symu
+            and (action is None or t.order.action == action)
             and t.orderStatus.status not in ('Filled', 'Cancelled', 'ApiCancelled', 'Inactive')
         ]
         for t in targets:
@@ -540,10 +541,13 @@ def cancel_open_orders(symbol: str) -> dict:
             import sqlite3 as _sq
             import config as _cfg
             con = _sq.connect(_cfg.DB_PATH, timeout=5)
-            con.execute(
-                "UPDATE orders SET status='Cancelled' WHERE UPPER(symbol)=? "
-                "AND status IN ('PreSubmitted','Submitted','PendingSubmit','PendingCancel')",
-                (symu,))
+            sql = ("UPDATE orders SET status='Cancelled' WHERE UPPER(symbol)=? "
+                   "AND status IN ('PreSubmitted','Submitted','PendingSubmit','PendingCancel')")
+            params: tuple = (symu,)
+            if action:
+                sql += " AND action=?"
+                params = (symu, action)
+            con.execute(sql, params)
             con.commit(); con.close()
         except Exception:
             pass

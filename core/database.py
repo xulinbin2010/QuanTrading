@@ -179,22 +179,36 @@ class Database:
         """, (trade_date,))
         return self.cursor.fetchall()
 
-    def expire_stale_orders(self, days: int = 3) -> int:
-        """把账龄 ≥ days 天仍处于非终态(PreSubmitted/Submitted/PendingSubmit)的订单标记为 Expired。
-        OPG 单只对下一开盘有效、DAY 单当日失效，几天前仍未对账的必然已死。返回失效笔数。
-        非破坏性：仅改 status，行保留可回溯。"""
+    def get_stale_orders(self, before_date: str) -> list:
+        """取 before_date（不含）之前仍处于非终态且无成交价的订单。
+        OPG 只对下一开盘有效、DAY 当日失效——前一交易日之前的非终态单要么已死、
+        要么已成交但漏对账、要么是仍活在 IB 的僵尸单（休市日顺延，2026-07-03 事故），
+        必须逐笔与 IB 对账后再定终态，不能直接标 Expired。"""
         if not self._ensure_conn():
-            return 0
+            return []
         self.cursor.execute("""
-            UPDATE orders
-               SET status = 'Expired'
+            SELECT id, symbol, action, order_type, quantity, order_id, created_at
+              FROM orders
              WHERE status IN ('PreSubmitted', 'Submitted', 'PendingSubmit')
                AND filled_price IS NULL
-               AND DATE(created_at) <= DATE('now', 'localtime', ?)
-        """, (f'-{int(days)} days',))
-        n = self.cursor.rowcount
+               AND DATE(created_at) < ?
+             ORDER BY created_at ASC
+        """, (before_date,))
+        return self.cursor.fetchall()
+
+    def set_order_result(self, db_id: int, status: str,
+                         filled_price: float | None = None) -> None:
+        """按 DB 行 id 精确回写订单终态（order_id 是 IB 侧 clientId 内自增，跨日可重号）。"""
+        if not self._ensure_conn():
+            return
+        if filled_price is not None:
+            self.cursor.execute(
+                "UPDATE orders SET status = ?, filled_price = ? WHERE id = ?",
+                (status, filled_price, db_id))
+        else:
+            self.cursor.execute(
+                "UPDATE orders SET status = ? WHERE id = ?", (status, db_id))
         self.conn.commit()
-        return n
 
     # ---------- pending_exits（半自动出场：触发→待人工确认）----------
 

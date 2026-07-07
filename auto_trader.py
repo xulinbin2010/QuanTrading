@@ -356,9 +356,10 @@ def scan_signals(
 
 
 def market_is_open(ib) -> bool:
-    """判断美股当前是否在正常交易时段（美东 9:30-16:00 工作日）"""
+    """判断美股当前是否在正常交易时段（美东 9:30-16:00 交易日，周末/假日为 False）"""
+    from core.market_calendar import is_us_trading_day
     et = datetime.now(ZoneInfo('America/New_York'))   # 自动处理 EDT/EST
-    if et.weekday() >= 5:
+    if not is_us_trading_day(et.date()):
         return False
     open_t  = et.replace(hour=9,  minute=30, second=0, microsecond=0)
     close_t = et.replace(hour=16, minute=0,  second=0, microsecond=0)
@@ -912,6 +913,19 @@ def main():
     args = parser.parse_args()
 
     dry_run         = not args.run
+
+    # 休市日闸门：休市日下的 DAY/OPG 单会被 IB 顺延到下一交易日开盘成交，
+    # 绕过当天所有人工决策（2026-07-03 独立日补休 MU/SNDK 误卖事故）。
+    # 真实下单一律拒绝；dry-run 放行（预览信号无害）。
+    from core.market_calendar import is_us_trading_day
+    _et_today = datetime.now(ZoneInfo('America/New_York')).date()
+    if not is_us_trading_day(_et_today):
+        if not dry_run:
+            print(f"\n⛔ 美东 {_et_today} 为休市日（周末/假日），拒绝真实下单。"
+                  f"\n   休市日提交的订单会顺延到下一交易日开盘成交，存在误卖/误买风险。")
+            return
+        print(f"\n⚠️  美东 {_et_today} 为休市日，仅预览信号（--run 在休市日会被拒绝）")
+
     held            = [s.upper() for s in args.held]
     extra           = [s.upper() for s in args.extra]
     deny_industries = args.deny_industry or []

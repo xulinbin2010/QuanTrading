@@ -79,26 +79,97 @@ def _fetch_ib_data(ib, debug: bool):
     return fill_map, trade_map
 
 
+def _reconcile_stale(db, ib, stale_rows, fill_map, pending):
+    """历史遗留非终态订单逐笔与 IB 对账后定终态。不能盲目标 Expired：
+      - 可能已成交却漏对账（DB 与真实账户不符）
+      - 可能仍活在 IB（休市日下的 DAY/OPG 单被顺延到下一开盘，2026-07-03
+        MU/SNDK 在用户点「保留持仓」后仍被周五遗留市价单卖出的事故）
+    对账顺序：今日成交回报 → IB 已完结订单 → 仍存活挂单（撤销）→ 均无踪迹才 Expired。
+    """
+    # 当日待确认订单的 order_id 不参与僵尸匹配，防止误撤今天的合法挂单
+    today_ids = {row[6] for row in pending}
+
+    ib.reqAllOpenOrders()
+    ib.sleep(1)
+    live_trades = [
+        t for t in ib.openTrades()
+        if t.orderStatus.status not in ('Filled', 'Cancelled', 'ApiCancelled', 'Inactive')
+        and t.order.orderId not in today_ids
+    ]
+    try:
+        completed = list(ib.reqCompletedOrders(apiOnly=False))
+        ib.sleep(1)
+    except Exception as e:
+        logger.warning(f'reqCompletedOrders 失败（跳过历史成交比对）：{e}')
+        completed = []
+
+    for db_id, symbol, action, order_type, qty, order_id, created_at in stale_rows:
+        symu  = str(symbol).upper()
+        label = (f'[{symbol}] {action} {order_type} {int(qty)}股 '
+                 f'(db_id={db_id}, order_id={order_id}, 下单于 {created_at})')
+
+        # ① 今日成交回报（遗留单在今晨开盘被撮合的场景）
+        fill = fill_map.get(order_id)
+        if fill and fill.get('symbol', '').upper() == symu:
+            db.set_order_result(db_id, 'Filled', filled_price=fill['avg_price'])
+            logger.warning(f'遗留订单已成交 {label} → 回填 Filled @ ${fill["avg_price"]:.4f}')
+            continue
+
+        # ② IB 已完结订单（前几日成交，reqExecutions 查不到；按 symbol+action+数量
+        #    匹配，且完结日期不得早于下单日期）
+        created_d = str(created_at)[:10].replace('-', '')
+        comp = next(
+            (t for t in completed
+             if t.contract.symbol.upper() == symu
+             and t.order.action == action
+             and t.orderStatus.status == 'Filled'
+             and abs(float(t.orderStatus.filled) - float(qty)) < 0.5
+             and str(getattr(t.order, 'completedTime', '') or '')[:8] >= created_d),
+            None)
+        if comp is not None:
+            completed.remove(comp)   # 一笔完结成交只兑付一条 DB 记录
+            price = float(comp.orderStatus.avgFillPrice) or None
+            db.set_order_result(db_id, 'Filled', filled_price=price)
+            logger.warning(f'遗留订单已成交（completedOrders）{label} → 回填 Filled'
+                           f'{f" @ ${price:.4f}" if price else ""}')
+            continue
+
+        # ③ 仍活在 IB 的僵尸挂单：撤销。≥1 个交易日前的 DAY/OPG 单没人预期它还活着，
+        #    留着会在下一开盘成交、绕过所有人工决策
+        zombie = next(
+            (t for t in live_trades
+             if t.contract.symbol.upper() == symu and t.order.action == action
+             and abs(float(t.order.totalQuantity) - float(qty)) < 0.5),
+            None)
+        if zombie is not None:
+            live_trades.remove(zombie)
+            ib.cancelOrder(zombie.order)
+            ib.sleep(1)
+            db.set_order_result(db_id, 'Cancelled')
+            logger.warning(f'⚠️ 僵尸挂单仍存活于 IB {label} → 已撤销（防下一开盘误成交）')
+            continue
+
+        # ④ IB 无踪迹，确认已死
+        db.set_order_result(db_id, 'Expired')
+        logger.info(f'遗留订单无 IB 踪迹 {label} → Expired')
+
+
 def run(trade_date: str, debug: bool = False):
     logger.info(f'===== 成交确认开始  日期：{trade_date} =====')
 
-    # ── 查询当天待确认订单 ───────────────────────────────────
+    # ── 查询当天待确认订单 + 历史遗留非终态订单 ─────────────────
     db = Database()
     db.connect()
 
-    # 清扫历史遗留：账龄 ≥3 天仍未对账的非终态单必然已死，标记 Expired，防止累积
-    _stale = db.expire_stale_orders(days=3)
-    if _stale:
-        logger.warning(f'清扫 {_stale} 笔过期未对账订单（账龄≥3天）→ Expired')
-
     pending = db.get_pending_orders(trade_date)
+    stale   = db.get_stale_orders(before_date=trade_date)
 
-    if not pending:
-        logger.info('无待确认订单，退出')
+    if not pending and not stale:
+        logger.info('无待确认/待对账订单，退出')
         db.close()
         return
 
-    logger.info(f'待确认订单：{len(pending)} 笔')
+    logger.info(f'待确认订单：{len(pending)} 笔 | 历史遗留待对账：{len(stale)} 笔')
     if debug:
         for row in pending:
             db_id, symbol, action, order_type, qty, limit_price, order_id = row
@@ -110,6 +181,18 @@ def run(trade_date: str, debug: bool = False):
     ib   = conn.connect()
 
     fill_map, trade_map = _fetch_ib_data(ib, debug)
+
+    # ── 历史遗留订单先对账（回填成交 / 撤僵尸单 / 标 Expired）──
+    if stale:
+        _reconcile_stale(db, ib, stale, fill_map, pending)
+
+    if not pending:
+        logger.info('无当日待确认订单')
+        logger.info('=' * 50)
+        conn.disconnect()
+        db.close()
+        return
+
     trader = Trading(ib, db=db)
 
     # ── 逐单比对，回写结果 ───────────────────────────────────

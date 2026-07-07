@@ -58,7 +58,16 @@ function ExitCard({ row }: { row: PendingExit }) {
     setBusy(action)
     setMsg('')
     try {
-      await decideExit(row.id, action)
+      const res = await decideExit(row.id, action)
+      // 保留持仓时后端会顺带撤销 IB 上该标的的遗留卖单（防休市日顺延单在下一开盘
+      // 误卖）；撤单失败必须让用户知道去手动检查
+      if (action === 'keep') {
+        if (res?.cancel_error) {
+          window.alert(`⚠️ 已标记保留，但${res.cancel_error}`)
+        } else if (res?.cancelled_sells > 0) {
+          window.alert(`已标记保留，并撤销了 IB 上 ${res.cancelled_sells} 笔 ${row.symbol} 遗留卖单`)
+        }
+      }
       refresh()
     } catch (e: any) {
       setMsg(e.response?.data?.detail || `${action === 'sell' ? '下单' : '操作'}失败`)

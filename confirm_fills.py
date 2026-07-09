@@ -14,7 +14,7 @@ import argparse
 from datetime import date, datetime
 from collections import defaultdict
 
-from ib_insync import ExecutionFilter
+from ib_insync import ExecutionFilter, Stock
 
 from core.connection import IBConnection
 from core.database  import Database
@@ -79,97 +79,82 @@ def _fetch_ib_data(ib, debug: bool):
     return fill_map, trade_map
 
 
-def _reconcile_stale(db, ib, stale_rows, fill_map, pending):
-    """历史遗留非终态订单逐笔与 IB 对账后定终态。不能盲目标 Expired：
-      - 可能已成交却漏对账（DB 与真实账户不符）
-      - 可能仍活在 IB（休市日下的 DAY/OPG 单被顺延到下一开盘，2026-07-03
-        MU/SNDK 在用户点「保留持仓」后仍被周五遗留市价单卖出的事故）
-    对账顺序：今日成交回报 → IB 已完结订单 → 仍存活挂单（撤销）→ 均无踪迹才 Expired。
+def _try_rebuy(trader, ib, db, symbol: str, qty: int, opg_limit: float):
+    """OPG 买单完全未成交（被 OPG 限价保护取消）→ 盘中补一次 DAY 限价单。
+
+    安全护栏（任一不满足则放弃，绝不追高/重复买）：
+      ① 已持有该票               → 跳过（防重复买）
+      ② 持仓数已达 MAX_POSITIONS → 跳过（仓位槽已满）
+      ③ 现价 > 昨收×1.03         → 放弃（跳空太猛，不追）
+      ④ 新限价 = min(现价×1.005, 昨收×1.03)
+
+    昨收由原 OPG 限价反推：opg_limit = 昨收 × (1 + MAX_ENTRY_SLIPPAGE)。
+    注意：补出的 DAY 单成交情况由下一轮 confirm_fills 确认（与现有
+    “部分成交补 DAY 单”行为一致）。
     """
-    # 当日待确认订单的 order_id 不参与僵尸匹配，防止误撤今天的合法挂单
-    today_ids = {row[6] for row in pending}
-
-    ib.reqAllOpenOrders()
-    ib.sleep(1)
-    live_trades = [
-        t for t in ib.openTrades()
-        if t.orderStatus.status not in ('Filled', 'Cancelled', 'ApiCancelled', 'Inactive')
-        and t.order.orderId not in today_ids
-    ]
     try:
-        completed = list(ib.reqCompletedOrders(apiOnly=False))
-        ib.sleep(1)
+        # ① 防重复 + ② 仓位槽（直接用 ib.positions()，与 account.print_positions 同源）
+        held = {p.contract.symbol: p.position
+                for p in ib.positions()
+                if p.contract.secType == 'STK' and p.position != 0}
+        if symbol in held:
+            logger.info(f'[{symbol}] 已持仓 {held[symbol]:.0f} 股，跳过补单（防重复）')
+            return
+        if len(held) >= config.MAX_POSITIONS:
+            logger.info(f'[{symbol}] 持仓数已达上限 {config.MAX_POSITIONS}，跳过补单')
+            return
+
+        # ③ 取现价（reqHistoricalData，不依赖 Level1 行情订阅）
+        bars = ib.reqHistoricalData(
+            Stock(symbol, 'SMART', 'USD'), endDateTime='', durationStr='1 D',
+            barSizeStr='1 min', whatToShow='TRADES', useRTH=False,
+        )
+        if not bars:
+            logger.warning(f'[{symbol}] 取不到现价，放弃补单')
+            return
+        px = bars[-1].close
+
+        # ④ 放弃阈值：昨收 + 3%（昨收由 OPG 限价反推）
+        prev_close = opg_limit / (1 + config.MAX_ENTRY_SLIPPAGE)
+        ceiling = round(prev_close * 1.03, 2)
+        if px > ceiling:
+            logger.warning(
+                f'[{symbol}] 现价 ${px:.2f} > 昨收+3% ${ceiling:.2f}，'
+                f'跳空太猛，放弃补单（不追高）'
+            )
+            return
+
+        # ⑤ 新限价 = min(现价+0.5%, 天花板)，补 DAY 限价买单
+        new_limit = round(min(px * 1.005, ceiling), 2)
+        logger.warning(
+            f'[{symbol}] OPG 未成交 → 盘中补 DAY 限价买 {qty} 股 @ ${new_limit:.2f} '
+            f'（现价 ${px:.2f}，上限 ${ceiling:.2f}）'
+        )
+        trader.limit_buy(symbol, qty, new_limit, tif='DAY')
     except Exception as e:
-        logger.warning(f'reqCompletedOrders 失败（跳过历史成交比对）：{e}')
-        completed = []
-
-    for db_id, symbol, action, order_type, qty, order_id, created_at in stale_rows:
-        symu  = str(symbol).upper()
-        label = (f'[{symbol}] {action} {order_type} {int(qty)}股 '
-                 f'(db_id={db_id}, order_id={order_id}, 下单于 {created_at})')
-
-        # ① 今日成交回报（遗留单在今晨开盘被撮合的场景）
-        fill = fill_map.get(order_id)
-        if fill and fill.get('symbol', '').upper() == symu:
-            db.set_order_result(db_id, 'Filled', filled_price=fill['avg_price'])
-            logger.warning(f'遗留订单已成交 {label} → 回填 Filled @ ${fill["avg_price"]:.4f}')
-            continue
-
-        # ② IB 已完结订单（前几日成交，reqExecutions 查不到；按 symbol+action+数量
-        #    匹配，且完结日期不得早于下单日期）
-        created_d = str(created_at)[:10].replace('-', '')
-        comp = next(
-            (t for t in completed
-             if t.contract.symbol.upper() == symu
-             and t.order.action == action
-             and t.orderStatus.status == 'Filled'
-             and abs(float(t.orderStatus.filled) - float(qty)) < 0.5
-             and str(getattr(t.order, 'completedTime', '') or '')[:8] >= created_d),
-            None)
-        if comp is not None:
-            completed.remove(comp)   # 一笔完结成交只兑付一条 DB 记录
-            price = float(comp.orderStatus.avgFillPrice) or None
-            db.set_order_result(db_id, 'Filled', filled_price=price)
-            logger.warning(f'遗留订单已成交（completedOrders）{label} → 回填 Filled'
-                           f'{f" @ ${price:.4f}" if price else ""}')
-            continue
-
-        # ③ 仍活在 IB 的僵尸挂单：撤销。≥1 个交易日前的 DAY/OPG 单没人预期它还活着，
-        #    留着会在下一开盘成交、绕过所有人工决策
-        zombie = next(
-            (t for t in live_trades
-             if t.contract.symbol.upper() == symu and t.order.action == action
-             and abs(float(t.order.totalQuantity) - float(qty)) < 0.5),
-            None)
-        if zombie is not None:
-            live_trades.remove(zombie)
-            ib.cancelOrder(zombie.order)
-            ib.sleep(1)
-            db.set_order_result(db_id, 'Cancelled')
-            logger.warning(f'⚠️ 僵尸挂单仍存活于 IB {label} → 已撤销（防下一开盘误成交）')
-            continue
-
-        # ④ IB 无踪迹，确认已死
-        db.set_order_result(db_id, 'Expired')
-        logger.info(f'遗留订单无 IB 踪迹 {label} → Expired')
+        logger.error(f'[{symbol}] 补单失败：{e}')
 
 
 def run(trade_date: str, debug: bool = False):
     logger.info(f'===== 成交确认开始  日期：{trade_date} =====')
 
-    # ── 查询当天待确认订单 + 历史遗留非终态订单 ─────────────────
+    # ── 查询当天待确认订单 ───────────────────────────────────
     db = Database()
     db.connect()
 
-    pending = db.get_pending_orders(trade_date)
-    stale   = db.get_stale_orders(before_date=trade_date)
+    # 清扫历史遗留：账龄 ≥3 天仍未对账的非终态单必然已死，标记 Expired，防止累积
+    _stale = db.expire_stale_orders(days=3)
+    if _stale:
+        logger.warning(f'清扫 {_stale} 笔过期未对账订单（账龄≥3天）→ Expired')
 
-    if not pending and not stale:
-        logger.info('无待确认/待对账订单，退出')
+    pending = db.get_pending_orders(trade_date)
+
+    if not pending:
+        logger.info('无待确认订单，退出')
         db.close()
         return
 
-    logger.info(f'待确认订单：{len(pending)} 笔 | 历史遗留待对账：{len(stale)} 笔')
+    logger.info(f'待确认订单：{len(pending)} 笔')
     if debug:
         for row in pending:
             db_id, symbol, action, order_type, qty, limit_price, order_id = row
@@ -181,18 +166,6 @@ def run(trade_date: str, debug: bool = False):
     ib   = conn.connect()
 
     fill_map, trade_map = _fetch_ib_data(ib, debug)
-
-    # ── 历史遗留订单先对账（回填成交 / 撤僵尸单 / 标 Expired）──
-    if stale:
-        _reconcile_stale(db, ib, stale, fill_map, pending)
-
-    if not pending:
-        logger.info('无当日待确认订单')
-        logger.info('=' * 50)
-        conn.disconnect()
-        db.close()
-        return
-
     trader = Trading(ib, db=db)
 
     # ── 逐单比对，回写结果 ───────────────────────────────────
@@ -261,6 +234,10 @@ def run(trade_date: str, debug: bool = False):
                     suffix = f'  （开盘价高于限价 ${limit_price:.2f}，OPG 保护生效）'
                 logger.warning(f'[{symbol}] {action} 未成交 — 状态：{status}{suffix}')
                 cancelled_count += 1
+
+                # OPG 买单完全未成交 → 盘中补 DAY 限价单（昨收+3% 上限，含防重复/仓位槽护栏）
+                if action == 'BUY' and order_type == 'LMT' and limit_price:
+                    _try_rebuy(trader, ib, db, symbol, int(qty), limit_price)
 
             else:
                 # Submitted / PreSubmitted：订单仍在途

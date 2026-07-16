@@ -55,13 +55,15 @@ _BUILTIN_NDX   = sorted(set(_BUILTIN_NDX))
 # ── 公共获取函数 ──────────────────────────────────────────────────
 
 def get_sp500_tickers(extra: list[str] = None) -> list[str]:
-    tickers = (_try_ivv_holdings()
-               or _try_wikipedia(
+    # Wikipedia 优先：iShares 官网 2026-07 起对 CSV 端点上了 JS bot 防护，
+    # requests 直接抓取只会拿到 HTML 挑战页，IVV 降级为兜底。
+    tickers = (_try_wikipedia(
                    url='https://en.wikipedia.org/wiki/List_of_S%26P_500_companies',
                    table_id='constituents',
                    col='Symbol',
                    label='S&P 500',
                )
+               or _try_ivv_holdings()
                or list(_BUILTIN_SP500))
     return _append_extra(tickers, extra)
 
@@ -223,10 +225,17 @@ def get_sp500_ndx_tickers(extra: list[str] = None) -> list[str]:
 
 
 def get_russell2000_tickers(extra: list[str] = None) -> list[str]:
-    """Russell 2000 成分股（iShares IWM 持仓 CSV）。无内置列表；网络失败时抛出异常。"""
-    tickers = _try_iwm_holdings()
+    """Russell 2000 成分股。主源 Vanguard VTWO 持仓 API（iShares IWM 已被 bot 防护挡住，降级兜底），
+    成功后写 data/universe_cache/russell2000.json，全部失败时回退本地缓存。无内置列表。"""
+    tickers = _try_vtwo_holdings() or _try_iwm_holdings()
+    if tickers:
+        _save_universe_cache('russell2000', tickers)
+    else:
+        tickers = _load_universe_cache('russell2000')
     if not tickers:
-        raise ValueError("Russell 2000 股票池获取失败（iShares IWM 请求失败，请检查网络）")
+        raise ValueError(
+            "Russell 2000 股票池获取失败（Vanguard VTWO / iShares IWM 均失败，且无本地缓存）"
+        )
     return _append_extra(tickers, extra)
 
 
@@ -356,6 +365,80 @@ def get_tickers(universe: str = 'sp500', extra: list[str] = None) -> list[str]:
 
 # ── 内部工具函数 ──────────────────────────────────────────────────
 
+_UNIVERSE_CACHE_DIR = os.path.normpath(
+    os.path.join(os.path.dirname(__file__), '..', 'data', 'universe_cache')
+)
+
+
+def _save_universe_cache(name: str, tickers: list[str]) -> None:
+    """成功抓取后落盘，供数据源全部失效时兜底。"""
+    import json
+    try:
+        os.makedirs(_UNIVERSE_CACHE_DIR, exist_ok=True)
+        path = os.path.join(_UNIVERSE_CACHE_DIR, f'{name}.json')
+        with open(path, 'w', encoding='utf-8') as f:
+            json.dump({'asof': datetime.now().isoformat(timespec='seconds'),
+                       'tickers': tickers}, f)
+    except Exception:
+        pass
+
+
+def _load_universe_cache(name: str) -> list[str]:
+    import json
+    path = os.path.join(_UNIVERSE_CACHE_DIR, f'{name}.json')
+    if not os.path.exists(path):
+        return []
+    try:
+        with open(path, encoding='utf-8') as f:
+            data = json.load(f)
+        tickers = data.get('tickers') or []
+        if tickers:
+            print(f"  [警告] {name} 在线获取失败，使用本地缓存（{data.get('asof', '未知时间')}，{len(tickers)} 只）")
+        return tickers
+    except Exception:
+        return []
+
+
+def _reject_bot_challenge(resp) -> None:
+    """iShares/BlackRock 对 CSV 端点返回 HTTP 200 的 JS bot 防护页，需按内容识别。"""
+    head = resp.text[:200].lstrip().lower()
+    if head.startswith('<!doctype') or head.startswith('<html'):
+        raise ValueError('返回 HTML bot 防护页而非 CSV（iShares 已屏蔽程序化抓取）')
+
+
+def _try_vtwo_holdings() -> list[str]:
+    """从 Vanguard VTWO（Russell 2000 ETF）持仓 API 获取成分股，500 只/页分页拉全。"""
+    base = ('https://investor.vanguard.com/investment-products/etfs'
+            '/profile/api/VTWO/portfolio-holding/stock')
+    headers = {'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json'}
+    try:
+        tickers: list[str] = []
+        seen: set[str] = set()
+        start, total = 1, None
+        while total is None or start <= total:
+            resp = requests.get(base, params={'start': start, 'count': 500},
+                                headers=headers, timeout=20)
+            resp.raise_for_status()
+            data = resp.json()
+            total = int(data.get('size', 0))
+            entities = (data.get('fund') or {}).get('entity') or []
+            if not entities:
+                break
+            for e in entities:
+                t = (e.get('ticker') or '').strip().upper().replace('.', '-')
+                if t and t[0].isalpha() and t not in seen:
+                    seen.add(t)
+                    tickers.append(t)
+            start += len(entities)
+        if len(tickers) < 1000:   # Russell 2000 正常 ~1900+，过少视为数据异常
+            raise ValueError(f'仅解析到 {len(tickers)} 只，疑似接口异常')
+        print(f"  Vanguard VTWO 获取成功：{len(tickers)} 只 Russell 2000 成分股")
+        return tickers
+    except Exception as e:
+        print(f"  Vanguard VTWO 请求失败：{e}")
+        return []
+
+
 def _try_ivv_holdings() -> list[str]:
     """从 iShares IVV ETF 官方持仓 CSV 获取 S&P 500 成分股（每日更新，比 Wikipedia 更准确）。"""
     url = (
@@ -374,6 +457,7 @@ def _try_ivv_holdings() -> list[str]:
     try:
         resp = requests.get(url, headers=headers, timeout=15)
         resp.raise_for_status()
+        _reject_bot_challenge(resp)
         df = pd.read_csv(io.StringIO(resp.text), skiprows=9)
         stocks = df[df['Asset Class'] == 'Equity']
         tickers = (
@@ -407,6 +491,7 @@ def _try_iwm_holdings() -> list[str]:
     try:
         resp = requests.get(url, headers=headers, timeout=20)
         resp.raise_for_status()
+        _reject_bot_challenge(resp)
         df = pd.read_csv(io.StringIO(resp.text), skiprows=9)
         stocks = df[df['Asset Class'] == 'Equity']
         tickers = (

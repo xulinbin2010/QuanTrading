@@ -1,15 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import ReactECharts from 'echarts-for-react'
 import { diagnoseAccount, getAccountDoctorLatest } from '../api/client'
-
-type Pos = {
-  symbol: string; name?: string; market_value_usd?: number | string
-  theme?: string; leverage_factor?: number | string; is_leveraged?: boolean; currency?: string
-}
-type Account = {
-  net_liq?: number | string; maint_margin?: number | string; excess_liquidity?: number | string
-  settled_cash?: number | string; unrealized_pnl?: number | string
-}
+import {
+  DEFAULT_KRW_RATE,
+  parseAccountBlock,
+  parsePositionsBlock,
+  type DoctorAccount as Account,
+  type DoctorPosition as Pos,
+} from '../utils/accountDoctorParser'
 
 const SEV = {
   crit: { dot: 'bg-red-500',     box: 'border-red-800/60 bg-red-900/15',       txt: 'text-red-300' },
@@ -19,44 +17,6 @@ const SEV = {
 
 const fmt = (v: any) => (v == null || isNaN(Number(v)) ? '—' : Number(v).toLocaleString('en-US', { maximumFractionDigits: 0 }))
 
-// 文本 token → 数字（容忍 $ , % 空格），非数字返回 null
-const numOf = (s: string): number | null => {
-  const c = s.replace(/[$,%\s]/g, '')
-  return /^-?\d+(\.\d+)?$/.test(c) ? Number(c) : null
-}
-// 账户字段关键词 → 字段名
-const ACC_KW: [RegExp, string][] = [
-  [/净清算|net.?liq/i, 'net_liq'],
-  [/维持保证金|maint/i, 'maint_margin'],
-  [/剩余流动性|excess/i, 'excess_liquidity'],
-  [/已结算现金|settled/i, 'settled_cash'],
-  [/未实现|unreali/i, 'unrealized_pnl'],
-]
-// 粘贴文本 → {positions, account}。每行「代码 市值 [主题] [杠杆]」，或账户字段行「净清算 77551」
-function parsePasteText(text: string): { positions: Pos[]; account: Account; skipped: number } {
-  const positions: Pos[] = []
-  const account: Account = {}
-  let skipped = 0
-  // 先剥离数字内的千分位逗号（如 4,096 → 4096），避免与"逗号作字段分隔符"冲突
-  text = text.replace(/(?<=\d),(?=\d{3}(\D|$))/g, '')
-  for (const raw of text.split('\n')) {
-    const line = raw.trim()
-    if (!line) continue
-    const tokens = line.split(/[\s,\t]+/).filter(Boolean)
-    const nums = tokens.map(numOf).filter((n): n is number => n !== null)
-    // 账户字段行：命中关键词且有数字
-    const accHit = ACC_KW.find(([re]) => re.test(line))
-    if (accHit && nums.length) { (account as any)[accHit[1]] = nums[nums.length - 1]; continue }
-    // 持仓行：首 token 为代码，其后第一个数字为市值
-    const symbol = tokens[0]
-    const restNums = tokens.slice(1).map(numOf).filter((n): n is number => n !== null)
-    const restTxt = tokens.slice(1).filter((t) => numOf(t) === null)
-    if (!symbol || !restNums.length) { skipped++; continue }
-    const lev = restNums.length >= 2 ? restNums[1] : 1
-    positions.push({ symbol, market_value_usd: restNums[0], theme: restTxt[0] || '其它', leverage_factor: lev, is_leveraged: lev > 1 })
-  }
-  return { positions, account, skipped }
-}
 const PIE = ['#2f80b8', '#3aa0a0', '#c99a3a', '#b5654a', '#8a6fb0', '#7aa055', '#c56b8a', '#5b8bd0', '#9aa0a8']
 
 export default function AccountDoctor() {
@@ -67,7 +27,13 @@ export default function AccountDoctor() {
   const [error, setError] = useState<string | null>(null)
   const [note, setNote] = useState<string | null>(null)
   const [showPaste, setShowPaste] = useState(false)
-  const [pasteText, setPasteText] = useState('')
+  const [posPaste, setPosPaste] = useState('')
+  const [accPaste, setAccPaste] = useState('')
+  const [krwRate, setKrwRate] = useState(String(DEFAULT_KRW_RATE))
+
+  // 实时解析预览：贴完立刻看到拆成啥样，错行当场发现
+  const posPreview = useMemo(() => parsePositionsBlock(posPaste, Number(krwRate) || DEFAULT_KRW_RATE), [posPaste, krwRate])
+  const accPreview = useMemo(() => parseAccountBlock(accPaste), [accPaste])
 
   // 载入上次诊断（本地缓存），预填输入表
   useEffect(() => {
@@ -94,13 +60,14 @@ export default function AccountDoctor() {
 
   function applyPaste() {
     setError(null)
-    const { positions: ps, account: acc, skipped } = parsePasteText(pasteText)
-    if (!ps.length && !Object.keys(acc).length) { setError('没解析出内容。每行格式：代码 市值 [主题] [杠杆]，如 "MU 39065 存储 1"'); return }
-    if (ps.length) setPositions(ps)
-    if (Object.keys(acc).length) setAccount((a) => ({ ...a, ...acc }))
+    const ps = posPreview
+    const acc = accPreview
     const accN = Object.keys(acc).length
-    setNote(`已解析 ${ps.length} 只持仓${accN ? ` + ${accN} 个账户字段` : ''}${skipped ? `（跳过 ${skipped} 行无效）` : ''}，核对后点「开始诊断」`)
-    setShowPaste(false); setPasteText('')
+    if (!ps.length && !accN) { setError('两个框都没解析出内容：①框贴持仓明细，②框贴账户总览。'); return }
+    if (ps.length) setPositions(ps)
+    if (accN) setAccount((a) => ({ ...a, ...acc }))
+    setNote(`已解析 ${ps.length} 只持仓${accN ? ` + ${accN} 个账户字段` : ''}。券商导出不含「主题」「杠杆×」，请在下表补这两列后再点「开始诊断」`)
+    setShowPaste(false); setPosPaste(''); setAccPaste('')
   }
 
   async function runDiagnose() {
@@ -153,8 +120,8 @@ export default function AccountDoctor() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-lg font-semibold text-white">账户诊断 <span className="text-slate-400 font-normal">🩺 桌面医生</span></h1>
-        <p className="text-sm text-slate-400 mt-1">不接实盘 API：手动填表或「📋 粘贴文本」录入持仓与保证金，诊断集中度、杠杆与爆仓风险。数据全程本地，不外传。</p>
+        <h1 className="text-lg font-semibold text-white">实盘诊断 <span className="text-slate-400 font-normal">🩺 桌面医生</span></h1>
+        <p className="text-sm text-slate-400 mt-1">正式账户（不接 API）：手动填表或「📋 粘贴文本」录入持仓与保证金，诊断集中度、杠杆与爆仓风险。录入的持仓同时供「情报中心」做事件覆盖。数据全程本地，不外传。</p>
       </div>
 
       {note &&<div className="text-sm text-emerald-300 bg-emerald-900/15 border border-emerald-800/50 rounded-lg px-3 py-2">{note}</div>}
@@ -171,18 +138,57 @@ export default function AccountDoctor() {
         </div>
 
         {showPaste && (
-          <div className="bg-slate-900/60 border border-slate-700 rounded-lg p-3 space-y-2">
+          <div className="bg-slate-900/60 border border-slate-700 rounded-lg p-3 space-y-4">
             <div className="text-xs text-slate-400 leading-relaxed">
-              每行一只：<span className="font-mono text-slate-300">代码 市值 [主题] [杠杆]</span>（空格/逗号/Tab 均可，市值可带 $ 和千分位）。
-              账户字段单独成行，如 <span className="font-mono text-slate-300">净清算 77551</span> / <span className="font-mono text-slate-300">剩余流动性 24037</span>。纯本地解析，不走 API。
+              直接把券商导出的两块文本分别贴进下面两个框（多行折行、混币种、带 <span className="font-mono text-slate-300">—</span> 占位都能认）。纯本地解析，不走 API。市值按 <span className="font-mono text-slate-300">持仓量 × 最后价</span> 反算。
             </div>
-            <textarea
-              value={pasteText} onChange={(e) => setPasteText(e.target.value)} rows={7}
-              placeholder={'MU 39065 存储 1\nMUU 7473 存储 2\n000660 14364 存储 1\n净清算 77551\n维持保证金 53505\n剩余流动性 24037'}
-              className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-slate-200 text-sm font-mono focus:outline-none focus:border-blue-500 resize-y placeholder:text-slate-600"
-            />
+
+            {/* ① 持仓明细 */}
+            <div className="space-y-1.5">
+              <div className="flex items-center justify-between">
+                <div className="text-xs font-medium text-slate-300">① 持仓明细</div>
+                <label className="text-[11px] text-slate-500 flex items-center gap-1">
+                  KRW→USD 汇率
+                  <input value={krwRate} onChange={(e) => setKrwRate(e.target.value)} inputMode="decimal"
+                    className="w-16 bg-slate-800 border border-slate-600 rounded px-1.5 py-0.5 text-slate-200 text-[11px] font-mono text-right focus:outline-none focus:border-blue-500" />
+                </label>
+              </div>
+              <textarea
+                value={posPaste} onChange={(e) => setPosPaste(e.target.value)} rows={6}
+                placeholder={'产品 持仓 最后价 变动% 成本基础 市场价值 平均价格 …\nMU  美光科技股份有限公司\n40  976.63  -5.39%  40,477  39,065.20  1011.93  —  -1,410\n000660 SK 海力士株式会社\n8  2424000  +10.84%  2070万  19,392,000  2590553.40 …'}
+                className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-slate-200 text-sm font-mono focus:outline-none focus:border-blue-500 resize-y placeholder:text-slate-600"
+              />
+              {posPreview.length > 0 && (
+                <div className="text-[11px] text-slate-400 bg-slate-800/60 rounded px-2 py-1.5">
+                  解析出 <b className="text-emerald-300">{posPreview.length}</b> 只：
+                  {posPreview.map((p) => (
+                    <span key={p.symbol} className="inline-block mr-2 font-mono">
+                      {p.symbol} ${fmt(p.market_value_usd)}{p.currency === 'KRW' ? <span className="text-amber-400">·KRW折</span> : ''}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* ② 账户总览 */}
+            <div className="space-y-1.5">
+              <div className="text-xs font-medium text-slate-300">② 账户总览</div>
+              <textarea
+                value={accPaste} onChange={(e) => setAccPaste(e.target.value)} rows={5}
+                placeholder={'账户\nU17851538\nUSD\n77,547.06\n已结算现金\n-11,376.92\n维持保证金\n53,504.08\n剩余流动性\n24,030.19'}
+                className="w-full bg-slate-800 border border-slate-600 rounded px-3 py-2 text-slate-200 text-sm font-mono focus:outline-none focus:border-blue-500 resize-y placeholder:text-slate-600"
+              />
+              {Object.keys(accPreview).length > 0 && (
+                <div className="text-[11px] text-slate-400 bg-slate-800/60 rounded px-2 py-1.5 space-x-2 font-mono">
+                  {([['net_liq', '净值'], ['settled_cash', '现金'], ['unrealized_pnl', '未实现'], ['maint_margin', '维持'], ['excess_liquidity', '剩余流动']] as const)
+                    .filter(([k]) => (accPreview as any)[k] != null)
+                    .map(([k, lbl]) => <span key={k}>{lbl} <b className="text-emerald-300">${fmt((accPreview as any)[k])}</b></span>)}
+                </div>
+              )}
+            </div>
+
             <div className="flex gap-2 justify-end">
-              <button onClick={() => { setShowPaste(false); setPasteText('') }} className="text-xs text-slate-400 hover:text-slate-200 px-3 py-1.5">取消</button>
+              <button onClick={() => { setShowPaste(false); setPosPaste(''); setAccPaste('') }} className="text-xs text-slate-400 hover:text-slate-200 px-3 py-1.5">取消</button>
               <button onClick={applyPaste} className="text-xs bg-blue-600 hover:bg-blue-700 text-white rounded px-4 py-1.5 font-medium">解析填入</button>
             </div>
           </div>
@@ -210,7 +216,7 @@ export default function AccountDoctor() {
                   <td className="text-right"><button onClick={() => rmRow(i)} className="text-slate-500 hover:text-red-400 text-sm px-1">✕</button></td>
                 </tr>
               ))}
-              {!positions.length && <tr><td colSpan={6} className="text-center text-slate-500 text-sm py-6">上传截图自动填充，或点「+ 加一行」手填</td></tr>}
+              {!positions.length && <tr><td colSpan={6} className="text-center text-slate-500 text-sm py-6">点「📋 粘贴文本」贴券商导出，或「+ 加一行」手填</td></tr>}
             </tbody>
           </table>
         </div>

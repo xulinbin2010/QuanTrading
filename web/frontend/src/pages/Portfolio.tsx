@@ -1138,9 +1138,9 @@ export default function Portfolio() {
 
   return (
     <>
-    {/* Tab 栏：持仓总览 / 账户诊断 */}
+    {/* Tab 栏：持仓总览 / 实盘诊断 */}
     <div className="flex items-center gap-5 border-b border-slate-700 mb-5">
-      {([['holdings', '持仓总览'], ['doctor', '账户诊断 🩺']] as const).map(([k, label]) => (
+      {([['holdings', '持仓总览'], ['doctor', '实盘诊断 🩺']] as const).map(([k, label]) => (
         <button key={k} onClick={() => setView(k)}
           className={`pb-2 -mb-px text-sm font-medium border-b-2 transition-colors ${view === k ? 'border-blue-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
           {label}

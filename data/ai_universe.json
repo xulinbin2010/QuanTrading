@@ -60,7 +60,8 @@
         "WDC",
         "STX",
         "RMBS",
-        "SIMO"
+        "SIMO",
+        "SKHY"
       ]
     },
     "analog_power": {
@@ -113,7 +114,9 @@
         "LPTH",
         "SITM",
         "MXL",
-        "ALAB"
+        "ALAB",
+        "LWLG",
+        "OUST"
       ]
     },
     "ai_infra_build": {
@@ -161,16 +164,6 @@
     }
   },
   "pending_review": [
-    {
-      "symbol": "LWLG",
-      "name": "Lightwave Logic",
-      "suggest_group": "ai_networking",
-      "note": "B·电光聚合物,未量产",
-      "industry": null,
-      "sector": null,
-      "market_cap_b": null,
-      "revenue_growth": null
-    },
     {
       "symbol": "INOD",
       "name": "Innodata",
@@ -226,16 +219,6 @@
       "name": "Alpha & Omega Semi",
       "suggest_group": "power_cooling",
       "note": "B·功率半导体,偏泛",
-      "industry": null,
-      "sector": null,
-      "market_cap_b": null,
-      "revenue_growth": null
-    },
-    {
-      "symbol": "OUST",
-      "name": "Ouster",
-      "suggest_group": "ai_networking",
-      "note": "C·激光雷达/自动驾驶,非AI基建",
       "industry": null,
       "sector": null,
       "market_cap_b": null,
@@ -408,7 +391,13 @@
     "POWI": false,
     "PENG": false,
     "MKSI": true,
-    "VSH": false,
-    "WYFI": false
-  }
+    "VSH": true,
+    "WYFI": false,
+    "ADI": true,
+    "NVTS": true,
+    "LWLG": false,
+    "OUST": false,
+    "SKHY": true
+  },
+  "retire_keep": {}
 }

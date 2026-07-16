@@ -122,10 +122,40 @@ def analyze(symbol: str = Query(...)):
 
 @router.post('/discover')
 def discover(limit: int = Query(20)):
-    """扫描 sp500+ndx，自动发现 AI 相关标的，加入待审核队列"""
+    """扫描 sp500+ndx+russell2000（$2B–$500B），自动发现 AI 相关标的，加入待审核队列"""
     try:
         from web.services.ai_tracker_svc import auto_discover
         return {'suggestions': auto_discover(limit=limit)}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get('/retire-suggestions')
+def retire_suggestions(force: bool = Query(False), cached_only: bool = Query(False)):
+    """汰旧建议：近 2 个月持续弱势的池内成员（缓存 24h，force=true 现算）。
+    cached_only=true 只读缓存不现算（供页面自动加载，无缓存时返回 no_cache 标记）。
+    只出建议，移出走 DELETE /universe/{symbol}（人工确认），「保留」60 天内不再提醒。"""
+    try:
+        from web.services.ai_tracker_svc import get_cached_retire, suggest_retire
+        if not force:
+            cached = get_cached_retire()
+            if cached is not None:
+                return cached
+            if cached_only:
+                return {'as_of': None, 'suggestions': [], 'no_cache': True}
+        return suggest_retire()
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post('/retire-keep')
+def retire_keep(symbol: str = Body(..., embed=True)):
+    """「保留」某只汰旧建议：60 天内不再提醒"""
+    try:
+        from web.services.ai_tracker_svc import keep_retire_suggestion
+        return keep_retire_suggestion(symbol)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

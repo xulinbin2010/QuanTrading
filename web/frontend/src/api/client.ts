@@ -208,13 +208,24 @@ export const removeAISymbol    = (symbol: string) =>
 export const setAITradePriority = (symbol: string, enabled: boolean) =>
   api.post(`/ai/trade-priority/${symbol}`, { enabled }).then(r => r.data)
 export const discoverAISymbols = (limit = 20) =>
-  api.post('/ai/discover', null, { params: { limit }, timeout: 120_000 }).then(r => r.data)
+  // 冷缓存时要并发查全池(~2000+ 只)市值/行业，可能超过 2 分钟，放宽到 10 分钟
+  api.post('/ai/discover', null, { params: { limit }, timeout: 600_000 }).then(r => r.data)
 export const analyzeAISymbol   = (symbol: string) =>
   api.get('/ai/analyze', { params: { symbol }, timeout: 30_000 }).then(r => r.data)
 export const approveAIPending  = (symbol: string, group: string) =>
   api.post('/ai/universe/pending/approve', { symbol, group }).then(r => r.data)
 export const rejectAIPending   = (symbol: string) =>
   api.post('/ai/universe/pending/reject', { symbol }).then(r => r.data)
+// ── 社区热度（Reddit/StockTwits）──────────────────────────────
+export const getSocialBuzz = (refresh = false) =>
+  // refresh=true（或首次无缓存）现场采集一轮，StockTwits 逐票限速约 40-90 秒
+  api.get('/social/buzz', { params: { refresh }, timeout: 300_000 }).then(r => r.data)
+
+export const getAIRetireSuggestions = (force = false, cachedOnly = false) =>
+  // 现算时要 topup 全池行情（近百只），放宽超时；cachedOnly=true 只读缓存秒回（页面自动加载用）
+  api.get('/ai/retire-suggestions', { params: { force, cached_only: cachedOnly }, timeout: 300_000 }).then(r => r.data)
+export const keepAIRetire      = (symbol: string) =>
+  api.post('/ai/retire-keep', { symbol }).then(r => r.data)
 export const getAIMomentum     = (force = false) =>
   api.get('/ai/momentum', { params: { force }, timeout: 120_000 }).then(r => r.data)
 export const getEarningsCompare = (symbols: string[], force = false) =>

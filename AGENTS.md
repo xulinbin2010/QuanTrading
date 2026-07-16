@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ---
 
@@ -437,7 +437,7 @@ ai_priority_bonus  = +0.5（AI 优先池成员绝对置顶；rs_score 通常 [-0
 
 ### 止损体系（半自动版：触发 → 人工确认，仅灾难线全自动）
 
-实盘 `auto_trader._execute_inner` 的出场按顺序检查（现金等价 ETF 跳过）。设计动机：纯数学止损不区分「个股利空」vs「板块被外围带崩后龙头已反弹」（SNDK 误割教训），卖/留判断交给人 + Claude 情报，程序只负责触发与灾难兜底：
+实盘 `auto_trader._execute_inner` 的出场按顺序检查（现金等价 ETF 跳过）。设计动机：纯数学止损不区分「个股利空」vs「板块被外围带崩后龙头已反弹」（SNDK 误割教训），卖/留判断交给人 + Codex 情报，程序只负责触发与灾难兜底：
 
 | 优先级 | 类型 | 触发条件 | 处理方式 |
 |--------|------|----------|----------|
@@ -446,8 +446,8 @@ ai_priority_bonus  = +0.5（AI 优先池成员绝对置顶；rs_score 通常 [-0
 | 2 | EMA21 两日破位 | 最近两根**已收盘**日线（T-1、T-2）收盘均 < 各自当日 `EMA21`（`EMA_EXIT_PERIOD=21`，代码内常量） | 同上，待人工确认 |
 
 **半自动确认流程（规则 1/2）：**
-- 触发后 auto_trader 写 DB `pending_exits` 表（同一 symbol 当日 upsert 去重，9:00 OPG 与 9:35 exits-only 双跑不重复），随后 best-effort 调 `web/services/intel_svc.py` 拉 Claude 情报（个股新闻/板块龙头动向/是否系统性恐慌，约 1-3 分钟，失败不影响记录）
-- Web UI 持仓页顶部出「待确认出场」卡片（导航栏红点计数，60s 轮询 `/api/exits`）：触发原因 + Claude 情报 + 「确认卖出 / 保留持仓」按钮
+- 触发后 auto_trader 写 DB `pending_exits` 表（同一 symbol 当日 upsert 去重，9:00 OPG 与 9:35 exits-only 双跑不重复），随后 best-effort 调 `web/services/intel_svc.py` 拉 Codex 情报（个股新闻/板块龙头动向/是否系统性恐慌，约 1-3 分钟，失败不影响记录）
+- Web UI 持仓页顶部出「待确认出场」卡片（导航栏红点计数，60s 轮询 `/api/exits`）：触发原因 + Codex 情报 + 「确认卖出 / 保留持仓」按钮
 - **确认卖出** → `web/api/exits.py` 走 `portfolio_svc.place_sell_order`（盘中 MKT/DAY，盘外 LMT/OPG 下限=触发价×0.95）；下单成功才标记 sold
 - **保留持仓** → 标记 kept，**并撤销 IB 上该标的全部遗留 SELL 挂单**（best-effort，撤单失败前端弹警告提示手动检查）；**当日**不再重复提醒；次日触发条件仍成立会重新建记录提醒
 - **未确认默认保留**（不卖、不腾槽、不回笼资金），下跌风险由灾难线兜底；触发条件消失（反弹/已手动卖出）的旧记录每轮自动标记 expired
@@ -463,15 +463,15 @@ ai_priority_bonus  = +0.5（AI 优先池成员绝对置顶；rs_score 通常 [-0
 ### 定向个股情报引擎（`web/services/intel_svc.py`）
 
 **双引擎自动选择**（env `INTEL_ENGINE`=auto/cli/api，默认 auto）：
-- **cli（默认优先）**：本机 `claude` CLI 无头模式（`-p` + WebSearch），走 **Claude 订阅额度**（OAuth），零 API 费用；子进程剥掉 `ANTHROPIC_API_KEY` 防误走 API 计费；模型默认 sonnet（env `INTEL_CLI_MODEL` 可改）
-- **api 兜底**：Anthropic API（claude-opus-4-8 + web_search server tool），需 API key 且有余额（用户账户当前无额度且不打算充值，故实际走 cli）
+- **cli（默认优先）**：本机 `Codex` CLI 无头模式（`-p` + WebSearch），走 **Codex 订阅额度**（OAuth），零 API 费用；子进程剥掉 `ANTHROPIC_API_KEY` 防误走 API 计费；模型默认 sonnet（env `INTEL_CLI_MODEL` 可改）
+- **api 兜底**：Anthropic API（Codex-opus-4-8 + web_search server tool），需 API key 且有余额（用户账户当前无额度且不打算充值，故实际走 cli）
 
 两条业务线共用（另有零成本兜底：待确认出场卡片始终显示 yfinance/SEC 新闻标题，不经 LLM）：
 
 1. **出场情报**（`generate_exit_intel` / `enrich_pending_exits`）：对触发出场的持仓检索个股新闻、板块龙头动向（如存储链看 SK 海力士），判断下跌归因（个股利空/板块拖累/系统性恐慌），给「卖出/保留/减半观察」倾向建议。auto_trader 触发后自动拉，Web UI 待确认卡可手动重试
 2. **核心票每日情报卡**（`generate_core_cards`，CLI `python -m web.services.intel_svc --core-cards`）：对盘前清单 core 组每只票出卡（隔夜要闻/产业链同行/华尔街/催化剂倒计时），并对照手填的**持有逻辑+失效条件**给论点检查档位（强化/中性/削弱/失效预警）。缓存 `data/.core_cards_cache.json`；入口：顶栏「盘前扫描」modal →「核心票情报卡」tab；调度任务 `core_intel_cards`（默认关闭，美东 8:15）
    - core 组配置在 `data/premarket_config.json`（「清单配置」tab 手填），字段：ticker/cost/weight/thesis/**invalidation（失效条件）**/**catalysts（催化剂日历）**——后两个字段是论点检查的依据
-   - 每次生成 = 一次 Claude+联网调用；cli 引擎消耗订阅额度（无现金成本），api 引擎 5 只票约 $0.5-1.5
+   - 每次生成 = 一次 Codex+联网调用；cli 引擎消耗订阅额度（无现金成本），api 引擎 5 只票约 $0.5-1.5
 
 ---
 

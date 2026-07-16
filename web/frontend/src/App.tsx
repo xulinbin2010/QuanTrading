@@ -7,7 +7,6 @@ import { PremarketBriefingProvider } from './components/PremarketBriefingProvide
 import Portfolio from './pages/Portfolio'
 import MarketScan from './pages/MarketScan'
 import StockAnalysis from './pages/StockAnalysis'
-import Optimizer from './pages/Optimizer'
 import BacktestHub from './pages/BacktestHub'
 import AITracker from './pages/AITracker'
 import AStockTracker from './pages/AStockTracker'
@@ -37,7 +36,6 @@ export default function App() {
               <Route index element={<Portfolio />} />
               <Route path="scanner"   element={<MarketScan />} />
               <Route path="analysis"  element={<StockAnalysis />} />
-              <Route path="optimizer" element={<Optimizer />} />
               <Route path="backtest"    element={<BacktestHub />} />
               {/* 旧路由保留为重定向，避免外部书签失效 */}
               <Route path="single-bt"   element={<Navigate to="/backtest?tab=single" replace />} />

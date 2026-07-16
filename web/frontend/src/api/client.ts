@@ -140,17 +140,6 @@ export const addToWatchlist = (symbol: string) =>
 export const removeFromWatchlist = (symbol: string) =>
   api.delete(`/watchlist/${symbol}`).then(r => r.data)
 
-// ── 因子优化器 ────────────────────────────────────────────
-
-export const runOptimizer        = (params: object) =>
-  api.post('/optimizer/run', params).then(r => r.data)
-export const getOptimizerStatus  = (taskId: string) =>
-  api.get(`/optimizer/status/${taskId}`).then(r => r.data)
-export const getOptimizerResult  = (taskId: string) =>
-  api.get(`/optimizer/result/${taskId}`).then(r => r.data)
-export const getOptimizerHistory = () =>
-  api.get('/optimizer/history').then(r => r.data)
-
 // ── 系统配置 ──────────────────────────────────────────────
 
 export const getConfig    = () => api.get('/config').then(r => r.data)

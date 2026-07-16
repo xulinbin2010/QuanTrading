@@ -8,7 +8,6 @@ import { usePremarketBriefing } from './PremarketBriefingProvider'
 const NAV = [
   { to: '/',          label: '持仓总览', icon: '📊' },
   { to: '/scanner',   label: '市场扫描', icon: '🔭' },
-  { to: '/optimizer', label: '因子优化', icon: '⚗️'  },
   { to: '/backtest',  label: '回测',     icon: '📈' },
   { to: '/ai',         label: '美股AI追踪', icon: '🇺🇸' },
   { to: '/astock',     label: 'A股AI追踪',  icon: '🇨🇳' },

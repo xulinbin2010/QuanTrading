@@ -107,6 +107,39 @@ DEFAULT_TASKS = [
                        '默认关闭：页面手动点「生成情报卡」即可；想每天盘前自动生成再开启此任务。',
     },
     {
+        'task_id':  'ai_discover',
+        'name':     'AI池吐故纳新（发现新标的 + 汰旧建议）',
+        'command':  f'{PYTHON} -m web.services.ai_tracker_svc --discover',
+        'cron_expr': '0 8 1 * *',      # 北京 每月 1 日 08:00（美股收盘后、A股开盘前的低活跃时段）
+        'enabled':  False,
+        'description': '进新：扫描 sp500+ndx+russell2000 中 $2B–$500B 的 AI 产业链新标的（按行业关键词），'
+                       '写入待审核列表，在「美股AI追踪 → 清单管理」人工批准/忽略（新成员默认仅观察，不进实盘优先池）。'
+                       '汰旧：对池内成员做持续弱势检查（近 2 个月 RS 池内后 20% 且破 EMA21），生成移出建议，'
+                       '同样人工确认——绝不自动删。',
+    },
+    {
+        'task_id':  'ai_ipo_discover',
+        'name':     'AI池新股发现（Claude+联网检索）',
+        'command':  f'{PYTHON} -m web.services.intel_svc --ipo-discover',
+        'cron_expr': '30 8 1 * *',     # 北京 每月 1 日 08:30（指数扫描后 30 分钟）
+        'enabled':  False,
+        'description': '用 Claude 联网检索近 6-12 个月上市/热门的 AI 硬件产业链新票（补指数扫描的 IPO 盲区：'
+                       'ARM/ALAB/CRWV/NBIS 这类上市初期不在任何指数里），结果同样写入待审核列表人工把关。'
+                       '默认走本机 claude CLI 订阅额度（无 API 费用）。',
+    },
+    {
+        'task_id':  'social_buzz',
+        'name':     '社区热度采集（Reddit/StockTwits）',
+        'command':  f'{PYTHON} -m web.services.social_svc --collect',
+        'cron_expr': '0 8,11,14,17 * * 1-5',   # 美东 盘前 8:00 / 盘中 11:00、14:00 / 盘后 17:00
+        'enabled':  False,
+        'description': '采集 AI 池 + 持仓的 Reddit 提及热度（ApeWisdom 聚合）与 StockTwits 多空情绪，'
+                       '入库并按 7 日基线算 z-score 异动，「情报中心 → 社区热度」查看。'
+                       '信号是相对自身基线的异动而非绝对热度，开启后需积累约一周基线才有 z-score。'
+                       '可选增强：在 .env 配 REDDIT_CLIENT_ID/SECRET（reddit.com/prefs/apps 免费建 script 应用）'
+                       '可额外抓热帖标题样本；不配置只是没有标题列，提及数不受影响。纯观察层，不参与交易信号。',
+    },
+    {
         'task_id':  'astock_update',
         'name':     'A股盘中实时刷新 + 扫描(主题板块)',
         'command':  f'{PYTHON} -m web.services.astock_momentum_svc --mode theme',
@@ -135,7 +168,7 @@ DEFAULT_TASKS = [
 # 依赖美股交易时段的任务：cron 按美东时间书写，trigger 用 America/New_York（自动夏/冬令时）。
 # 其余任务（A 股 / 收盘后批处理 / 维护）用 Asia/Shanghai。
 NY_TASKS = {'dry_run', 'auto_trader', 'stop_exits', 'confirm_fills', 'market_scan',
-            'core_intel_cards', 'ai_scan_intraday'}
+            'core_intel_cards', 'ai_scan_intraday', 'social_buzz'}
 
 # 默认任务 cron 调整（非 UTC 迁移）：task_id → 需被替换的旧默认 cron。
 # DB 里命中此旧值时升级到 DEFAULT_TASKS 当前 cron；用户手改过的自定义 cron 不受影响。

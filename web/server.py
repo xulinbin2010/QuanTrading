@@ -65,6 +65,8 @@ from web.api.risk import router as risk_router
 from web.api.premarket import router as premarket_router
 from web.api.account_doctor import router as account_doctor_router
 from web.api.exits import router as exits_router
+from web.api.intel import router as intel_router
+from web.api.social import router as social_router
 
 
 @asynccontextmanager
@@ -122,6 +124,8 @@ app.include_router(risk_router)
 app.include_router(premarket_router)
 app.include_router(account_doctor_router)
 app.include_router(exits_router)
+app.include_router(intel_router)
+app.include_router(social_router)
 
 
 @app.get('/api/health')

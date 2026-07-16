@@ -331,3 +331,9 @@ export const diagnoseAccount = (account: any, positions: any[]) =>
 
 export const getAccountDoctorLatest = () =>
   api.get('/account-doctor/latest').then(r => r.data)
+
+// ── 情报中心（持仓新闻事件卡）────────────────────────────────
+export const getIntelEvents = () =>
+  api.get('/intel/events').then(r => r.data)
+export const refreshIntelEvents = () =>
+  api.post('/intel/events/refresh').then(r => r.data)

@@ -12,6 +12,7 @@ import AITracker from './pages/AITracker'
 import AStockTracker from './pages/AStockTracker'
 import Scheduler from './pages/Scheduler'
 import Config from './pages/Config'
+import IntelCenter from './pages/IntelCenter'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -42,6 +43,7 @@ export default function App() {
               <Route path="comparison"  element={<Navigate to="/backtest?tab=compare" replace />} />
               <Route path="ai"          element={<AITracker />} />
               <Route path="astock"      element={<AStockTracker />} />
+              <Route path="intel"       element={<IntelCenter />} />
               <Route path="scheduler" element={<Scheduler />} />
               <Route path="config"    element={<Config />} />
             </Route>

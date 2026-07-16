@@ -140,6 +140,23 @@ class Database:
 
             CREATE INDEX IF NOT EXISTS idx_pending_exits_status
                 ON pending_exits(status, symbol);
+
+            CREATE TABLE IF NOT EXISTS social_mentions (
+                id         INTEGER PRIMARY KEY AUTOINCREMENT,
+                symbol     TEXT NOT NULL,
+                source     TEXT NOT NULL,      -- apewisdom / stocktwits / reddit_posts
+                trade_date TEXT NOT NULL,      -- 美东日期 YYYY-MM-DD（z-score 按日聚合用）
+                mentions   INTEGER,            -- 提及数（apewisdom=24h 全 Reddit / reddit_posts=热帖命中数）
+                rank       INTEGER,            -- apewisdom 全站排名（其他源 NULL）
+                upvotes    INTEGER,
+                bull_cnt   INTEGER,            -- stocktwits 近页帖子中带 Bullish 标签数
+                bear_cnt   INTEGER,
+                extra      TEXT,               -- JSON 附加（热帖标题样本等，仅展示用）
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_social_mentions_sym
+                ON social_mentions(symbol, source, trade_date);
         """)
 
     # ---------- orders ----------
@@ -584,6 +601,61 @@ class Database:
             "FROM config_store ORDER BY category, key"
         )
         return self.cursor.fetchall()
+
+    # ---------- social_mentions（社区热度：Reddit/StockTwits 采集样本）----------
+
+    def add_social_mentions(self, rows: list[dict]) -> int:
+        """批量写入社区热度样本。rows 字段对齐表结构，extra 传 dict 会自动 JSON 序列化。"""
+        if not rows or not self._ensure_conn():
+            return 0
+        import json as _json
+        payload = []
+        for r in rows:
+            extra = r.get('extra')
+            if isinstance(extra, (dict, list)):
+                extra = _json.dumps(extra, ensure_ascii=False)
+            payload.append((
+                r['symbol'].upper(), r['source'], r['trade_date'],
+                r.get('mentions'), r.get('rank'), r.get('upvotes'),
+                r.get('bull_cnt'), r.get('bear_cnt'), extra,
+            ))
+        self.cursor.executemany("""
+            INSERT INTO social_mentions
+                (symbol, source, trade_date, mentions, rank, upvotes, bull_cnt, bear_cnt, extra)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """, payload)
+        self.conn.commit()
+        return len(payload)
+
+    def get_social_daily(self, source: str, days: int = 14) -> list:
+        """按 (symbol, trade_date) 聚合的日度序列（盘中多次采样取当日最大提及数），供 z-score 基线。"""
+        if not self._ensure_conn():
+            return []
+        self.cursor.execute("""
+            SELECT symbol, trade_date,
+                   MAX(mentions)  AS mentions,
+                   MIN(rank)      AS best_rank,
+                   MAX(upvotes)   AS upvotes,
+                   MAX(bull_cnt)  AS bull_cnt,
+                   MAX(bear_cnt)  AS bear_cnt
+              FROM social_mentions
+             WHERE source = ?
+               AND trade_date >= DATE('now', ?)
+             GROUP BY symbol, trade_date
+             ORDER BY symbol, trade_date
+        """, (source, f'-{int(days)} days'))
+        return self.cursor.fetchall()
+
+    def prune_social_mentions(self, keep_days: int = 90) -> int:
+        """清理 keep_days 之前的原始采样（日度聚合足够做基线，原始样本无需长留）。"""
+        if not self._ensure_conn():
+            return 0
+        self.cursor.execute(
+            "DELETE FROM social_mentions WHERE trade_date < DATE('now', ?)",
+            (f'-{int(keep_days)} days',))
+        n = self.cursor.rowcount
+        self.conn.commit()
+        return n
 
     # ---------- close ----------
 

@@ -418,7 +418,8 @@ def _fmt_dt(v) -> str:
 
 def get_orders(symbol: str | None = None, limit: int = 50) -> list[dict]:
     db = get_db()
-    rows = db.get_orders(symbol=symbol, limit=limit)
+    # 持仓页只展示最近 7 天；更早记录仍由 DB 保留至 30 天清理线。
+    rows = db.get_orders(symbol=symbol, limit=limit, since_days=7)
     result = []
     for r in rows:
         # id, symbol, action, order_type, qty, price, filled, status, order_id, created_at
@@ -579,5 +580,4 @@ def get_signals(universe: str = 'sp500') -> dict:
         for s in signals.get('sell', [])
     ]
     return {"buy": buy, "sell": sell, "spy_brake": signals.get('spy_brake', False)}
-
 

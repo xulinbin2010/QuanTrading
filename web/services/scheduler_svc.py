@@ -157,11 +157,11 @@ DEFAULT_TASKS = [
     },
     {
         'task_id':  'log_cleanup',
-        'name':     '日志清理（删除3天前日志+执行记录）',
+        'name':     '数据清理（日志3天+订单30天）',
         'command':  f'{PYTHON} -m tools.clean_logs --days 3',
         'cron_expr': '0 5 * * *',       # 北京 每天 05:00（低活跃时段）
         'enabled':  False,
-        'description': '删除 logs/ 下修改时间超过 3 天的日志文件（data_health_*.json、trading.log 轮转文件等），保护正在写入的 trading.log；并清理调度器「最近执行记录」(task_runs) 中 3 天前的历史（保护 running 在途任务）。要改保留天数，编辑 command 里的 --days N。',
+        'description': '删除 logs/ 下修改时间超过 3 天的日志文件及 task_runs 执行记录（保护活跃日志和 running 任务）；同时清理 orders 表中 30 天前的订单，删除前自动备份到 data/order_cleanup_backups/，可审计、可恢复。--days N 只控制日志和 task_runs，订单固定保留 30 天。',
     },
 ]
 
@@ -293,7 +293,21 @@ class SchedulerService:
             else:
                 old_cron = existing[t['task_id']][3]
                 migrate = _MIGRATE.get(t['task_id'], {})
-                if old_cron in migrate:
+                old_name = existing[t['task_id']][1]
+                old_command = existing[t['task_id']][2]
+                if (t['task_id'] == 'log_cleanup'
+                        and old_name == '日志清理（删除3天前日志+执行记录）'
+                        and old_command == t['command']
+                        and old_cron == t['cron_expr']):
+                    # 仅刷新未被用户自定义过的旧默认名称；enabled 状态保持不变。
+                    db.upsert_task(
+                        task_id=t['task_id'],
+                        name=t['name'],
+                        command=t['command'],
+                        cron_expr=t['cron_expr'],
+                        enabled=existing[t['task_id']][4],
+                    )
+                elif old_cron in migrate:
                     db.upsert_task(
                         task_id=t['task_id'],
                         name=t['name'],

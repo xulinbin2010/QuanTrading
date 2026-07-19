@@ -341,18 +341,47 @@ class Database:
         """, act)
         return self.cursor.rowcount
 
-    def get_orders(self, symbol=None, limit=50):
+    def get_orders(self, symbol=None, limit=50, since_days: int | None = None):
         if not self._ensure_conn():
             return []
         sql = "SELECT * FROM orders"
         params = []
+        conditions = []
         if symbol:
-            sql += " WHERE symbol = ?"
+            conditions.append("UPPER(symbol) = UPPER(?)")
             params.append(symbol)
+        if since_days is not None:
+            conditions.append("created_at >= datetime('now', ?)")
+            params.append(f'-{int(since_days)} days')
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
         sql += " ORDER BY created_at DESC LIMIT ?"
         params.append(limit)
         self.cursor.execute(sql, params)
         return self.cursor.fetchall()
+
+    def get_old_orders(self, days: int = 30) -> list:
+        """返回超过 days 天的订单，供清理任务先备份/预览后再精确删除。"""
+        if not self._ensure_conn():
+            return []
+        self.cursor.execute("""
+            SELECT *
+              FROM orders
+             WHERE created_at < datetime('now', ?)
+             ORDER BY created_at ASC
+        """, (f'-{int(days)} days',))
+        return self.cursor.fetchall()
+
+    def delete_orders_by_ids(self, order_ids: list[int]) -> int:
+        """按 DB 主键删除已备份的订单，避免清理预览与实际删除的范围漂移。"""
+        if not self._ensure_conn() or not order_ids:
+            return 0
+        placeholders = ','.join('?' for _ in order_ids)
+        self.cursor.execute(
+            f"DELETE FROM orders WHERE id IN ({placeholders})",
+            [int(order_id) for order_id in order_ids],
+        )
+        return self.cursor.rowcount
 
     def print_orders(self, symbol=None, limit=20):
         rows = self.get_orders(symbol=symbol, limit=limit)

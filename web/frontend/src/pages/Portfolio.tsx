@@ -1313,7 +1313,7 @@ export default function Portfolio() {
       {/* 订单历史 */}
       <div className="bg-slate-800 rounded-lg border border-slate-700">
         <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
-          <div className="text-sm font-medium text-slate-300">订单历史</div>
+          <div className="text-sm font-medium text-slate-300">订单历史（最近 7 天）</div>
           <input
             className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white placeholder-slate-400 w-24 focus:outline-none focus:border-blue-500"
             placeholder="过滤股票"

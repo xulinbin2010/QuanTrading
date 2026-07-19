@@ -10,6 +10,21 @@ Always respond in Chinese (中文). Do not mix Korean or other languages into re
 
 ---
 
+## 决策与执行边界
+
+- 当用户明确说“先不要执行”时，只进行分析、检查或方案设计；不要修改文件、运行会改变状态的命令，或执行外部写操作。
+- 对低风险、可逆，且不涉及架构、技术路线或产品偏好的实现细节，可以自主完成。
+- 如果存在多种合理方案，且选择会实质影响以下任一事项，必须先停下来让用户选择：
+  - architecture 或 technology stack；
+  - API compatibility，尤其是 breaking changes；
+  - destructive / irreversible operations；
+  - 用户尚未明确指定的 UI 风格或产品行为；
+  - 三种以上同等合理、且会产生实质差异的实现路径。
+- 需要用户选择时，先给出 2–3 个互斥选项，说明各自的优缺点、影响和 trade-offs，并明确给出 recommended option；等待用户选择后再继续。
+- 不要自行替用户决定架构、技术路线或产品偏好。如果用户已经明确选择或授权，则直接遵循，无需重复询问；除非出现新的重大风险、冲突或不可逆影响。
+
+---
+
 ## Data Safety
 
 - NEVER mass-delete parquet/cache files based on transient API failures (e.g., yfinance timeouts)

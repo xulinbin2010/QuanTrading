@@ -140,7 +140,7 @@ export default function AccountDoctor() {
         {showPaste && (
           <div className="bg-slate-900/60 border border-slate-700 rounded-lg p-3 space-y-4">
             <div className="text-xs text-slate-400 leading-relaxed">
-              直接把券商导出的两块文本分别贴进下面两个框（多行折行、混币种、带 <span className="font-mono text-slate-300">—</span> 占位都能认）。纯本地解析，不走 API。市值按 <span className="font-mono text-slate-300">持仓量 × 最后价</span> 反算。
+              直接把券商导出的两块文本分别贴进下面两个框（多行折行、混币种、带 <span className="font-mono text-slate-300">—</span> 占位都能认）。纯本地解析，不走 API。解析器会按表头自动选择：有「最后价」时用 <span className="font-mono text-slate-300">持仓量 × 最后价</span> 反算；只有「市场价值」时直接读取该列。
             </div>
 
             {/* ① 持仓明细 */}

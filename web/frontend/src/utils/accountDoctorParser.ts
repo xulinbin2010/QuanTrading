@@ -26,23 +26,46 @@ const numOf = (s: string): number | null => {
 const stripThousands = (text: string) => text.replace(/(?<=\d),(?=\d{3}(\D|$))/g, '')
 const isTicker = (token: string) => /^[A-Z]{1,6}$/.test(token) || /^\d{6}$/.test(token)
 
-/** 按证券代码分块，使用持仓量×最后价计算市值，避免导出列错位。 */
+type PositionValueMode = 'quantity_times_last' | 'direct_market_value'
+
+/**
+ * 先识别券商表头：
+ * - 「最后价 / 现价 / Last」存在：前两个数字是持仓量、最后价，市值用两者反算；
+ * - 只有「市场价值 / 市值」：第二个数字本身就是市值，不能再乘持仓量。
+ *
+ * 「平均价格」不是当前价。IB 的部分导出恰好是：
+ *   持仓、市场价值、平均价格、未实现盈亏
+ * 若仍固定做 quantity × second number，会把市值重复乘一次持仓数量。
+ */
+const detectPositionValueMode = (text: string): PositionValueMode => {
+  const hasMarketValue = /市场价值|市场市值|市值|market\s*value/i.test(text)
+  const hasLastPrice = /最后价|最新价|现价|当前价|收盘价|last(?:\s*price)?|mark(?:\s*price)?/i.test(text)
+  return hasMarketValue && !hasLastPrice ? 'direct_market_value' : 'quantity_times_last'
+}
+
+const roundMoney = (value: number) => Math.round(value * 100) / 100
+
+/** 按证券代码分块，并根据表头选择直接市值或「持仓量×最后价」。 */
 export function parsePositionsBlock(text: string, krwRate: number): DoctorPosition[] {
+  const valueMode = detectPositionValueMode(text)
   const lines = stripThousands(text).split('\n').map((line) => line.trim()).filter(Boolean)
   const positions: DoctorPosition[] = []
   let current: { symbol: string; name: string; nums: number[]; krw: boolean } | null = null
 
   const flush = () => {
     if (!current) return
-    const [quantity, last] = current.nums
-    if (quantity != null && last != null) {
+    const [quantity, secondValue] = current.nums
+    if (quantity != null && secondValue != null) {
+      const nativeMarketValue = valueMode === 'direct_market_value'
+        ? secondValue
+        : quantity * secondValue
       const marketValue = current.krw
-        ? (quantity * last) / (krwRate || DEFAULT_KRW_RATE)
-        : quantity * last
+        ? nativeMarketValue / (krwRate || DEFAULT_KRW_RATE)
+        : nativeMarketValue
       positions.push({
         symbol: current.symbol,
         name: current.name || undefined,
-        market_value_usd: Math.round(marketValue),
+        market_value_usd: roundMoney(marketValue),
         theme: '其它',
         leverage_factor: 1,
         is_leveraged: false,

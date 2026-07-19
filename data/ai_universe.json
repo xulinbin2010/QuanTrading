@@ -134,7 +134,6 @@
         "CIFR",
         "HUT",
         "EQIX",
-        "DLR",
         "WYFI"
       ]
     },
@@ -143,7 +142,6 @@
       "color": "#ef4444",
       "symbols": [
         "VST",
-        "CEG",
         "ETR",
         "GEV",
         "ETN",
@@ -353,6 +351,250 @@
       "sector": null,
       "market_cap_b": null,
       "revenue_growth": null
+    },
+    {
+      "symbol": "HPQ",
+      "suggest_group": "datacenter_infra",
+      "sector": "Technology",
+      "industry": "Computer Hardware",
+      "market_cap_b": 20.1,
+      "revenue_growth": 0.09,
+      "discovered_at": "2026-07-06T18:08:21"
+    },
+    {
+      "symbol": "FN",
+      "suggest_group": "ai_networking",
+      "sector": "Technology",
+      "industry": "Electronic Components",
+      "market_cap_b": 17.9,
+      "revenue_growth": 0.393,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "FPS",
+      "suggest_group": "power_cooling",
+      "sector": "Industrials",
+      "industry": "Electrical Equipment & Parts",
+      "market_cap_b": 14.3,
+      "revenue_growth": 1.034,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "AEIS",
+      "suggest_group": "power_cooling",
+      "sector": "Industrials",
+      "industry": "Electrical Equipment & Parts",
+      "market_cap_b": 12.5,
+      "revenue_growth": 0.263,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "VSAT",
+      "suggest_group": "ai_networking",
+      "sector": "Technology",
+      "industry": "Communication Equipment",
+      "market_cap_b": 11.3,
+      "revenue_growth": 0.021,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "FORM",
+      "suggest_group": "semicon_equip",
+      "sector": "Technology",
+      "industry": "Semiconductor Equipment & Materials",
+      "market_cap_b": 11.2,
+      "revenue_growth": 0.32,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "QBTS",
+      "suggest_group": "datacenter_infra",
+      "sector": "Technology",
+      "industry": "Computer Hardware",
+      "market_cap_b": 8.3,
+      "revenue_growth": -0.809,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "ENS",
+      "suggest_group": "power_cooling",
+      "sector": "Industrials",
+      "industry": "Electrical Equipment & Parts",
+      "market_cap_b": 7.5,
+      "revenue_growth": 0.013,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "PLXS",
+      "suggest_group": "ai_networking",
+      "sector": "Technology",
+      "industry": "Electronic Components",
+      "market_cap_b": 7.4,
+      "revenue_growth": 0.187,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "SLAB",
+      "suggest_group": "gpu_compute",
+      "sector": "Technology",
+      "industry": "Semiconductors",
+      "market_cap_b": 7.2,
+      "revenue_growth": 0.201,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "ACMR",
+      "suggest_group": "semicon_equip",
+      "sector": "Technology",
+      "industry": "Semiconductor Equipment & Materials",
+      "market_cap_b": 6.8,
+      "revenue_growth": 0.342,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "KLIC",
+      "suggest_group": "semicon_equip",
+      "sector": "Technology",
+      "industry": "Semiconductor Equipment & Materials",
+      "market_cap_b": 6.3,
+      "revenue_growth": 0.498,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "RGTI",
+      "suggest_group": "datacenter_infra",
+      "sector": "Technology",
+      "industry": "Computer Hardware",
+      "market_cap_b": 6.0,
+      "revenue_growth": 1.989,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "UEC",
+      "suggest_group": "power_cooling",
+      "sector": "Energy",
+      "industry": "Uranium",
+      "market_cap_b": 5.3,
+      "revenue_growth": null,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "SYNA",
+      "suggest_group": "gpu_compute",
+      "sector": "Technology",
+      "industry": "Semiconductors",
+      "market_cap_b": 4.7,
+      "revenue_growth": 0.104,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "BDC",
+      "suggest_group": "ai_networking",
+      "sector": "Technology",
+      "industry": "Communication Equipment",
+      "market_cap_b": 4.5,
+      "revenue_growth": 0.114,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "DIOD",
+      "suggest_group": "gpu_compute",
+      "sector": "Technology",
+      "industry": "Semiconductors",
+      "market_cap_b": 4.4,
+      "revenue_growth": 0.221,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "ACLS",
+      "suggest_group": "semicon_equip",
+      "sector": "Technology",
+      "industry": "Semiconductor Equipment & Materials",
+      "market_cap_b": 4.4,
+      "revenue_growth": 0.033,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "PI",
+      "suggest_group": "gpu_compute",
+      "sector": "Technology",
+      "industry": "Semiconductors",
+      "market_cap_b": 4.3,
+      "revenue_growth": -0.0,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "EXTR",
+      "suggest_group": "ai_networking",
+      "sector": "Technology",
+      "industry": "Communication Equipment",
+      "market_cap_b": 3.9,
+      "revenue_growth": 0.114,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "BELFB",
+      "suggest_group": "ai_networking",
+      "sector": "Technology",
+      "industry": "Electronic Components",
+      "market_cap_b": 3.8,
+      "revenue_growth": 0.172,
+      "discovered_at": "2026-07-06T18:25:53"
+    },
+    {
+      "symbol": "FRMI",
+      "name": "Fermi America",
+      "suggest_group": "datacenter_infra",
+      "note": "IPO发现·2025-09上市·核能+天然气+光伏一体化AI数据中心电力REIT,近12月新股",
+      "industry": "REIT - Specialty",
+      "sector": "Real Estate",
+      "market_cap_b": 5.1,
+      "revenue_growth": null,
+      "discovered_at": "2026-07-06T18:31:16"
+    },
+    {
+      "symbol": "NVT",
+      "name": "nVent Electric",
+      "suggest_group": "power_cooling",
+      "note": "IPO发现·2018-04上市·电气基础设施龙头,Q1订单激增53%乘AI数据中心电力东风",
+      "industry": "Electrical Equipment & Parts",
+      "sector": "Industrials",
+      "market_cap_b": 24.6,
+      "revenue_growth": 0.535,
+      "discovered_at": "2026-07-06T18:31:18"
+    },
+    {
+      "symbol": "MTSI",
+      "name": "MACOM Technology Solutions",
+      "suggest_group": "gpu_compute",
+      "note": "IPO发现·2012-03上市·射频光电芯片商,AI光模块/CPO需求驱动营收指引大幅上调",
+      "industry": "Semiconductors",
+      "sector": "Technology",
+      "market_cap_b": 24.6,
+      "revenue_growth": 0.225,
+      "discovered_at": "2026-07-06T18:31:19"
+    },
+    {
+      "symbol": "ICHR",
+      "name": "Ichor Holdings",
+      "suggest_group": "semicon_equip",
+      "note": "IPO发现·2012-11上市·半导体设备流体输送系统商,AI驱动晶圆厂开支回暖股价翻倍",
+      "industry": "Semiconductor Equipment & Materials",
+      "sector": "Technology",
+      "market_cap_b": 3.4,
+      "revenue_growth": 0.047,
+      "discovered_at": "2026-07-06T18:31:19"
+    },
+    {
+      "symbol": "MYRG",
+      "name": "MYR Group",
+      "suggest_group": "power_cooling",
+      "note": "IPO发现·2008-01上市·电力电气工程承包商,数据中心/电网建设订单创纪录股价大涨",
+      "industry": "Engineering & Construction",
+      "sector": "Industrials",
+      "market_cap_b": 6.7,
+      "revenue_growth": 0.2,
+      "discovered_at": "2026-07-06T18:31:19"
     }
   ],
   "rejected": [
@@ -383,7 +625,9 @@
     "OKLO",
     "LEU",
     "NRG",
-    "EME"
+    "EME",
+    "CEG",
+    "DLR"
   ],
   "trade_priority": {
     "UCTT": false,

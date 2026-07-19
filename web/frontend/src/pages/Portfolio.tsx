@@ -4,7 +4,6 @@ import ReactECharts from 'echarts-for-react'
 import { useState } from 'react'
 import { useAccount } from '../App'
 import SymbolLink from '../components/SymbolLink'
-import RiskThermometer from '../components/RiskThermometer'
 import PendingExitsPanel from '../components/PendingExitsPanel'
 import AccountDoctor from './AccountDoctor'
 
@@ -1175,9 +1174,6 @@ export default function Portfolio() {
         />
         <StatCard label="购买力" value={fmt(balance?.buying_power)} />
       </div>
-
-      {/* 风险温度计（减仓预警：VIX 期限结构 + 组合相关性） */}
-      <RiskThermometer />
 
       {/* 实盘参数 */}
       <TradingParamsPanel />

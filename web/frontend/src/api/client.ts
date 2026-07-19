@@ -287,6 +287,18 @@ export const getSingleBtHistory   = (limit = 30) =>
 // ── 风险温度计 ──────────────────────────────────────────────
 export const getRiskThermometer = (force = false) =>
   api.get('/risk/thermometer', { params: force ? { force: true } : {} }).then(r => r.data)
+export const getRiskDashboard = (force = false) =>
+  api.get('/risk/dashboard', {
+    params: force ? { force: true } : {},
+    timeout: 120_000,
+  }).then(r => r.data)
+
+// ── 韩国 / 美国杠杆压力监控 ──────────────────────────────────
+export const getLeverageDashboard = (force = false) =>
+  api.get('/leverage/dashboard', {
+    params: force ? { force: true } : {},
+    timeout: 120_000,
+  }).then(r => r.data)
 
 // ── 盘前简报 ─────────────────────────────────────────────────
 export type PremarketConfig = {

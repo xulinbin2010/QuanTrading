@@ -12,6 +12,7 @@ const NAV = [
   { to: '/ai',         label: '美股AI追踪', icon: '🇺🇸' },
   { to: '/astock',     label: 'A股AI追踪',  icon: '🇨🇳' },
   { to: '/intel',      label: '情报中心',   icon: '🛰' },
+  { to: '/risk',       label: '风险监控',   icon: '🛡️' },
   { to: '/scheduler', label: '任务调度', icon: '⏰' },
   { to: '/config',    label: '系统配置', icon: '⚙️'  },
 ]

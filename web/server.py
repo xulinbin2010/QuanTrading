@@ -67,6 +67,7 @@ from web.api.account_doctor import router as account_doctor_router
 from web.api.exits import router as exits_router
 from web.api.intel import router as intel_router
 from web.api.social import router as social_router
+from web.api.leverage import router as leverage_router
 
 
 @asynccontextmanager
@@ -126,6 +127,7 @@ app.include_router(account_doctor_router)
 app.include_router(exits_router)
 app.include_router(intel_router)
 app.include_router(social_router)
+app.include_router(leverage_router)
 
 
 @app.get('/api/health')

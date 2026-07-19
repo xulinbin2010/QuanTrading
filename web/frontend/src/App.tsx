@@ -13,6 +13,7 @@ import AStockTracker from './pages/AStockTracker'
 import Scheduler from './pages/Scheduler'
 import Config from './pages/Config'
 import IntelCenter from './pages/IntelCenter'
+import RiskMonitor from './pages/RiskMonitor'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -44,6 +45,8 @@ export default function App() {
               <Route path="ai"          element={<AITracker />} />
               <Route path="astock"      element={<AStockTracker />} />
               <Route path="intel"       element={<IntelCenter />} />
+              <Route path="risk"        element={<RiskMonitor />} />
+              <Route path="leverage"    element={<Navigate to="/risk?tab=leverage" replace />} />
               <Route path="scheduler" element={<Scheduler />} />
               <Route path="config"    element={<Config />} />
             </Route>

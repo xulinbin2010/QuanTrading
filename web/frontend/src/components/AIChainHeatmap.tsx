@@ -16,9 +16,9 @@ import { useStockChart } from './StockChartProvider'
 type Period = '1d' | '3d' | '5d' | '10d'
 
 const PERIODS: { key: Period; label: string; field: string; clamp: number }[] = [
-  { key: '1d',  label: '1天',  field: 'mom_1d',  clamp: 0.05 },
-  { key: '3d',  label: '3天',  field: 'mom_3d',  clamp: 0.08 },
-  { key: '5d',  label: '5天',  field: 'mom_5d',  clamp: 0.10 },
+  { key: '1d',  label: '1天',  field: 'mom_1d',  clamp: 0.15 },
+  { key: '3d',  label: '3天',  field: 'mom_3d',  clamp: 0.15 },
+  { key: '5d',  label: '5天',  field: 'mom_5d',  clamp: 0.15 },
   { key: '10d', label: '10天', field: 'mom_10d', clamp: 0.15 },
 ]
 
@@ -54,20 +54,65 @@ const CHAIN_EDGES: { from: string; to: string; label: string }[] = [
   { from: 'power_cooling',    to: 'ai_infra_build',   label: '供电·散热' },
 ]
 
-// 颜色插值：0 → 中性灰，正 → emerald，负 → red（绿涨红跌，与全系统一致）
-const NEUTRAL: [number, number, number] = [51, 65, 85]
-const UP:      [number, number, number] = [5, 150, 105]
-const DOWN:    [number, number, number] = [220, 38, 38]
-const NA_COLOR = '#1e293b'
-
-function lerp(a: [number, number, number], b: [number, number, number], t: number) {
-  const c = a.map((v, i) => Math.round(v + (b[i] - v) * t))
-  return `rgb(${c[0]},${c[1]},${c[2]})`
+// ── 发散色阶（绿涨红跌，与全系统一致）──
+// 每臂 3 个停靠点（色相+明度双通道递进）+ 平方根 t：小幅涨跌(±1~2%)也拉得开层次，
+// 不再是「中性灰→纯色」两点线性插值那种只剩四五档的效果。
+// 深浅两套都遵循同一强度方向：涨跌幅越大，颜色越鲜艳、越醒目。
+// 主题差异只体现在近零中性色和低强度起点；高强度端点保持一致。
+type RGB = [number, number, number]
+const RAMPS: Record<'dark' | 'light', { neutral: RGB; na: string; up: RGB[]; down: RGB[] }> = {
+  dark: {
+    neutral: [51, 65, 85],      // slate-700
+    na: '#1e293b',
+    // 越涨/越跌 → 越鲜艳饱和（Finviz 惯例），绝不能到粉彩——「跌得重反而粉红」是反直觉的
+    up:   [[6, 78, 59],   [22, 163, 74],  [48, 204, 90]],   // 墨绿 → green-600 → 鲜绿
+    down: [[127, 29, 29], [185, 28, 28],  [246, 53, 56]],   // 暗酒红 → red-700 → 正红
+  },
+  light: {
+    neutral: [229, 234, 241],   // 近零淡出，贴近白卡片
+    na: '#eef1f6',
+    up:   [[167, 243, 208], [22, 163, 74], [48, 204, 90]],    // 淡绿 → green-600 → 鲜绿
+    down: [[254, 202, 202], [185, 28, 28], [246, 53, 56]],    // 淡红 → red-700 → 正红
+  },
 }
-function colorFor(mom: number | null | undefined, clamp: number): string {
-  if (mom == null || !isFinite(mom)) return NA_COLOR
-  const t = Math.min(Math.abs(mom) / clamp, 1)
-  return mom >= 0 ? lerp(NEUTRAL, UP, t) : lerp(NEUTRAL, DOWN, t)
+
+function lerpRgb(a: RGB, b: RGB, t: number): RGB {
+  return [0, 1, 2].map(i => Math.round(a[i] + (b[i] - a[i]) * t)) as RGB
+}
+// 多停靠点分段插值：t∈[0,1] 走 [neutral, s0, s1, s2]
+function rampAt(neutral: RGB, stops: RGB[], t: number): RGB {
+  const pts = [neutral, ...stops]
+  const x = t * (pts.length - 1)
+  const i = Math.min(Math.floor(x), pts.length - 2)
+  return lerpRgb(pts[i], pts[i + 1], x - i)
+}
+function rgbFor(mom: number | null | undefined, clamp: number, dark: boolean): RGB | null {
+  if (mom == null || !isFinite(mom)) return null
+  const t = Math.sqrt(Math.min(Math.abs(mom) / clamp, 1))  // 平方根：放大近零分辨率
+  const r = RAMPS[dark ? 'dark' : 'light']
+  return rampAt(r.neutral, mom >= 0 ? r.up : r.down, t)
+}
+function colorFor(mom: number | null | undefined, clamp: number, dark: boolean): string {
+  const c = rgbFor(mom, clamp, dark)
+  return c ? `rgb(${c[0]},${c[1]},${c[2]})` : RAMPS[dark ? 'dark' : 'light'].na
+}
+// 按底色亮度选文字颜色：亮底深字、暗底白字（两种主题通吃）
+function inkFor(mom: number | null | undefined, clamp: number, dark: boolean): string {
+  const c = rgbFor(mom, clamp, dark)
+  if (!c) return dark ? '#94a3b8' : '#64748b'
+  const y = 0.2126 * (c[0] / 255) ** 2.2 + 0.7152 * (c[1] / 255) ** 2.2 + 0.0722 * (c[2] / 255) ** 2.2
+  return y > 0.35 ? '#0f172a' : '#ffffff'
+}
+// 主题感知：html.dark ↔ html.day/night（Layout 挂在 <html> 上，MutationObserver 跟随切换）
+function useIsDark(): boolean {
+  const [dark, setDark] = useState(() => document.documentElement.classList.contains('dark'))
+  useLayoutEffect(() => {
+    const el = document.documentElement
+    const ob = new MutationObserver(() => setDark(el.classList.contains('dark')))
+    ob.observe(el, { attributes: true, attributeFilter: ['class'] })
+    return () => ob.disconnect()
+  }, [])
+  return dark
 }
 function fmtPct(v: number | null | undefined, digits = 1) {
   if (v == null || !isFinite(v)) return '—'
@@ -100,6 +145,7 @@ export default function AIChainHeatmap({ rows, universe, idxMem }: {
 }) {
   const [period, setPeriod] = useState<Period>('3d')
   const { openChart } = useStockChart()
+  const isDark = useIsDark()
 
   const p = PERIODS.find(x => x.key === period)!
   const sp500Set = useMemo(() => new Set(idxMem?.sp500 ?? []), [idxMem])
@@ -228,8 +274,8 @@ export default function AIChainHeatmap({ rows, universe, idxMem }: {
         <div className="flex items-center gap-2 mb-1.5">
           <span className="text-xs font-medium text-slate-300">{g.label}</span>
           <span className="text-[10px] text-slate-600">{gd.syms.length}只</span>
-          <span className="ml-auto text-[11px] font-mono font-bold px-1.5 py-0.5 rounded text-white"
-            style={{ background: colorFor(gd.wavg, p.clamp) }}
+          <span className="ml-auto text-[11px] font-mono font-bold px-1.5 py-0.5 rounded"
+            style={{ background: colorFor(gd.wavg, p.clamp, isDark), color: inkFor(gd.wavg, p.clamp, isDark) }}
             title="板块温度：市值加权平均涨跌">
             {fmtPct(gd.wavg)}
           </span>
@@ -237,12 +283,13 @@ export default function AIChainHeatmap({ rows, universe, idxMem }: {
         <div className="flex flex-wrap gap-1">
           {gd.syms.map(sym => {
             const mom = rowMap[sym]?.[p.field]
+            const ink = inkFor(mom, p.clamp, isDark)
             return (
               <button key={sym} onClick={() => openChart(sym)} title={tileTitle(sym)}
-                className="w-[76px] px-1 py-1 rounded text-center leading-tight transition-shadow hover:ring-2 hover:ring-white/50 cursor-pointer"
-                style={{ background: colorFor(mom, p.clamp) }}>
-                <div className="text-[12px] font-bold text-white truncate">{sym}</div>
-                <div className="text-[11px] text-white/85 font-mono">{fmtPct(mom)}</div>
+                className="w-[76px] px-1 py-1 rounded text-center leading-tight transition-shadow hover:ring-2 hover:ring-blue-400/60 cursor-pointer"
+                style={{ background: colorFor(mom, p.clamp, isDark), color: ink }}>
+                <div className="text-[12px] font-bold truncate">{sym}</div>
+                <div className="text-[11px] font-mono" style={{ opacity: 0.85 }}>{fmtPct(mom)}</div>
               </button>
             )
           })}
@@ -251,7 +298,15 @@ export default function AIChainHeatmap({ rows, universe, idxMem }: {
     )
   }
 
-  const legendStops = [-1, -0.5, 0, 0.5, 1]
+  // 图例：按真实映射（含平方根）采样成连续渐变条
+  const legendGrad = useMemo(() => {
+    const n = 32
+    const pts = Array.from({ length: n + 1 }, (_, i) => {
+      const mom = ((i / n) * 2 - 1) * p.clamp
+      return `${colorFor(mom, p.clamp, isDark)} ${((i / n) * 100).toFixed(1)}%`
+    })
+    return `linear-gradient(to right, ${pts.join(',')})`
+  }, [p, isDark])
   const edgeColors = [...new Set(edges.map(e => e.color))]
 
   return (
@@ -268,12 +323,11 @@ export default function AIChainHeatmap({ rows, universe, idxMem }: {
             </button>
           ))}
         </div>
-        <div className="flex items-center gap-1 ml-auto text-xs text-slate-400">
+        <div className="flex items-center gap-1.5 ml-auto text-xs text-slate-400">
           <span className="font-mono">-{(p.clamp * 100).toFixed(0)}%</span>
-          {legendStops.map(t => (
-            <span key={t} className="w-6 h-3.5 rounded-sm"
-              style={{ background: t >= 0 ? lerp(NEUTRAL, UP, t) : lerp(NEUTRAL, DOWN, -t) }} />
-          ))}
+          <span className="relative w-40 h-3.5 rounded-sm overflow-hidden" style={{ background: legendGrad }}>
+            <span className="absolute left-1/2 top-0 bottom-0 w-px bg-slate-500/50" title="0%" />
+          </span>
           <span className="font-mono">+{(p.clamp * 100).toFixed(0)}%</span>
         </div>
       </div>
@@ -333,7 +387,7 @@ export default function AIChainHeatmap({ rows, universe, idxMem }: {
       {/* 说明 */}
       <div className="text-sm text-slate-400 space-y-1 mt-3">
         <div>· 左→右 = 上游→下游：设备材料 → 晶圆制造/封测 → 芯片设计（算力/存储/模拟电源）→ 整机与网络 → 算力运营；<span className="text-slate-300">电力/冷却在底部向上供给</span>。连线箭头指向需方，标签注明供什么。</div>
-        <div>· 每块右上角为<span className="text-slate-300">板块温度</span>（市值加权平均涨跌）；色块颜色 = 所选窗口涨跌（±{(p.clamp * 100).toFixed(0)}% 封顶），组内按市值降序、龙头在前。</div>
+        <div>· 每块右上角为<span className="text-slate-300">板块温度</span>（市值加权平均涨跌）；色块颜色 = 所选窗口涨跌（±{(p.clamp * 100).toFixed(0)}% 封顶，平方根色阶——小幅涨跌也拉得开深浅），组内按市值降序、龙头在前。</div>
         <div>· 点色块看 K 线；市值/评分/S&P·Nasdaq 成分在悬停提示。增删股票请到「清单管理」tab。</div>
       </div>
     </div>

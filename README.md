@@ -61,7 +61,6 @@ cd web/frontend && npm install && npm run build && cd ../..
 | 持仓总览 | `/#/` | 可选 | 余额/持仓/资产配比需 IB；净值曲线/订单历史不需要 |
 | 因子看板 | `/#/factors` | 否 | 因子注册表管理：开启/关闭、调整参数 |
 | 市场扫描 | `/#/scanner` | 否 | 全股票池因子扫描 + 内幕买入面板，点击个股展开详情 |
-| 因子优化 | `/#/optimizer` | 否 | 穷举因子组合 × 参数网格，按 Sharpe 排名 |
 | 策略回测 | `/#/backtest` | 否 | 参数化回测，异步执行，含净值曲线/交易明细 |
 | 任务调度 | `/#/scheduler` | 否 | 管理定时任务，查看执行日志 |
 | 系统配置 | `/#/config` | 否 | 风控/策略参数实时修改 |
@@ -198,7 +197,7 @@ python -m tools.compare_data --universe sp500 --sample 30 --start 2024-06-01
 
 **基本面因子（仅展示）：** `revenue_growth` / `earnings_growth` / `roe` / `debt_to_equity` / `fcf_yield` / `pe_ratio` / `pb_ratio` / `earnings_avoid`
 
-新因子工作流：注册表加入（默认关闭）→ Web 因子看板/优化器验证 → `RSMomentum(extra_filters=['factor_key'])` 推入生产。
+新因子工作流：注册表加入（默认关闭）→ 单股回测验证 → `RSMomentum(extra_filters=['factor_key'])` 推入生产。
 
 ---
 
@@ -228,8 +227,7 @@ QuanTrading/
 │
 ├── strategies/             # 策略层
 │   ├── rs_momentum.py      # 主策略
-│   ├── dynamic_factor.py   # Web 预览/优化器用
-│   ├── precompute.py       # 因子预计算（优化器加速）
+│   ├── dynamic_factor.py   # Web 单股回测因子组合用
 │   └── factors/            # 因子模块库（20 个因子）
 │
 ├── tests/                  # 回测
@@ -270,7 +268,7 @@ QuanTrading/
   confirm_fills → ib.trades() → orders 表更新
 
 Web UI：
-  DataStore → factor_svc → 市场扫描 / 回测 / 优化器
+  DataStore → factor_svc → 市场扫描 / 回测
   portfolio_svc → ib.reqHistoricalData() → 持仓实时报价
 ```
 

@@ -6,6 +6,7 @@ import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import ReactECharts from 'echarts-for-react'
 import { getStockDetail, getStockNews, getAStockDetail } from '../api/client'
+import { AI_COMPANY_META } from '../data/aiCompanyMeta'
 
 // ── 内嵌辅助组件（与 MarketScan 同源）────────────────────────
 
@@ -60,10 +61,11 @@ export default function StockChartModal({ symbol, market = 'us', onClose }: {
     queryFn: () => isAStock ? getAStockDetail(symbol, 120) : getStockDetail(symbol, 120),
   })
 
+  // modal 一打开就预取（不等切 tab）：看 K 线那几秒后台拉完，点「分析师 & 公告」基本秒开
   const { data: newsData, isLoading: newsLoading } = useQuery({
     queryKey: ['stock-news', symbol],
     queryFn: () => getStockNews(symbol),
-    enabled: activeTab === 'analyst' && !isAStock,
+    enabled: !isAStock,
     staleTime: 2 * 60 * 60 * 1000,
   })
 
@@ -157,16 +159,27 @@ export default function StockChartModal({ symbol, market = 'us', onClose }: {
     ...(!isAStock ? [{ key: 'analyst' as const, label: '分析师 & 公告' }] : []),
   ] as const
 
+  // 一句话公司定位：AI 池策展简介（中文，最准）优先，非池票退回 yfinance 行业；A 股用主题板块
+  const meta = !isAStock ? AI_COMPANY_META[symbol] : undefined
+  const positioning = [
+    meta ? `${meta.name} · ${meta.desc}` : null,
+    !isAStock && (data as any)?.sector ? `${(data as any).sector}${(data as any).industry ? ' / ' + (data as any).industry : ''}` : null,
+    isAStock && (data as any)?.group_label ? `AI硬件 · ${(data as any).group_label}` : null,
+  ].filter(Boolean).join('　·　')
+
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50" onClick={onClose}>
       <div className="bg-slate-800 rounded-xl border border-slate-700 w-[920px] max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
 
         {/* 标题栏 */}
         <div className="flex items-center justify-between px-5 py-3 border-b border-slate-700 shrink-0">
-          <div className="text-white font-semibold">
-            {data?.info?.name && <span>{data.info.name} </span>}
-            <span className="font-mono text-sm text-slate-400">{symbol}</span> {isAStock ? '🇨🇳' : ''}
-            <span className="text-slate-500 text-sm font-normal"> — 个股详情</span>
+          <div>
+            <div className="text-white font-semibold">
+              {data?.info?.name && <span>{data.info.name} </span>}
+              <span className="font-mono text-sm text-slate-400">{symbol}</span> {isAStock ? '🇨🇳' : ''}
+              <span className="text-slate-500 text-sm font-normal"> — 个股详情</span>
+            </div>
+            {positioning && <div className="text-sm text-slate-400 mt-0.5">{positioning}</div>}
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-white text-lg leading-none">✕</button>
         </div>

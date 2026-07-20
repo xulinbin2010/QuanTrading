@@ -13,9 +13,9 @@ Always respond in Chinese (中文). Do not mix Korean or other languages into re
 ## Data Safety
 
 - NEVER mass-delete parquet/cache files based on transient API failures (e.g., yfinance timeouts)
-- Before blacklisting a ticker as delisted/invalid, verify against authoritative source (IVV holdings, NASDAQ listing) — do not rely on a single failed fetch
+- Before blacklisting a ticker as delisted/invalid, verify against authoritative source (Wikipedia S&P 500 list, Vanguard VTWO holdings, NASDAQ listing) — do not rely on a single failed fetch. Note: iShares CSV endpoints (IVV/IWM) are bot-blocked since 2026-07, no longer usable programmatically
 - Any denylist/filter that removes data must be reversible and logged
-- Before any code that blacklists, filters out, or deletes tickers/data files: (1) show a dry-run list of what would be removed, (2) cross-check each against IVV holdings CSV or another authoritative source, (3) only proceed after user confirms. Never act on a single failed API call.
+- Before any code that blacklists, filters out, or deletes tickers/data files: (1) show a dry-run list of what would be removed, (2) cross-check each against an authoritative source (Wikipedia constituents list / Vanguard holdings API), (3) only proceed after user confirms. Never act on a single failed API call.
 
 ---
 
@@ -121,7 +121,6 @@ cd web/frontend && npm install && npm run build && cd ../..
 |------|-----|---------|------|
 | 持仓总览 | `/#/` | 可选 | 余额/持仓/资产配比需 IB；订单历史/净值曲线不需要；支持 CSV 导出 |
 | 市场扫描 | `/#/scanner` | 否 | 全股票池因子扫描 + 内幕买入面板，缓存1小时，点行展开K线详情 |
-| 因子优化 | `/#/optimizer` | 否 | 穷举因子组合 × 参数网格，按 Sharpe 排名，含预计算加速 |
 | 策略回测 | `/#/backtest` | 否 | 4 tab：策略回测 / 单股回测 / 收益对比 / **A 股动能轮动**(每周一 rebalance,4 个策略可选) |
 | 美股AI追踪 | `/#/ai` | 否 | 3 tab：产业图谱(universe 策展,GPU/网络/电力) / 动能轮动 / **财报对比**(最多3只横向比营收/净利/EPS);成员自动获得 `auto_trader` 优先池待遇 |
 | A股AI追踪 | `/#/astock` | 否 | A 股动能扫描(主题板块/申万行业),188 只 AI 硬件,含板块强度排名 |
@@ -154,17 +153,16 @@ cd web/frontend && npm install && npm run build && cd ../..
 ```
 web/
   server.py           FastAPI 入口（端口 3001）
-  api/                路由：portfolio / factors / backtest / scheduler / config / optimizer
+  api/                路由：portfolio / factors / backtest / scheduler / config
   services/           服务层：封装现有 Python 模块
     factor_svc.py     因子扫描、内幕数据、K线详情因子/基本面
     backtest_svc.py   异步回测执行
-    optimizer_svc.py  因子组合优化（含预计算缓存）
     performance_svc.py 净值/业绩指标计算
     portfolio_svc.py  持仓/账户数据
     scheduler_svc.py  APScheduler 任务管理
   models.py           Pydantic 请求/响应模型
   frontend/           React + TypeScript + Vite + ECharts + Tailwind
-    src/pages/        各功能页面组件（Portfolio/MarketScan/Backtest/AITracker/AStockTracker/Optimizer/Scheduler/Config 等）
+    src/pages/        各功能页面组件（Portfolio/MarketScan/Backtest/AITracker/AStockTracker/Scheduler/Config 等）
     dist/             生产构建产物（由 FastAPI 静态服务）
 start_web.sh          一键启动脚本
 ```
@@ -284,6 +282,8 @@ core/
                      #   注：klines 表已移除，K 线数据统一由 DataStore / IBKRDataStore 管理
   historical_data.py # IBKR K 线拉取封装，完全委托 IBKRDataStore（Parquet），db 参数已废弃
   universe.py        # 股票池：get_tickers(universe) 支持 sp500/nasdaq100/russell2000
+                     #   sp500/ndx 主源 Wikipedia；russell2000 主源 Vanguard VTWO API（iShares 已 bot 防护）
+                     #   在线源全挂时回退 data/universe_cache/*.json（每次成功抓取自动更新）
   data_store.py      # Parquet 本地数据存储（yfinance），回测/实盘选股共用同一份数据
                      #   stale check 行为：end 接近今天时过滤退市股；历史回测时放行（含已退市）
   ibkr_data_store.py # Parquet 本地数据存储（IBKR），存 data/stocks_ibkr/，仅数据验证用
@@ -301,7 +301,6 @@ strategies/
   rs_momentum.py     # 主策略：调用 factors/ 模块组合计算，输出买卖信号
                      #   支持 extra_filters 参数（注册表 filter 因子，验证后可推入生产）
   dynamic_factor.py  # Web 回测「单股回测」因子组合用：从注册表动态组合技术因子
-  precompute.py      # 优化器专用：预计算全股票池因子，加速组合回测
   ma_crossover.py    # 均线交叉策略（辅助/测试用）
   ema_pullback.py    # 单股回测引擎：EMA21补仓 / 逢跌加仓 / RSMomentum / B&H 多策略对照（web「单股回测」tab 用）
   factors/           # 因子模块库（每个因子独立文件，瘦身后仅保留生产用技术因子）
@@ -329,11 +328,11 @@ logs/
 # ── Web UI ───────────────────────────────────────────────
 web/
   server.py          # FastAPI 入口，端口 3001
-  api/               # 路由：portfolio / factors / backtest / scheduler / config / optimizer
+  api/               # 路由：portfolio / factors / backtest / scheduler / config
   services/          # 服务层：封装现有模块供 API 调用
   models.py          # Pydantic 请求/响应模型
   frontend/          # React + TS + Vite 前端
-    src/pages/       # 各功能页面组件（Portfolio/MarketScan/Backtest/AITracker/AStockTracker/Optimizer/Scheduler/Config 等）
+    src/pages/       # 各功能页面组件（Portfolio/MarketScan/Backtest/AITracker/AStockTracker/Scheduler/Config 等）
     dist/            # 生产构建（npm run build 生成，FastAPI 静态服务）
 start_web.sh         # 一键启动脚本
 ```
@@ -590,9 +589,9 @@ VIX得分    = clip((30 - VIX) / 100, -0.2, +0.2)      → [-0.2, +0.2]
 
 **关键设计原则：**
 - `RSMomentum`（生产策略）硬编码核心5个条件，不读注册表。仍支持 `extra_filters` 参数传入额外注册表 filter 因子（机制保留，但当前注册表内 filter 因子已全部是核心条件）
-- `DynamicFactorStrategy`（Web 回测「单股回测」因子组合 / 优化器）从注册表动态组合技术因子，支持 `set_spy()`
-- **基本面快照（PE/PB/ROE/营收·盈利增长/FCF 等）不在注册表里**：由 `core.universe.get_stock_info` 直接产出，在市场扫描表 / K 线详情基本面 tab 展示，不参与时序信号 / 回测 / 优化
-- 因子开关（`FACTOR_*_ENABLED`）存在 DB `config_store` 表，只影响「市场扫描 / 优化器 / 单股回测」用的 `DynamicFactorStrategy`，**不影响实盘 RSMomentum**（它硬编码核心条件不读注册表）。原「因子看板」管理 UI 已移除，如需增删开关/调参直接改 DB `config_store`
+- `DynamicFactorStrategy`（Web 回测「单股回测」因子组合）从注册表动态组合技术因子，支持 `set_spy()`
+- **基本面快照（PE/PB/ROE/营收·盈利增长/FCF 等）不在注册表里**：由 `core.universe.get_stock_info` 直接产出，在市场扫描表 / K 线详情基本面 tab 展示，不参与时序信号 / 回测
+- 因子开关（`FACTOR_*_ENABLED`）存在 DB `config_store` 表，只影响「市场扫描 / 单股回测」用的 `DynamicFactorStrategy`，**不影响实盘 RSMomentum**（它硬编码核心条件不读注册表）。原「因子看板」管理 UI 已移除，如需增删开关/调参直接改 DB `config_store`
 - 市场扫描的「临近财报标记」(`earnings_safe`) 由 `FACTOR_earnings_avoid_ENABLED` 配置驱动 + `factor_svc._earnings_safe`，独立于注册表（默认关闭）
 
 ---
@@ -637,9 +636,6 @@ VIX得分    = clip((30 - VIX) / 100, -0.2, +0.2)      → [-0.2, +0.2]
 
 回测路径：
   DataStore → RSMomentum → tests/backtest_rs.py 输出报告
-
-Web 优化路径：
-  DataStore → strategies/precompute.py（预计算全因子）→ optimizer_svc 穷举组合 → 排名结果
 ```
 
 ### 数据比对工具

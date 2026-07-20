@@ -3,14 +3,16 @@ import { useQuery } from '@tanstack/react-query'
 import { getIBStatus, getExits } from '../api/client'
 import { useEffect, useState } from 'react'
 import { useAccount } from '../App'
+import { usePremarketBriefing } from './PremarketBriefingProvider'
 
 const NAV = [
   { to: '/',          label: '持仓总览', icon: '📊' },
   { to: '/scanner',   label: '市场扫描', icon: '🔭' },
-  { to: '/optimizer', label: '因子优化', icon: '⚗️'  },
   { to: '/backtest',  label: '回测',     icon: '📈' },
   { to: '/ai',         label: '美股AI追踪', icon: '🇺🇸' },
   { to: '/astock',     label: 'A股AI追踪',  icon: '🇨🇳' },
+  { to: '/intel',      label: '情报中心',   icon: '🛰' },
+  { to: '/risk',       label: '风险监控',   icon: '🛡️' },
   { to: '/scheduler', label: '任务调度', icon: '⏰' },
   { to: '/config',    label: '系统配置', icon: '⚙️'  },
 ]
@@ -239,6 +241,7 @@ function IBAccountSelector() {
 
 export default function Layout() {
   const [collapsed, setCollapsed] = useState(() => localStorage.getItem('sidebarCollapsed') === '1')
+  const { open: openPremarket } = usePremarketBriefing()
   useEffect(() => { localStorage.setItem('sidebarCollapsed', collapsed ? '1' : '0') }, [collapsed])
 
   // 待确认出场红点：止损触发等人工决策时在「持仓总览」入口提醒
@@ -307,15 +310,27 @@ export default function Layout() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* 顶栏 */}
         <header className="h-12 bg-slate-800 flex items-center justify-between px-5 flex-shrink-0">
-          <button
-            onClick={() => setCollapsed(c => !c)}
-            title={collapsed ? '展开菜单' : '收起菜单'}
-            className="p-1.5 -ml-2 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700 transition-colors"
-          >
-            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
-            </svg>
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setCollapsed(c => !c)}
+              title={collapsed ? '展开菜单' : '收起菜单'}
+              className="p-1.5 -ml-2 rounded text-slate-400 hover:text-slate-200 hover:bg-slate-700 transition-colors"
+            >
+              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
+              </svg>
+            </button>
+            <button
+              onClick={openPremarket}
+              title="盘前扫描（实时宏观快照 + 个股盘前报价）"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-blue-600/70
+                         bg-blue-600/15 text-blue-300 hover:bg-blue-600 hover:text-white
+                         text-xs font-medium transition-colors"
+            >
+              <span>📋</span>
+              <span>盘前扫描</span>
+            </button>
+          </div>
           <div className="flex items-center gap-4">
             <ETClock />
             <IBAccountSelector />

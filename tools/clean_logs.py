@@ -1,5 +1,5 @@
 """
-日志清理：删除 logs/ 下修改时间超过 N 天的日志文件。
+维护清理：删除过期日志、调度执行记录，以及 30 天前的订单历史。
 
 供调度任务 log_cleanup 调用，也可手动运行：
   python -m tools.clean_logs                 # 删除 3 天前日志（默认）
@@ -7,18 +7,23 @@
   python -m tools.clean_logs --dry-run       # 只列出将删除的文件，不实际删
 
 安全约束（遵守 CLAUDE.md 数据安全）：
-- 只动 logs/ 目录顶层文件，不递归、不碰其他目录
+- 日志只动 logs/ 目录顶层文件，不递归、不碰行情 parquet/cache
 - 永不删除正在写入的 trading.log（活跃日志，按名保护，与 mtime 无关）
 - 跳过文件名含 'backup' 的文件（如 order_expire_backup_*.json 是订单数据备份，非日志）
 - 逐个打印删除的文件名 + 大小，结果计入任务运行日志，可审计
+- orders 仅删除 30 天前记录，且实删前写入 data/order_cleanup_backups/，可恢复
 """
 import argparse
+import json
 import os
 import time
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LOG_DIR = ROOT / 'logs'
+ORDER_BACKUP_DIR = ROOT / 'data' / 'order_cleanup_backups'
+ORDER_RETENTION_DAYS = 30
 
 # 活跃日志：TimedRotatingFileHandler 正在写入的基文件，永不删除
 PROTECTED = {'trading.log'}
@@ -63,8 +68,9 @@ def clean_logs(days: int = 3, dry_run: bool = False) -> dict:
     print(f'[clean_logs] {"将删除" if dry_run else "已删除"} {deleted} 个文件，'
           f'释放 {freed/1024/1024:.2f} MB；保留 {kept} 个（含活跃/未过期）')
     runs_deleted = _clean_task_runs(days=days, dry_run=dry_run)
+    orders_deleted = _clean_orders(days=ORDER_RETENTION_DAYS, dry_run=dry_run)
     return {'deleted': deleted, 'freed_bytes': freed, 'kept': kept,
-            'runs_deleted': runs_deleted}
+            'runs_deleted': runs_deleted, 'orders_deleted': orders_deleted}
 
 
 def _clean_task_runs(days: int, dry_run: bool) -> int:
@@ -83,8 +89,56 @@ def _clean_task_runs(days: int, dry_run: bool) -> int:
     return n
 
 
+def _clean_orders(days: int = ORDER_RETENTION_DAYS, dry_run: bool = False) -> int:
+    """清理超过保留期的 orders。
+
+    实删前先把完整行写入 data/order_cleanup_backups/*.json，备份成功后才按
+    本次预览到的 DB 主键精确删除；dry-run 只打印范围，不写备份、不删除。
+    """
+    try:
+        from core.database import Database
+    except Exception as e:
+        print(f'[clean_logs] 跳过订单历史清理（DB 不可用）：{e}')
+        return 0
+
+    db = Database()
+    db.connect()
+    rows = db.get_old_orders(days=days)
+    if not rows:
+        print(f'[clean_logs] 订单历史(orders)：无 {days} 天前记录')
+        return 0
+
+    oldest = str(rows[0][9])[:19]
+    newest = str(rows[-1][9])[:19]
+    action = '将删除' if dry_run else '待备份并删除'
+    print(f'[clean_logs] 订单历史(orders)：{action} {len(rows)} 条'
+          f'（{oldest} ～ {newest}，保留最近 {days} 天）')
+    if dry_run:
+        for row in rows:
+            print(f'  将删 order id={row[0]} {row[1]} {row[2]} {str(row[9])[:19]}')
+        return len(rows)
+
+    ORDER_BACKUP_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime('%Y%m%d_%H%M%S_%f')
+    backup = ORDER_BACKUP_DIR / f'orders_before_{days}d_{stamp}.json'
+    columns = ('id', 'symbol', 'action', 'order_type', 'quantity', 'price',
+               'filled_price', 'status', 'order_id', 'created_at')
+    payload = {
+        'created_at': datetime.now().isoformat(timespec='seconds'),
+        'retention_days': days,
+        'row_count': len(rows),
+        'orders': [dict(zip(columns, row)) for row in rows],
+    }
+    with backup.open('x', encoding='utf-8') as fh:
+        json.dump(payload, fh, ensure_ascii=False, indent=2, default=str)
+
+    deleted = db.delete_orders_by_ids([row[0] for row in rows])
+    print(f'[clean_logs] 订单历史(orders)：已删除 {deleted} 条；可恢复备份：{backup}')
+    return deleted
+
+
 def main():
-    ap = argparse.ArgumentParser(description='删除 logs/ 下超过 N 天的日志文件')
+    ap = argparse.ArgumentParser(description='清理过期日志、执行记录及 30 天前订单历史')
     ap.add_argument('--days', type=int, default=3, help='保留天数，超过则删除（默认 3）')
     ap.add_argument('--dry-run', action='store_true', help='只预览不删除')
     args = ap.parse_args()

@@ -826,9 +826,11 @@ def auto_discover(limit: int = 20) -> list[dict]:
         if not (hit_industry or hit_sector):
             continue
 
-        # 市值过滤：只发现 $10B–$500B 的新标的（超大市值已在追踪器内手动管理）
+        # 市值过滤：只发现 $2B–$500B 的新标的（超大市值已在追踪器内手动管理）。
+        # 下限 $2B：观察池允许早期链上票（AEHR/AXTI/LPTH 级别）进入，<$2B 微盘噪音大不纳入；
+        # 交易端另有 MIN_CAP_B=$10B 过滤链兜底，且新票默认 trade_priority=False 仅观察。
         cap = info.get('market_cap_b') or 0
-        if cap < 10.0 or cap > 500.0:
+        if cap < 2.0 or cap > 500.0:
             continue
 
         suggest_group = _suggest_group(industry, sector)
@@ -859,6 +861,135 @@ def auto_discover(limit: int = 20) -> list[dict]:
     return suggestions
 
 
+# ── 汰旧检查（只出建议，移出必须人工确认）───────────────────────────
+
+_AI_RETIRE_CACHE = ROOT / 'data' / '.ai_retire_cache.json'
+
+
+def suggest_retire(window: int = 42,
+                   rs_lookback: int = 63,
+                   weak_pctl: float = 0.20,
+                   weak_days_min: float = 0.70,
+                   below_ema_min: float = 0.60) -> dict:
+    """池内持续弱势成员汰旧建议（防止池子只进不出、稀释优先池含金量）。
+
+    触发条件（近 window=42 个交易日 ≈ 2 个月，三者同时满足）：
+      1. 63 日相对 SPY 收益位于池内后 weak_pctl(20%) 的天数占比 ≥ weak_days_min(70%)
+      2. 收盘 < EMA21 的天数占比 ≥ below_ema_min(60%)
+      3. 最新一日仍同时弱势 + 破 EMA21（刚反弹修复的不提，对齐 SNDK 误割教训）
+
+    只生成建议写缓存，**绝不自动移除**；UI「保留」过的票 60 天内不再重复建议
+    （retire_keep: {symbol: date} 记录在 ai_universe.json）。数据不足 window 天的
+    新成员自动跳过。hidden 分组（如 hyperscalers）为刻意收藏，不参与汰旧。
+    """
+    from datetime import date, timedelta as _td
+    from core.data_store import DataStore
+
+    u = load_universe()
+    sym_to_group: dict[str, str] = {}
+    for gk, gv in u.get('groups', {}).items():
+        if gv.get('hidden'):
+            continue
+        for s in gv.get('symbols', []):
+            sym_to_group.setdefault(str(s).upper(), gk)
+    syms = sorted(sym_to_group)
+
+    store = DataStore()
+    start_d = str(date.today() - _td(days=int((window + rs_lookback) * 1.6) + 30))
+    price_map = store.get(syms + ['SPY'], start=start_d, auto_update=True)
+
+    closes = pd.DataFrame({
+        s: df['close'] for s, df in price_map.items()
+        if df is not None and not df.empty
+    }).sort_index()
+    if 'SPY' not in closes.columns or len(closes) < window + rs_lookback:
+        raise ValueError(f'价格数据不足（需 {window + rs_lookback} 个交易日），无法做汰旧检查')
+
+    spy = closes.pop('SPY')
+    rel = closes.div(closes.shift(rs_lookback)).sub(spy / spy.shift(rs_lookback), axis=0)
+    weak  = rel.rank(axis=1, pct=True) <= weak_pctl          # 逐日：是否池内后 20%
+    below = closes < closes.ewm(span=21, adjust=False).mean()  # 逐日：是否破 EMA21
+
+    weak_w, below_w, closes_w = weak.tail(window), below.tail(window), closes.tail(window)
+    tp_map = {str(k).upper(): bool(v) for k, v in (u.get('trade_priority') or {}).items()}
+    keep_map = u.get('retire_keep') or {}
+    today = date.today()
+
+    suggestions = []
+    for s in closes.columns:
+        # 「保留」冷静期：60 天内不再重复建议
+        kept = keep_map.get(s)
+        if kept:
+            try:
+                if (today - date.fromisoformat(str(kept)[:10])).days < 60:
+                    continue
+            except ValueError:
+                pass
+        valid = closes_w[s].notna().sum()
+        if valid < window * 0.8:      # 新加入/数据缺口的票不评
+            continue
+        weak_frac  = float(weak_w[s].mean())
+        below_frac = float(below_w[s].mean())
+        if not (weak_frac >= weak_days_min and below_frac >= below_ema_min
+                and bool(weak.iloc[-1][s]) and bool(below.iloc[-1][s])):
+            continue
+        rel_now = rel.iloc[-1][s]
+        suggestions.append({
+            'symbol':         s,
+            'group':          sym_to_group.get(s),
+            'group_label':    u['groups'].get(sym_to_group.get(s), {}).get('label'),
+            'trade_priority': tp_map.get(s, True),
+            'weak_days_pct':  round(weak_frac, 3),
+            'below_ema_pct':  round(below_frac, 3),
+            'rel_rs_now':     round(float(rel_now), 4) if pd.notna(rel_now) else None,
+            'reason': (f'近 {window} 个交易日：RS 位于池内后 {weak_pctl:.0%} 的天数占 {weak_frac:.0%}，'
+                       f'破 EMA21 天数占 {below_frac:.0%}，当前仍弱势'),
+        })
+
+    suggestions.sort(key=lambda x: -x['weak_days_pct'])
+    result = _clean_floats({
+        'as_of':       datetime.now().isoformat(timespec='seconds'),
+        'window':      window,
+        'checked':     int(len(closes.columns)),
+        'suggestions': suggestions,
+    })
+    try:
+        _AI_RETIRE_CACHE.write_text(json.dumps(result, ensure_ascii=False, indent=1), 'utf-8')
+    except Exception:
+        pass
+    return result
+
+
+def get_cached_retire(max_age_hours: float = 24.0) -> dict | None:
+    """读汰旧建议缓存；过期/不存在返回 None（由调用方决定是否现算）。"""
+    if not _AI_RETIRE_CACHE.exists():
+        return None
+    try:
+        data = json.loads(_AI_RETIRE_CACHE.read_text('utf-8'))
+        age = datetime.now() - datetime.fromisoformat(data['as_of'])
+        return data if age < timedelta(hours=max_age_hours) else None
+    except Exception:
+        return None
+
+
+def keep_retire_suggestion(symbol: str) -> dict:
+    """「保留」某只汰旧建议：60 天内不再提醒（记录在 ai_universe.json retire_keep）。"""
+    from datetime import date
+    u = load_universe()
+    u.setdefault('retire_keep', {})[symbol.upper().strip()] = date.today().isoformat()
+    save_universe(u)
+    # 同步从缓存建议里摘掉，UI 立即消失
+    cached = get_cached_retire(max_age_hours=24 * 365)
+    if cached:
+        cached['suggestions'] = [x for x in cached.get('suggestions', [])
+                                 if x.get('symbol') != symbol.upper().strip()]
+        try:
+            _AI_RETIRE_CACHE.write_text(json.dumps(cached, ensure_ascii=False, indent=1), 'utf-8')
+        except Exception:
+            pass
+    return u
+
+
 # ── CLI 入口（供调度任务）──────────────────────────────────────
 if __name__ == '__main__':
     import argparse
@@ -867,9 +998,42 @@ if __name__ == '__main__':
                         help='盘中轻量刷新：仅用实时价覆盖 price/动量列（非交易时段自动跳过）')
     parser.add_argument('--full', action='store_true',
                         help='全量扫描：重算基本面/insider/评分/动量并写缓存')
+    parser.add_argument('--discover', action='store_true',
+                        help='自动发现：扫 sp500+ndx+russell2000 中 $2B–$500B 的 AI 链新标的，写入 pending_review 待审核；'
+                             '并顺带做汰旧检查（吐故纳新一次跑完）')
+    parser.add_argument('--retire-check', action='store_true',
+                        help='汰旧检查：找出近 2 个月持续弱势的池内成员，生成移出建议（仅提醒，不自动删）')
     args = parser.parse_args()
 
-    if args.full:
+    def _print_retire():
+        try:
+            r = suggest_retire()
+        except Exception as e:
+            print(f'[AITracker] 汰旧检查失败：{e}')
+            return
+        sug = r.get('suggestions', [])
+        if sug:
+            print(f"[AITracker] 汰旧建议 {len(sug)} 只（近 {r['window']} 个交易日持续弱势，"
+                  f"去「美股AI追踪 → 清单管理」人工确认移出/保留）：")
+            for x in sug:
+                tp = '优先池' if x.get('trade_priority') else '观察'
+                print(f"  {x['symbol']:<6} [{x.get('group_label') or x.get('group')}·{tp}] {x['reason']}")
+        else:
+            print(f"[AITracker] 汰旧检查：{r.get('checked')} 只均未触发移出建议")
+
+    if args.discover or args.retire_check:
+        if args.discover:
+            res = auto_discover()
+            if res:
+                print(f'[AITracker] 自动发现 {len(res)} 只新候选（已写入待审核）：')
+                for s in res:
+                    cap = s.get('market_cap_b')
+                    cap_str = f'${cap:.1f}B' if cap else '-'
+                    print(f"  {s['symbol']:<6} {cap_str:>8}  {s.get('industry', '')}")
+            else:
+                print('[AITracker] 自动发现：无新候选')
+        _print_retire()
+    elif args.full:
         res = _do_ai_scan()
         print(f'[AITracker] 全量扫描完成：{res.get("total")} 只')
     elif args.intraday:

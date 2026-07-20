@@ -54,7 +54,6 @@ from web.api.factors    import router as factors_router
 from web.api.backtest   import router as backtest_router
 from web.api.scheduler  import router as scheduler_router
 from web.api.config     import router as config_router
-from web.api.optimizer  import router as optimizer_router
 from web.api.watchlist  import router as watchlist_router
 from web.api.screener   import router as screener_router
 from web.api.comparison  import router as comparison_router
@@ -66,6 +65,9 @@ from web.api.risk import router as risk_router
 from web.api.premarket import router as premarket_router
 from web.api.account_doctor import router as account_doctor_router
 from web.api.exits import router as exits_router
+from web.api.intel import router as intel_router
+from web.api.social import router as social_router
+from web.api.leverage import router as leverage_router
 
 
 @asynccontextmanager
@@ -112,7 +114,6 @@ app.include_router(factors_router)
 app.include_router(backtest_router)
 app.include_router(scheduler_router)
 app.include_router(config_router)
-app.include_router(optimizer_router)
 app.include_router(watchlist_router)
 app.include_router(screener_router)
 app.include_router(comparison_router)
@@ -124,6 +125,9 @@ app.include_router(risk_router)
 app.include_router(premarket_router)
 app.include_router(account_doctor_router)
 app.include_router(exits_router)
+app.include_router(intel_router)
+app.include_router(social_router)
+app.include_router(leverage_router)
 
 
 @app.get('/api/health')

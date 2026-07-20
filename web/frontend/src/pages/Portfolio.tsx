@@ -4,7 +4,6 @@ import ReactECharts from 'echarts-for-react'
 import { useState } from 'react'
 import { useAccount } from '../App'
 import SymbolLink from '../components/SymbolLink'
-import RiskThermometer from '../components/RiskThermometer'
 import PendingExitsPanel from '../components/PendingExitsPanel'
 import AccountDoctor from './AccountDoctor'
 
@@ -1138,9 +1137,9 @@ export default function Portfolio() {
 
   return (
     <>
-    {/* Tab 栏：持仓总览 / 账户诊断 */}
+    {/* Tab 栏：持仓总览 / 实盘诊断 */}
     <div className="flex items-center gap-5 border-b border-slate-700 mb-5">
-      {([['holdings', '持仓总览'], ['doctor', '账户诊断 🩺']] as const).map(([k, label]) => (
+      {([['holdings', '持仓总览'], ['doctor', '实盘诊断 🩺']] as const).map(([k, label]) => (
         <button key={k} onClick={() => setView(k)}
           className={`pb-2 -mb-px text-sm font-medium border-b-2 transition-colors ${view === k ? 'border-blue-500 text-white' : 'border-transparent text-slate-400 hover:text-slate-200'}`}>
           {label}
@@ -1175,9 +1174,6 @@ export default function Portfolio() {
         />
         <StatCard label="购买力" value={fmt(balance?.buying_power)} />
       </div>
-
-      {/* 风险温度计（减仓预警：VIX 期限结构 + 组合相关性） */}
-      <RiskThermometer />
 
       {/* 实盘参数 */}
       <TradingParamsPanel />
@@ -1317,7 +1313,7 @@ export default function Portfolio() {
       {/* 订单历史 */}
       <div className="bg-slate-800 rounded-lg border border-slate-700">
         <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
-          <div className="text-sm font-medium text-slate-300">订单历史</div>
+          <div className="text-sm font-medium text-slate-300">订单历史（最近 7 天）</div>
           <input
             className="bg-slate-700 border border-slate-600 rounded px-2 py-1 text-xs text-white placeholder-slate-400 w-24 focus:outline-none focus:border-blue-500"
             placeholder="过滤股票"

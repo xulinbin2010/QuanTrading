@@ -438,3 +438,52 @@ def get_stock_news(symbol: str) -> dict:
         _logger.warning(f'[News] 缓存写入失败：{e}')
 
     return result
+
+
+def get_news_light_batch(symbols: list[str], max_workers: int = 8) -> dict[str, list[dict]]:
+    """
+    批量轻量新闻：仅 yfinance 标题（无 SEC/分析师，适合大股票池扫描）。
+    线程池并发拉取，缓存读一次、写一次（key `SYM#light`，TTL 同 _NEWS_TTL），
+    避免逐票写 pickle 的并发损坏。full 缓存（get_stock_news）命中时直接复用其 news。
+    """
+    from concurrent.futures import ThreadPoolExecutor
+
+    symbols = [s.upper() for s in symbols]
+    cache: dict = {}
+    if _NEWS_CACHE_FILE.exists():
+        try:
+            cache = pickle.loads(_NEWS_CACHE_FILE.read_bytes())
+        except Exception:
+            cache = {}
+
+    now = datetime.now()
+    out: dict[str, list[dict]] = {}
+    todo: list[str] = []
+    for s in symbols:
+        full = cache.get(s, {})
+        if full and now - full['ts'] < _NEWS_TTL:          # full 缓存直接复用
+            out[s] = full['data'].get('news') or []
+            continue
+        light = cache.get(f'{s}#light', {})
+        if light and now - light['ts'] < _NEWS_TTL:
+            out[s] = light['data'] or []
+            continue
+        todo.append(s)
+
+    if todo:
+        def _safe_fetch(sym: str) -> list[dict]:
+            try:
+                return _fetch_yf_news(sym)
+            except Exception as e:
+                _logger.warning(f'[News] {sym} 轻量新闻失败：{e}')
+                return []
+        with ThreadPoolExecutor(max_workers=max_workers) as ex:
+            for sym, news in zip(todo, ex.map(_safe_fetch, todo)):
+                out[sym] = news
+                cache[f'{sym}#light'] = {'ts': datetime.now(), 'data': news}
+        try:
+            _NEWS_CACHE_FILE.write_bytes(pickle.dumps(cache))
+        except Exception as e:
+            _logger.warning(f'[News] 缓存写入失败：{e}')
+
+    return out

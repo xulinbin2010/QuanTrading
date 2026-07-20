@@ -138,12 +138,17 @@ _REGEX_RULES: list[RegexRule] = [
         exclude=re.compile(r'^\s*#'),  # 跳过注释行
     ),
 
-    # iloc[-1] / .tail(N) 在赋值给 signal 相关变量时标记
+    # iloc[-1] / .tail(N) 在赋值给 signal 相关变量时标记。
+    # 回测结束后的权益曲线汇总（eq/equity_series）读取最后一个值是正常的绩效计算，
+    # 不参与逐日信号生成，不能当作前瞻偏差。
     RegexRule(
         level=CRITICAL,
         pattern=re.compile(r'\.iloc\[\s*-1\s*\]'),
         description="df.iloc[-1]: 取最后一行，可能泄露最新（未来）数据到信号列",
-        exclude=re.compile(r'^\s*#'),
+        exclude=re.compile(
+            r'^\s*#|'
+            r'\b(?:eq|equity|equity_series)\s*\.iloc\[\s*-1\s*\]'
+        ),
     ),
     RegexRule(
         level=CRITICAL,
@@ -177,13 +182,13 @@ _REGEX_RULES: list[RegexRule] = [
 
     # ── WARNING ──────────────────────────────────────────────────────────────
 
-    # pd.merge / df.join 未检查 on/left_on/right_on 是否对齐
-    # 只要出现 pd.merge 或 .merge( 或 .join( 就提示
+    # pd.merge / df.join 未检查 on/left_on/right_on 是否对齐。
+    # 排除 Python 字符串拼接：', '.join(items) 不是 DataFrame join。
     RegexRule(
         level=WARNING,
         pattern=re.compile(r'(?:pd\.merge|\.merge|\.join)\s*\('),
         description="pd.merge/join: 跨 DataFrame 合并时需确认日期键对齐，防止未来财报等数据混入",
-        exclude=re.compile(r'^\s*#'),
+        exclude=re.compile(r'^\s*#|[\'"][^\'"]*[\'"]\s*\.join\s*\('),
     ),
 
     # bfill —— 用未来值填充

@@ -1,6 +1,6 @@
-"""风险温度计：板块/组合「减仓预警」信号（区别于只'停买'的 SPY/VIX brake）。
+"""风险温度计：市场环境与组合结构的风险观察信号。
 
-v1 含两个最便宜、最有领先性的信号：
+当前包含四个低成本、偏领先的信号：
   1. VIX 期限结构 (VIX / VIX3M)：≥1 倒挂 = 近月恐慌 > 远月 → risk-off
   2. 组合相关性 / 有效持仓数：揭示「假分散」（多只票其实是一个仓）
 
@@ -13,7 +13,7 @@ import json
 import os
 import numpy as np
 import pandas as pd
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from core.data_store import DataStore
 
@@ -281,17 +281,21 @@ def get_thermometer(force: bool = False) -> dict:
             'breadth':     _breadth(),
             'leadership':  _leadership_rs(),
         }
-        avail = [s for s in signals.values() if s.get('available')]
+        avail = [
+            signal for key, signal in signals.items()
+            if signal.get('available')
+            and not (key == 'correlation' and signal.get('source') != 'ib')
+        ]
         total = sum(s.get('score', 0) for s in avail)
         max_total = (len(avail) * 2) or 1          # 每信号 0-2，随启用数量动态变化
         ratio = total / max_total
 
         if ratio >= 0.5:
-            level, color, advice = 'high', 'red', '多信号共振 → 建议主动减仓至目标仓 50% 或更低'
+            level, color, advice = 'high', 'red', '多信号共振 → 暂停新增波段仓，复核核心持仓 thesis 与失效条件'
         elif ratio >= 0.25:
-            level, color, advice = 'mid', 'yellow', '出现风险信号 → 收紧止损，考虑减至 70%'
+            level, color, advice = 'mid', 'yellow', '风险信号升温 → 控制新增仓位，按半自动出场纪律观察'
         else:
-            level, color, advice = 'low', 'green', '风险信号未触发 → 维持，按既有止损纪律'
+            level, color, advice = 'low', 'green', '风险信号未触发 → 维持既定仓位与半自动出场纪律'
 
         return {
             'level': level, 'color': color, 'score': total, 'max_score': max_total,
@@ -300,3 +304,153 @@ def get_thermometer(force: bool = False) -> dict:
             'updated_at': time.strftime('%Y-%m-%d %H:%M:%S'),
         }
     return _cached('thermometer', _build, force=force)
+
+
+def _pillar(score: float | None, level: str | None, label: str,
+            available: bool = True, detail: str = '') -> dict:
+    return {
+        'label': label,
+        'available': available,
+        'score': round(float(score), 1) if score is not None else None,
+        'level': level if available else 'unknown',
+        'detail': detail,
+    }
+
+
+def get_dashboard(force: bool = False) -> dict:
+    """统一风险驾驶舱。
+
+    Market / Portfolio / Leverage 保持独立口径，综合灯号只做共振提示，
+    不直接连接自动交易或修改仓位参数。
+    """
+    from web.services import leverage_monitor_svc
+
+    thermometer = get_thermometer(force=force)
+    leverage = leverage_monitor_svc.get_dashboard(force=force)
+
+    market_parts = [
+        thermometer.get('vix_term') or {},
+        thermometer.get('breadth') or {},
+        thermometer.get('leadership') or {},
+    ]
+    market_available = [part for part in market_parts if part.get('available')]
+    market_points = sum(float(part.get('score') or 0) for part in market_available)
+    market_max = len(market_available) * 2
+    market_score = round(market_points / market_max * 100, 1) if market_max else None
+    market_level = (
+        'high' if market_score is not None and market_score >= 50
+        else 'mid' if market_score is not None and market_score >= 25
+        else 'low'
+    )
+
+    corr = thermometer.get('correlation') or {}
+    # AI 关注池只是 IB 离线时的板块代理，不能代表真实组合，也不得升级综合灯号。
+    portfolio_available = bool(corr.get('available')) and corr.get('source') == 'ib'
+    portfolio_score = float(corr.get('score') or 0) * 50 if portfolio_available else None
+    portfolio_level = (
+        'high' if portfolio_score is not None and portfolio_score >= 100
+        else 'mid' if portfolio_score is not None and portfolio_score >= 50
+        else 'low'
+    )
+
+    lev_summary = leverage.get('summary') or {}
+    leverage_score = lev_summary.get('unwind_score')
+    leverage_available = leverage_score is not None
+    leverage_level = lev_summary.get('unwind_level', 'low')
+
+    pillars = {
+        'market': _pillar(
+            market_score, market_level, '市场环境',
+            available=bool(market_available),
+            detail=' · '.join(
+                str(part.get('label')) for part in market_available if part.get('label')
+            ),
+        ),
+        'portfolio': _pillar(
+            portfolio_score, portfolio_level, '组合结构',
+            available=portfolio_available,
+            detail=(
+                f"平均相关 {corr.get('avg_corr')} · 有效持仓 {corr.get('enb_corr')}/{corr.get('n')}"
+                if portfolio_available
+                else (
+                    f"IB 离线；AI 关注池代理 {corr.get('n')} 只（不计入综合灯号）"
+                    if corr.get('source') == 'ai_universe' and corr.get('available')
+                    else str(corr.get('error') or '组合数据不可用')
+                )
+            ),
+        ),
+        'leverage': _pillar(
+            leverage_score, leverage_level, '杠杆压力',
+            available=leverage_available,
+            detail=(
+                f"主导市场 {lev_summary.get('dominant_market') or '—'}"
+                if leverage_available else '杠杆行情不可用'
+            ),
+        ),
+    }
+
+    available_levels = [
+        item['level'] for item in pillars.values() if item['available']
+    ]
+    high_count = available_levels.count('high')
+    mid_count = available_levels.count('mid')
+    if high_count or mid_count >= 2:
+        overall_level = 'high'
+    elif mid_count:
+        overall_level = 'mid'
+    else:
+        overall_level = 'low'
+
+    reasons: list[str] = []
+    for key, item in pillars.items():
+        if item['available'] and item['level'] != 'low':
+            reasons.append(f"{item['label']}：{item['detail']}")
+    if not reasons:
+        reasons.append('当前可用指标尚未形成明显风险共振')
+
+    market_high = pillars['market']['level'] == 'high'
+    portfolio_high = pillars['portfolio']['level'] == 'high'
+    leverage_high = pillars['leverage']['level'] == 'high'
+    if market_high or leverage_high:
+        core_advice = '复核核心持仓 thesis 与失效条件；不因单一技术信号机械清仓'
+    else:
+        core_advice = '核心中长期仓维持既定 thesis 与半自动出场纪律'
+    if market_high:
+        tactical_advice = '暂停追高和新增短线仓，优先压缩弱势、高 beta 波段仓'
+    elif portfolio_high:
+        tactical_advice = '暂停新增同主题仓位，避免继续放大相关性暴露'
+    else:
+        tactical_advice = '短线仓按既有仓位上限执行，继续观察风险是否共振'
+    if leverage_high:
+        leveraged_advice = '优先降低 2X/3X、margin 与高 beta 隔夜暴露'
+    elif pillars['leverage']['level'] == 'mid':
+        leveraged_advice = '停止增加杠杆，关注 inverse ETF 放量与 tracking dislocation'
+    else:
+        leveraged_advice = '未见明显 forced deleveraging；仍遵守既定杠杆上限'
+
+    return {
+        'generated_at': datetime.now(timezone.utc).isoformat(timespec='seconds'),
+        'overall': {
+            'level': overall_level,
+            'label': {'low': '低风险', 'mid': '警惕', 'high': '高风险'}[overall_level],
+            'method': '任一维度高风险，或至少两个维度同时警惕，则升级为高风险',
+        },
+        'pillars': pillars,
+        'reasons': reasons,
+        'advice': {
+            'core': core_advice,
+            'tactical': tactical_advice,
+            'leveraged': leveraged_advice,
+        },
+        'data_quality': {
+            'thermometer_updated_at': thermometer.get('updated_at'),
+            'leverage_generated_at': leverage.get('generated_at'),
+            'leverage_is_stale': bool(leverage.get('is_stale')),
+            'market_data_quality': leverage.get('market_data_quality'),
+            'portfolio_source': corr.get('source', 'none'),
+        },
+        'thermometer': thermometer,
+        'leverage': leverage,
+        'automated_action': False,
+        'methodology_version': '1.0',
+    }

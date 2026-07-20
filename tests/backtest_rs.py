@@ -26,7 +26,7 @@ import config
 warnings.filterwarnings('ignore')
 
 # 注意：不在模块级缓存风控参数，run_backtest() 每次调用时从 config 实时读取，
-# 确保 Web UI 修改系统配置后立即对回测/优化器生效。
+# 确保 Web UI 修改系统配置后立即对回测生效。
 # CLI 入口同样实时读取，行为一致。
 
 
@@ -84,9 +84,8 @@ def run_backtest(
     deny_industries: list = None,
     factors: list = None,
     factor_params: dict = None,
-    preloaded_data: dict = None,        # {symbol: DataFrame}，由优化器预加载传入，跳过 IO
-    preloaded_info: dict = None,        # {symbol: info_dict}，由优化器预加载传入，跳过 API 调用
-    precomputed_cache=None,             # PrecomputedCache，跳过因子/ATR/breadth 计算
+    preloaded_data: dict = None,        # {symbol: DataFrame}，由 walk-forward 验证预加载传入，跳过 IO
+    preloaded_info: dict = None,        # {symbol: info_dict}，由 walk-forward 验证预加载传入，跳过 API 调用
     breakout_proximity_pct: float = 0.05,  # 突破宽松度（0=严格新高，0.05=在高点95%内即可）
     # 出场模式：'legacy'=多层止损(ATR/移动/时间/量价背离/RS衰退，与历史基准表一致)
     #          'simple'=精简版(-15%硬止损 + EMA21两日破位，对齐实盘 auto_trader)
@@ -182,7 +181,7 @@ def run_backtest(
     _extra_syms = ['SMH'] if pool_mode == 'ai' else []
     all_syms = list(set(tickers + ['SPY', '^VIX'] + _extra_syms))
     if preloaded_data is not None:
-        # 优化器已预加载：直接使用，跳过磁盘 IO 和增量检查
+        # 调用方（walk-forward 验证）已预加载：直接使用，跳过磁盘 IO 和增量检查
         all_data = {sym: preloaded_data[sym] for sym in all_syms if sym in preloaded_data}
     else:
         store    = DataStore()
@@ -221,77 +220,63 @@ def run_backtest(
         ai_brake_series = pd.Series(False, index=spy_close.index)
     signals: dict = {}
 
-    if precomputed_cache is not None and factors:
-        # 快速路径：从预计算缓存生成信号，跳过所有 rolling-window 计算
-        from strategies.precompute import build_signal_from_cache
-        from strategies.factors.registry import get_registry
-        _registry = get_registry()
-        signals: dict = {}
-        for sym, full_df in precomputed_cache.signals.items():
-            if sym in stock_data:
+    # 逐股计算信号
+    # pool_mode='ai' 时按 PoolPolicy 双路扫描（与 auto_trader 实盘对齐）；
+    # 默认 'strict' 为纯 SP500 严格单路（无 AI 特殊待遇，保留历史可比性）。
+    if factors:
+        from strategies.dynamic_factor import DynamicFactorStrategy
+        strategy = DynamicFactorStrategy(factors, factor_params)
+        strategy.set_spy(spy_close)
+        signals = {}
+        for sym, df in stock_data.items():
+            try:
+                signals[sym] = strategy.generate_signals(df)
+            except Exception:
+                pass
+    else:
+        from web.services.factor_svc import get_factor_params_from_db
+        _rs_p = get_factor_params_from_db('rs_score')
+        _common = dict(
+            rs_period=int(_rs_p.get('period', 63)),
+            rs_weights=str(_rs_p.get('weights', '') or ''),
+            vol_shrink_ratio=VOL_SHRINK_RATIO,
+        )
+        if use_pool:
+            # 每池一套扫描参数（ai 宽松 prox=15%+vol=0 / base 严格），逐股按池分流。
+            # AI 成员额外预计算严格信号(signals_strict),供主题熔断日逐日切换。
+            for p in policies:
+                kw = dict(_common, breakout_proximity_pct=breakout_proximity_pct)
+                kw.update(p.signal_params)
+                st = RSMomentum(**kw)
+                st.set_spy(spy_close)
+                pool_strats[p.name] = st
+            _strict_strat = RSMomentum(**_common, breakout_proximity_pct=breakout_proximity_pct)
+            _strict_strat.set_spy(spy_close)
+            for sym, df in stock_data.items():
                 try:
-                    signals[sym] = build_signal_from_cache(full_df, factors, _registry)
+                    pol = _classify_pool(sym, policies)
+                    signals[sym] = pool_strats[pol.name].generate_signals(df)
+                    if pol.name == 'ai_priority':
+                        signals_strict[sym] = _strict_strat.generate_signals(df)
                 except Exception:
                     pass
-        atr_series: dict[str, pd.Series] = dict(precomputed_cache.atr_series)
-    else:
-        # 标准路径：逐股计算（独立回测 / Web 回测 / CLI，向后兼容）
-        # pool_mode='ai' 时按 PoolPolicy 双路扫描（与 auto_trader 实盘对齐）；
-        # 默认 'strict' 为纯 SP500 严格单路（无 AI 特殊待遇，保留历史可比性）。
-        if factors:
-            from strategies.dynamic_factor import DynamicFactorStrategy
-            strategy = DynamicFactorStrategy(factors, factor_params)
+        else:
+            strategy = RSMomentum(**_common, breakout_proximity_pct=breakout_proximity_pct)
             strategy.set_spy(spy_close)
-            signals = {}
             for sym, df in stock_data.items():
                 try:
                     signals[sym] = strategy.generate_signals(df)
                 except Exception:
                     pass
-        else:
-            from web.services.factor_svc import get_factor_params_from_db
-            _rs_p = get_factor_params_from_db('rs_score')
-            _common = dict(
-                rs_period=int(_rs_p.get('period', 63)),
-                rs_weights=str(_rs_p.get('weights', '') or ''),
-                vol_shrink_ratio=VOL_SHRINK_RATIO,
-            )
-            if use_pool:
-                # 每池一套扫描参数（ai 宽松 prox=15%+vol=0 / base 严格），逐股按池分流。
-                # AI 成员额外预计算严格信号(signals_strict),供主题熔断日逐日切换。
-                for p in policies:
-                    kw = dict(_common, breakout_proximity_pct=breakout_proximity_pct)
-                    kw.update(p.signal_params)
-                    st = RSMomentum(**kw)
-                    st.set_spy(spy_close)
-                    pool_strats[p.name] = st
-                _strict_strat = RSMomentum(**_common, breakout_proximity_pct=breakout_proximity_pct)
-                _strict_strat.set_spy(spy_close)
-                for sym, df in stock_data.items():
-                    try:
-                        pol = _classify_pool(sym, policies)
-                        signals[sym] = pool_strats[pol.name].generate_signals(df)
-                        if pol.name == 'ai_priority':
-                            signals_strict[sym] = _strict_strat.generate_signals(df)
-                    except Exception:
-                        pass
-            else:
-                strategy = RSMomentum(**_common, breakout_proximity_pct=breakout_proximity_pct)
-                strategy.set_spy(spy_close)
-                for sym, df in stock_data.items():
-                    try:
-                        signals[sym] = strategy.generate_signals(df)
-                    except Exception:
-                        pass
 
-        # 预计算 ATR14（用于自适应止损）
-        atr_series: dict[str, pd.Series] = {}
-        for sym, df in stock_data.items():
-            try:
-                atr_df = compute_atr(df.copy())
-                atr_series[sym] = atr_df['atr14']
-            except Exception:
-                pass
+    # 预计算 ATR14（用于自适应止损）
+    atr_series: dict[str, pd.Series] = {}
+    for sym, df in stock_data.items():
+        try:
+            atr_df = compute_atr(df.copy())
+            atr_series[sym] = atr_df['atr14']
+        except Exception:
+            pass
 
     # 预计算 EMA21（仅 simple 出场模式需要：两日破位判定，与实盘 auto_trader 一致）
     ema21_series: dict[str, pd.Series] = {}
@@ -353,15 +338,12 @@ def run_backtest(
         vix_close_series = vix_df['close']
 
     # ── 市场宽度时间序列（% 股票站上 MA200） ─────────────────
-    if precomputed_cache is not None:
-        breadth_series = precomputed_cache.breadth_series
-    else:
-        breadth_series = pd.Series(dtype=float)
-        _close_cols = {s: df['close'] for s, df in stock_data.items() if len(df) >= 201}
-        if _close_cols:
-            _close_matrix = pd.DataFrame(_close_cols)
-            _ma200_matrix = _close_matrix.rolling(200).mean()
-            breadth_series = (_close_matrix > _ma200_matrix).mean(axis=1)
+    breadth_series = pd.Series(dtype=float)
+    _close_cols = {s: df['close'] for s, df in stock_data.items() if len(df) >= 201}
+    if _close_cols:
+        _close_matrix = pd.DataFrame(_close_cols)
+        _ma200_matrix = _close_matrix.rolling(200).mean()
+        breadth_series = (_close_matrix > _ma200_matrix).mean(axis=1)
 
     # ── MSS 逐日序列 ─────────────────────────────────────────
     mss_series = compute_mss_series(spy_close, vix_close_series, breadth_series)

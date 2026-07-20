@@ -13,3 +13,12 @@ def thermometer(force: bool = Query(False)):
         return risk_svc.get_thermometer(force=force)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get('/dashboard')
+def dashboard(force: bool = Query(False)):
+    """统一风险驾驶舱：市场、组合与杠杆三层风险及来源化行动建议。"""
+    try:
+        return risk_svc.get_dashboard(force=force)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

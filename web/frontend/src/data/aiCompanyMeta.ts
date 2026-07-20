@@ -142,9 +142,9 @@ export const AI_CHAIN_LAYERS: { title: string; flow: string; groups: string[] }[
 ]
 
 /**
- * 市值档位（静态，用于产业图谱「龙头高亮」视觉权重；龙头/小盘归属变化慢，无需实时拉）。
- * MEGA：大盘龙头（约 ≥ $100B）→ 卡片高亮 + 👑
- * SMALL：微小盘（约 ≤ $5B）→ 卡片暗淡
+ * 市值档位静态名单——仅作扫描市值未就绪时的兜底（AITracker tierOf 优先用实时市值分档）。
+ * MEGA：大盘龙头（约 ≥ $100B）→ 卡片高亮 + 👑 + 金色市值徽章
+ * SMALL：微小盘（约 ≤ $5B）→ 灰色「小盘」徽章（不压暗卡片，保持可读性）
  * 其余默认中档样式。归属可按需增删。
  */
 export const MEGA_CAPS = new Set<string>([

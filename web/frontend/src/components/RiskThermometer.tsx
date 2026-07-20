@@ -63,13 +63,14 @@ export default function RiskThermometer() {
   }
 
   const syms: string[] = corr.symbols || []
+  const isPortfolioProxy = corr.source !== 'ib'
   const heatData: any[] = []
-  if (corr.available) {
+  if (corr.available && !isPortfolioProxy) {
     for (let i = 0; i < syms.length; i++)
       for (let j = 0; j < syms.length; j++)
         heatData.push([j, i, (corr.matrix?.[i]?.[j]) ?? 0])
   }
-  const heatOption = corr.available && {
+  const heatOption = corr.available && !isPortfolioProxy && {
     backgroundColor: 'transparent',
     grid: { left: 52, right: 16, top: 16, bottom: 44 },
     tooltip: { formatter: (p: any) => `${syms[p.data[1]]} × ${syms[p.data[0]]}<br/>相关 ${p.data[2]}` },
@@ -166,7 +167,9 @@ export default function RiskThermometer() {
         {/* 组合相关性 */}
         <div className="bg-slate-800 p-3">
           <div className="flex items-center justify-between mb-1.5">
-            <h3 className="text-xs font-semibold text-slate-300">② 组合相关性 / 有效持仓数</h3>
+            <h3 className="text-xs font-semibold text-slate-300">
+              {isPortfolioProxy ? '② AI 关注池相关性代理（IB 未连接）' : '② 组合相关性 / 有效持仓数'}
+            </h3>
             {corr.available && (
               <span className={`text-[11px] px-2 py-0.5 rounded ${
                 corr.score === 2 ? 'bg-red-900/50 text-red-300' : corr.score === 1 ? 'bg-amber-900/50 text-amber-300' : 'bg-emerald-900/50 text-emerald-300'}`}>
@@ -184,13 +187,22 @@ export default function RiskThermometer() {
                   {corr.source === 'ib' ? '真实持仓' : corr.source === 'ai_universe' ? 'AI关注池(IB未连)' : corr.source}
                 </span>
               </div>
-              <div className="text-[10px] text-slate-500 mb-1">
-                {syms.map((s, i) => (<span key={s}><SymbolLink symbol={s} />{i < syms.length - 1 ? '、' : ''}</span>))}
-              </div>
-              <ReactECharts option={heatOption} style={{ height: 200 }} notMerge />
-              <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
-                {corr.n} 只实际只相当于 <b className="text-amber-400">{corr.enb_corr}</b> 个独立仓位 —— 相关越高分散越假。
-              </p>
+              {isPortfolioProxy ? (
+                <div className="rounded-lg border border-yellow-800/50 bg-yellow-950/20 px-3 py-3 mt-3 text-sm text-yellow-300 leading-relaxed">
+                  当前数值来自 {corr.n} 只 AI 关注股，只反映板块内部同步程度。它不代表真实持仓，
+                  不进入统一风险灯号，也不据此生成减仓建议；连接 IB 后才显示实际持仓热力图。
+                </div>
+              ) : (
+                <>
+                  <div className="text-[10px] text-slate-500 mb-1">
+                    {syms.map((s, i) => (<span key={s}><SymbolLink symbol={s} />{i < syms.length - 1 ? '、' : ''}</span>))}
+                  </div>
+                  <ReactECharts option={heatOption} style={{ height: 200 }} notMerge />
+                  <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                    {corr.n} 只实际只相当于 <b className="text-amber-400">{corr.enb_corr}</b> 个独立仓位 —— 相关越高分散越假。
+                  </p>
+                </>
+              )}
             </>
           ) : <div className="text-xs text-slate-500 py-6 text-center">相关性不可用：{corr.error}</div>}
         </div>

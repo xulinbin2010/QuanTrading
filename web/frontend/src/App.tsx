@@ -7,12 +7,13 @@ import { PremarketBriefingProvider } from './components/PremarketBriefingProvide
 import Portfolio from './pages/Portfolio'
 import MarketScan from './pages/MarketScan'
 import StockAnalysis from './pages/StockAnalysis'
-import Optimizer from './pages/Optimizer'
 import BacktestHub from './pages/BacktestHub'
 import AITracker from './pages/AITracker'
 import AStockTracker from './pages/AStockTracker'
 import Scheduler from './pages/Scheduler'
 import Config from './pages/Config'
+import IntelCenter from './pages/IntelCenter'
+import RiskMonitor from './pages/RiskMonitor'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -37,13 +38,15 @@ export default function App() {
               <Route index element={<Portfolio />} />
               <Route path="scanner"   element={<MarketScan />} />
               <Route path="analysis"  element={<StockAnalysis />} />
-              <Route path="optimizer" element={<Optimizer />} />
               <Route path="backtest"    element={<BacktestHub />} />
               {/* 旧路由保留为重定向，避免外部书签失效 */}
               <Route path="single-bt"   element={<Navigate to="/backtest?tab=single" replace />} />
               <Route path="comparison"  element={<Navigate to="/backtest?tab=compare" replace />} />
               <Route path="ai"          element={<AITracker />} />
               <Route path="astock"      element={<AStockTracker />} />
+              <Route path="intel"       element={<IntelCenter />} />
+              <Route path="risk"        element={<RiskMonitor />} />
+              <Route path="leverage"    element={<Navigate to="/risk?tab=leverage" replace />} />
               <Route path="scheduler" element={<Scheduler />} />
               <Route path="config"    element={<Config />} />
             </Route>

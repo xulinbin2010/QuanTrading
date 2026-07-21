@@ -43,16 +43,21 @@ def diagnose(payload: dict, persist: bool = True) -> dict:
 
     positions = []
     gross_long = 0.0
+    # 已由官方产品资料确认的 2X/3X 产品自动识别；手工填写更高倍数时仍以用户输入为准。
+    # 放在函数内导入，避免账户诊断模块与行情监控模块初始化时互相依赖。
+    from web.services.leverage_monitor_svc import known_leverage_for
+
     for p in pos_in:
         mv = _f(p.get('market_value_usd'))
         if mv is None:
             sh, px = _f(p.get('shares')), _f(p.get('last_price'))
             mv = (sh * px) if (sh is not None and px is not None) else 0.0
-        lev = _f(p.get('leverage_factor')) or 1.0
+        symbol = str(p.get('symbol') or '?').upper()
+        lev = max(_f(p.get('leverage_factor')) or 1.0, known_leverage_for(symbol))
         is_lev = bool(p.get('is_leveraged')) or lev > 1.0
         theme = (p.get('theme') or '其它').strip() or '其它'
         positions.append({
-            'symbol': p.get('symbol') or '?',
+            'symbol': symbol,
             'name': p.get('name') or '',
             'market_value_usd': round(mv, 0),
             'theme': theme,

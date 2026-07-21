@@ -32,7 +32,10 @@ import requests
 _logger = logging.getLogger(__name__)
 
 _CACHE_FILE = Path("data/.leverage_monitor_cache.json")
+_HISTORY_FILE = Path("data/.leverage_monitor_history.json")
 _CACHE_TTL_SECONDS = 15 * 60
+_HISTORY_LIMIT = 480
+METHODOLOGY_VERSION = "2.0"
 _LOCK = threading.Lock()
 _MEM_CACHE: tuple[float, dict[str, Any]] | None = None
 
@@ -74,12 +77,28 @@ PRODUCTS: tuple[LeveragedProduct, ...] = (
     LeveragedProduct("NVDL", "GraniteShares 2x Long NVDA", "US", 2.0, "NVDA", "单股·NVDA", "GraniteShares"),
     LeveragedProduct("TSLL", "Direxion Daily TSLA Bull", "US", 2.0, "TSLA", "单股·TSLA", "Direxion"),
     LeveragedProduct("MSTU", "T-Rex 2x Long MSTR", "US", 2.0, "MSTR", "单股·MSTR", "T-Rex"),
+    LeveragedProduct("MUU", "Direxion Daily MU Bull", "US", 2.0, "MU", "单股·MU", "Direxion"),
+    LeveragedProduct("ARMG", "Leverage Shares 2x Long ARM", "US", 2.0, "ARM", "单股·ARM", "Leverage Shares"),
+    LeveragedProduct("RAM", "T-REX 2x Long DRAM", "US", 2.0, "DRAM", "存储·DRAM", "T-REX"),
     LeveragedProduct("BITX", "2x Bitcoin Strategy ETF", "US", 2.0, "BTC-USD", "加密资产", "Volatility Shares"),
     LeveragedProduct("122630.KS", "KODEX 레버리지", "KR", 2.0, "069500.KS", "KOSPI200", "Samsung"),
     LeveragedProduct("252670.KS", "KODEX 200선물인버스2X", "KR", -2.0, "069500.KS", "KOSPI200", "Samsung"),
     LeveragedProduct("233740.KS", "KODEX 코스닥150레버리지", "KR", 2.0, "229200.KS", "KOSDAQ150", "Samsung"),
     LeveragedProduct("251340.KS", "KODEX 코스닥150선물인버스", "KR", -1.0, "229200.KS", "KOSDAQ150", "Samsung"),
 )
+
+_KNOWN_LEVERAGE = {product.symbol.upper(): abs(product.leverage) for product in PRODUCTS}
+
+
+def known_leverage_for(symbol: str) -> float:
+    """返回显式产品注册表中的日目标杠杆；未知产品按 1x。
+
+    注册表只增不自动删，避免一次行情失败把产品误判为失效。
+    """
+    key = str(symbol).upper()
+    if key not in _KNOWN_LEVERAGE and key.isdigit() and len(key) == 6:
+        key = f"{key}.KS"
+    return float(_KNOWN_LEVERAGE.get(key, 1.0))
 
 
 def _finite(value: Any, digits: int | None = None) -> float | None:
@@ -304,32 +323,59 @@ def _market_aggregate(rows: list[dict[str, Any]], funding: dict[str, Any] | None
 
     components: list[dict[str, Any]] = []
 
-    def add(name: str, value: float | None, raw_points: float, max_points: float) -> None:
+    def add(
+        name: str,
+        value: float | None,
+        raw_points: float,
+        max_points: float,
+        *,
+        quality: float = 1.0,
+        provisional: bool = False,
+    ) -> None:
+        effective_quality = max(0.0, min(float(quality), 1.0))
         components.append({
             "name": name,
             "value": _finite(value, 6),
-            "points": round(max(0.0, min(raw_points, max_points)), 1),
+            # 固定权重；其它证据缺失时，不把少量可用项重新归一化成满分。
+            "points": round(max(0.0, min(raw_points, max_points)) * effective_quality, 1),
             "max_points": max_points,
+            "evidence_points": round(max_points * effective_quality, 1),
+            "quality": round(effective_quality, 2),
+            "provisional": provisional,
         })
 
     if long_ret is not None:
-        add("多头杠杆下跌", long_ret, max(-long_ret, 0) / 0.06 * 30, 30)
+        add("多头杠杆下跌", long_ret, max(-long_ret, 0) / 0.06 * 35, 35)
     if long_vol is not None:
-        add("多头成交放大", long_vol, max(long_vol - 1, 0) / 2 * 15, 15)
+        forming = any(bool(r.get("volume_estimated")) for r in longs)
+        add(
+            "多头成交放大", long_vol, max(long_vol - 1, 0) / 2 * 20, 20,
+            # 日内成交量呈 U 型，只有日 K 无法做可靠的同时间季节性校正；
+            # forming bar 只展示 preliminary 值，不进入正式 Trigger 分数。
+            quality=0.0 if forming else 1.0,
+            provisional=forming,
+        )
     if inverse_ret is not None:
         add("反向产品上涨", inverse_ret, max(inverse_ret, 0) / 0.06 * 20, 20)
     if inverse_vol is not None:
-        add("反向成交放大", inverse_vol, max(inverse_vol - 1, 0) / 2 * 15, 15)
+        forming = any(bool(r.get("volume_estimated")) for r in inverses)
+        add(
+            "反向成交放大", inverse_vol, max(inverse_vol - 1, 0) / 2 * 15, 15,
+            quality=0.0 if forming else 1.0,
+            provisional=forming,
+        )
     if gap_abs is not None:
         add("跟踪偏差扩大", gap_abs, gap_abs / 0.02 * 10, 10)
-    if funding and funding.get("available") and funding.get("mom") is not None:
-        mom = float(funding["mom"])
-        add("融资余额收缩", mom, max(-mom, 0) / 0.05 * 10, 10)
 
     points = sum(float(c["points"]) for c in components)
-    possible = sum(float(c["max_points"]) for c in components)
-    score = round(points / possible * 100, 1) if possible else None
+    coverage = round(sum(float(c["evidence_points"]) for c in components), 1)
+    score = round(points, 1) if coverage >= 60 else None
     level = "high" if score is not None and score >= 65 else "mid" if score is not None and score >= 35 else "low"
+    confidence = (
+        "high" if coverage >= 90 and older_bar_count == 0
+        else "medium" if coverage >= 70
+        else "low"
+    )
     return {
         "available_products": len(available),
         "configured_products": len(rows),
@@ -342,6 +388,8 @@ def _market_aggregate(rows: list[dict[str, Any]], funding: dict[str, Any] | None
         "median_abs_tracking_gap_1d": _finite(gap_abs, 6),
         "unwind_score": score,
         "unwind_level": level,
+        "evidence_coverage": coverage,
+        "confidence": confidence,
         "score_components": components,
     }
 
@@ -626,6 +674,366 @@ def _fetch_korea_margin() -> dict[str, Any]:
         }
 
 
+def _load_personal_snapshot() -> dict[str, Any]:
+    """读取本地实盘诊断快照，生成不依赖模型的个人账户风险指标。"""
+    try:
+        from web.services import account_doctor_svc
+
+        saved = account_doctor_svc.get_latest() or {}
+    except Exception as exc:
+        return {"available": False, "error": f"读取实盘诊断失败：{exc}"}
+    account = saved.get("account") or {}
+    positions = saved.get("positions") or []
+    net_liq = _finite(account.get("net_liq"))
+    if not net_liq or net_liq <= 0:
+        return {
+            "available": False,
+            "error": "尚无有效实盘诊断快照",
+            "setup_hint": "先在「实盘诊断」粘贴并确认账户与持仓",
+        }
+
+    gross_long = _finite(account.get("gross_long")) or sum(
+        float(_finite(p.get("market_value_usd")) or 0) for p in positions
+    )
+    maint = _finite(account.get("maint_margin"))
+    excess = _finite(account.get("excess_liquidity"))
+    settled_cash = _finite(account.get("settled_cash"))
+    equity_with_loan = (
+        maint + excess
+        if maint is not None and excess is not None
+        else net_liq
+    )
+    cushion = excess / equity_with_loan if excess is not None and equity_with_loan else None
+
+    total_exposure = 0.0
+    embedded_extra = 0.0
+    market_exposure = {"US": 0.0, "KR": 0.0}
+    leveraged_positions: list[dict[str, Any]] = []
+    for row in positions:
+        symbol = str(row.get("symbol") or "").upper()
+        market_value = float(_finite(row.get("market_value_usd")) or 0)
+        saved_leverage = abs(float(_finite(row.get("leverage_factor")) or 1.0))
+        leverage = max(saved_leverage, known_leverage_for(symbol))
+        exposure = market_value * leverage
+        market = (
+            "KR"
+            if str(row.get("currency") or "").upper() == "KRW"
+            or symbol.endswith(".KS")
+            or symbol.isdigit()
+            else "US"
+        )
+        market_exposure[market] += exposure
+        total_exposure += exposure
+        embedded_extra += market_value * max(leverage - 1.0, 0.0)
+        if leverage > 1:
+            leveraged_positions.append({
+                "symbol": symbol,
+                "market_value_usd": round(market_value, 2),
+                "leverage": leverage,
+                "exposure_usd": round(exposure, 2),
+            })
+    market_total = sum(market_exposure.values())
+    market_weights = {
+        market: round(value / market_total, 4) if market_total else 0.0
+        for market, value in market_exposure.items()
+    }
+
+    debt = max(-(settled_cash or 0), 0.0)
+    margin_cushion_pct = cushion * 100 if cushion is not None else None
+    if margin_cushion_pct is None:
+        pressure_level = "unknown"
+    elif margin_cushion_pct < 15:
+        pressure_level = "critical"
+    elif margin_cushion_pct < 25:
+        pressure_level = "high"
+    elif margin_cushion_pct < 35:
+        pressure_level = "mid"
+    else:
+        pressure_level = "low"
+
+    return {
+        "available": True,
+        "source": "本地实盘诊断快照",
+        "as_of": saved.get("as_of"),
+        "net_liq": round(net_liq, 2),
+        "gross_long": round(gross_long, 2),
+        "maint_margin": _finite(maint, 2),
+        "excess_liquidity": _finite(excess, 2),
+        "equity_with_loan": _finite(equity_with_loan, 2),
+        "margin_cushion_pct": _finite(margin_cushion_pct, 1),
+        "pressure_level": pressure_level,
+        "settled_cash": _finite(settled_cash, 2),
+        "margin_debt": round(debt, 2),
+        "broker_leverage": round(gross_long / net_liq, 3) if gross_long else 0.0,
+        "embedded_extra_exposure": round(embedded_extra, 2),
+        "effective_exposure": round(total_exposure, 2),
+        "effective_leverage": round(total_exposure / net_liq, 3),
+        "market_weights": market_weights,
+        "leveraged_positions": leveraged_positions,
+        "stress_trigger_shock": (saved.get("stress") or {}).get("trigger_shock"),
+    }
+
+
+def _weighted_score(
+    values: dict[str, float | None],
+    weights: dict[str, float] | None,
+    *,
+    fallback: str,
+) -> tuple[float | None, str]:
+    valid = {key: float(value) for key, value in values.items() if value is not None}
+    if not valid:
+        return None, "unavailable"
+    if weights:
+        usable = {
+            key: max(float(weights.get(key.upper(), 0)), 0.0)
+            for key in valid
+        }
+        total = sum(usable.values())
+        if total > 0:
+            return (
+                round(sum(valid[key] * usable[key] for key in valid) / total, 1),
+                "personal_exposure_weighted",
+            )
+    if fallback == "max":
+        return round(max(valid.values()), 1), "worst_market"
+    return round(sum(valid.values()) / len(valid), 1), "available_market_mean"
+
+
+def _state_summary(
+    markets: dict[str, dict[str, Any]],
+    funding: dict[str, dict[str, Any]],
+    personal: dict[str, Any],
+) -> dict[str, Any]:
+    weights = personal.get("market_weights") if personal.get("available") else None
+    trigger, trigger_method = _weighted_score(
+        {
+            "US": markets["us"].get("unwind_score"),
+            "KR": markets["kr"].get("unwind_score"),
+        },
+        weights,
+        fallback="max",
+    )
+    crowding, crowding_method = _weighted_score(
+        {
+            "US": funding["us"].get("crowding_score") if funding["us"].get("available") else None,
+            "KR": funding["kr"].get("crowding_score") if funding["kr"].get("available") else None,
+        },
+        weights,
+        fallback="mean",
+    )
+    trigger_coverage, _ = _weighted_score(
+        {
+            "US": markets["us"].get("evidence_coverage"),
+            "KR": markets["kr"].get("evidence_coverage"),
+        },
+        weights,
+        fallback="mean",
+    )
+    funding_coverage = 0.0
+    if weights:
+        funding_coverage = sum(
+            float(weights.get(market, 0))
+            for market, key in (("US", "us"), ("KR", "kr"))
+            if funding[key].get("available")
+        ) * 100
+    else:
+        funding_coverage = sum(1 for key in ("us", "kr") if funding[key].get("available")) / 2 * 100
+    coverage = (
+        round((trigger_coverage or 0) * 0.75 + funding_coverage * 0.25, 1)
+        if trigger is not None
+        else 0.0
+    )
+    confidence = "high" if coverage >= 85 else "medium" if coverage >= 65 else "low"
+
+    trigger_band = "high" if (trigger or 0) >= 65 else "mid" if (trigger or 0) >= 35 else "low"
+    crowding_band = "high" if (crowding or 0) >= 65 else "mid" if (crowding or 0) >= 40 else "low"
+    if trigger_band == "high" and crowding_band != "low":
+        state, state_label, level = "forced_unwind", "强制去杠杆风险", "high"
+    elif trigger_band == "high":
+        state, state_label, level = "shock", "短期冲击", "high"
+    elif trigger_band == "mid" and crowding_band == "high":
+        state, state_label, level = "unwind_heating", "去杠杆升温", "mid"
+    elif crowding_band == "high":
+        state, state_label, level = "crowded", "高位拥挤", "mid"
+    elif trigger_band == "mid" or crowding_band == "mid":
+        state, state_label, level = "watch", "观察", "mid"
+    else:
+        state, state_label, level = "normal", "正常", "low"
+
+    market_scores = {
+        "US": markets["us"].get("unwind_score"),
+        "KR": markets["kr"].get("unwind_score"),
+    }
+    available_scores = {key: value for key, value in market_scores.items() if value is not None}
+    dominant_market = max(available_scores, key=available_scores.get) if available_scores else None
+    return {
+        # 旧字段保留给统一风险驾驶舱使用。
+        "unwind_score": trigger,
+        "unwind_level": level,
+        "dominant_market": dominant_market,
+        "trigger_score": trigger,
+        "trigger_band": trigger_band,
+        "crowding_score": crowding,
+        "crowding_band": crowding_band,
+        "state": state,
+        "state_label": state_label,
+        "confidence": confidence,
+        "evidence_coverage": coverage,
+        "trigger_method": trigger_method,
+        "crowding_method": crowding_method,
+    }
+
+
+def _risk_posture(summary: dict[str, Any], personal: dict[str, Any]) -> dict[str, Any]:
+    cushion = personal.get("margin_cushion_pct") if personal.get("available") else None
+    state = summary.get("state")
+    if (cushion is not None and cushion < 15) or state == "forced_unwind":
+        code, label, level = "reduce", "降低杠杆敞口", "high"
+        reason = "市场触发与账户脆弱度至少一项进入高风险区"
+    elif (cushion is not None and cushion < 25) or state == "shock":
+        code, label, level = "stop_add", "停止新增杠杆", "high"
+        reason = "保证金缓冲偏薄或即时冲击已进入高位"
+    elif (cushion is not None and cushion < 35) or state in {"unwind_heating", "crowded", "watch"}:
+        code, label, level = "defensive", "谨慎 · 只减不加", "mid"
+        reason = "账户缓冲或市场证据处于警戒区"
+    else:
+        code, label, level = "normal", "维持纪律", "low"
+        reason = "可用证据尚未形成明显去杠杆共振"
+    return {
+        "code": code,
+        "label": label,
+        "level": level,
+        "reason": reason,
+        "core": "核心中长期仓复核 thesis，不因单一压力分数机械清仓",
+        "tactical": (
+            "暂停新增 2X/3X 与 margin，优先检查同主题重复敞口"
+            if code != "normal"
+            else "波段仓继续遵守既定仓位上限，不把 Buying Power 当安全垫"
+        ),
+        "automated_action": False,
+    }
+
+
+def _evidence_ledger(
+    markets: dict[str, dict[str, Any]],
+    funding: dict[str, dict[str, Any]],
+    personal: dict[str, Any],
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for market, key in (("US", "us"), ("KR", "kr")):
+        aggregate = markets[key]
+        for component in aggregate.get("score_components") or []:
+            ratio = (
+                float(component.get("points") or 0) / float(component.get("max_points") or 1)
+            )
+            rows.append({
+                "key": f"{key}_{component['name']}",
+                "layer": "trigger",
+                "market": market,
+                "label": component["name"],
+                "value": component.get("value"),
+                "points": component.get("points"),
+                "max_points": component.get("max_points"),
+                "status": "high" if ratio >= 0.65 else "mid" if ratio >= 0.35 else "low",
+                "source": "Yahoo Finance（日K）",
+                "as_of": aggregate.get("as_of"),
+                "frequency": "daily / forming bar",
+                "confidence": "low" if component.get("provisional") else aggregate.get("confidence"),
+                "provisional": bool(component.get("provisional")),
+            })
+        fund = funding[key]
+        if fund.get("available"):
+            score = float(fund.get("crowding_score") or 0)
+            rows.append({
+                "key": f"{key}_funding",
+                "layer": "crowding",
+                "market": market,
+                "label": fund.get("label"),
+                "value": fund.get("latest"),
+                "comparison": {
+                    "mom": fund.get("mom"),
+                    "yoy": fund.get("yoy"),
+                    "percentile": fund.get("percentile_36"),
+                },
+                "status": "high" if score >= 65 else "mid" if score >= 40 else "low",
+                "source": fund.get("source"),
+                "as_of": fund.get("as_of"),
+                "frequency": fund.get("frequency"),
+                "confidence": "high",
+                "provisional": False,
+            })
+    if personal.get("available"):
+        cushion = personal.get("margin_cushion_pct")
+        rows.extend([
+            {
+                "key": "personal_margin_cushion",
+                "layer": "account",
+                "market": "ACCOUNT",
+                "label": "保证金缓冲",
+                "value": cushion,
+                "status": "high" if cushion is not None and cushion < 20 else "mid" if cushion is not None and cushion < 35 else "low",
+                "source": personal.get("source"),
+                "as_of": personal.get("as_of"),
+                "frequency": "manual snapshot",
+                "confidence": "high",
+                "provisional": False,
+            },
+            {
+                "key": "personal_effective_leverage",
+                "layer": "account",
+                "market": "ACCOUNT",
+                "label": "穿透后有效杠杆",
+                "value": personal.get("effective_leverage"),
+                "status": "high" if float(personal.get("effective_leverage") or 0) >= 1.5 else "mid" if float(personal.get("effective_leverage") or 0) >= 1.15 else "low",
+                "source": personal.get("source"),
+                "as_of": personal.get("as_of"),
+                "frequency": "manual snapshot",
+                "confidence": "high",
+                "provisional": False,
+            },
+        ])
+    return rows
+
+
+def _history_read() -> list[dict[str, Any]]:
+    try:
+        raw = json.loads(_HISTORY_FILE.read_text(encoding="utf-8"))
+        return raw if isinstance(raw, list) else []
+    except Exception:
+        return []
+
+
+def _history_append(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    history = _history_read()
+    summary = payload.get("summary") or {}
+    personal = payload.get("personal") or {}
+    point = {
+        "generated_at": payload.get("generated_at"),
+        "trigger_score": summary.get("trigger_score"),
+        "crowding_score": summary.get("crowding_score"),
+        "state": summary.get("state"),
+        "confidence": summary.get("confidence"),
+        "evidence_coverage": summary.get("evidence_coverage"),
+        "us_trigger": (payload.get("markets") or {}).get("us", {}).get("unwind_score"),
+        "kr_trigger": (payload.get("markets") or {}).get("kr", {}).get("unwind_score"),
+        "margin_cushion_pct": personal.get("margin_cushion_pct"),
+        "effective_leverage": personal.get("effective_leverage"),
+        "methodology_version": payload.get("methodology_version"),
+    }
+    if not history or history[-1].get("generated_at") != point["generated_at"]:
+        history.append(point)
+    history = history[-_HISTORY_LIMIT:]
+    try:
+        _HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+        _HISTORY_FILE.write_text(
+            json.dumps(_json_safe(history), ensure_ascii=False, indent=2),
+            encoding="utf-8",
+        )
+    except Exception as exc:
+        _logger.warning("[LeverageMonitor] 写历史快照失败：%s", exc)
+    return history
+
+
 def _build_dashboard() -> dict[str, Any]:
     requested = sorted({p.symbol for p in PRODUCTS} | {p.benchmark for p in PRODUCTS})
     market_error: str | None = None
@@ -646,44 +1054,29 @@ def _build_dashboard() -> dict[str, Any]:
         "us": _market_aggregate(us_rows, funding["us"]),
         "kr": _market_aggregate(kr_rows, funding["kr"]),
     }
-
-    scores = [
-        markets[key]["unwind_score"]
-        for key in ("us", "kr")
-        if markets[key].get("unwind_score") is not None
-    ]
-    global_score = round(max(scores), 1) if scores else None
-    global_level = (
-        "high" if global_score is not None and global_score >= 65
-        else "mid" if global_score is not None and global_score >= 35
-        else "low"
-    )
-    us_score = markets["us"].get("unwind_score")
-    kr_score = markets["kr"].get("unwind_score")
+    personal = _load_personal_snapshot()
+    summary = _state_summary(markets, funding, personal)
+    posture = _risk_posture(summary, personal)
     now_utc = datetime.now(timezone.utc)
     warnings = [
         "yfinance 为免费行情源：盘中可能延迟；非交易所实时 feed。",
-        "盘中最新日 K 的成交量按已过交易时段比例折算为 pace，属于估算值。",
+        "盘中最新日 K 的成交量 pace 仅作 preliminary 展示，不进入正式 Trigger 分数。",
         "杠杆/反向 ETF 追踪的是每日目标倍数；20 日 tracking drag 按每日复利目标计算。",
         "融资余额是慢变量：FINRA 为月度滞后数据，不能单独用于 intraday 判断。",
     ]
     if market_error:
         warnings.append(f"本次行情下载失败：{market_error}")
-    return {
+    payload = {
         "generated_at": now_utc.isoformat(timespec="seconds"),
         "market_data_source": "yfinance",
         "market_data_quality": "delayed_or_near_real_time",
         "is_stale": False,
-        "summary": {
-            "unwind_score": global_score,
-            "unwind_level": global_level,
-            "dominant_market": (
-                "US" if float(us_score if us_score is not None else -1) >= float(kr_score if kr_score is not None else -1)
-                else "KR"
-            ) if scores else None,
-        },
+        "summary": summary,
+        "posture": posture,
+        "personal": personal,
         "markets": markets,
         "funding": funding,
+        "evidence": _evidence_ledger(markets, funding, personal),
         "products": rows,
         "sources": [
             {
@@ -703,8 +1096,26 @@ def _build_dashboard() -> dict[str, Any]:
             },
         ],
         "warnings": warnings,
-        "methodology_version": "1.0",
+        "methodology_version": METHODOLOGY_VERSION,
     }
+    payload["history"] = _history_append(payload)
+    return payload
+
+
+def _with_current_personal(payload: dict[str, Any]) -> dict[str, Any]:
+    """市场 cache 可复用，但账户快照每次读取，避免新诊断被 15 分钟 cache 遮住。"""
+    markets = payload.get("markets") or {}
+    funding = payload.get("funding") or {}
+    if not all(key in markets for key in ("us", "kr")) or not all(key in funding for key in ("us", "kr")):
+        return payload
+    refreshed = dict(payload)
+    personal = _load_personal_snapshot()
+    summary = _state_summary(markets, funding, personal)
+    refreshed["personal"] = personal
+    refreshed["summary"] = summary
+    refreshed["posture"] = _risk_posture(summary, personal)
+    refreshed["evidence"] = _evidence_ledger(markets, funding, personal)
+    return refreshed
 
 
 def get_dashboard(force: bool = False) -> dict[str, Any]:
@@ -712,18 +1123,21 @@ def get_dashboard(force: bool = False) -> dict[str, Any]:
     global _MEM_CACHE
     now = time.time()
     if not force and _MEM_CACHE and now - _MEM_CACHE[0] < _CACHE_TTL_SECONDS:
-        return _MEM_CACHE[1]
+        return _with_current_personal(_MEM_CACHE[1])
 
     disk = _read_disk_cache()
+    # 方法升级后旧 cache 缺少二维状态、账户关联和证据质量字段，不能继续冒充新结果。
+    if disk and disk.get("methodology_version") != METHODOLOGY_VERSION:
+        disk = None
     if not force and disk:
         generated = pd.to_datetime(disk.get("generated_at"), utc=True, errors="coerce")
         if not pd.isna(generated) and (pd.Timestamp.now(tz="UTC") - generated).total_seconds() < _CACHE_TTL_SECONDS:
             _MEM_CACHE = (now, disk)
-            return disk
+            return _with_current_personal(disk)
 
     with _LOCK:
         if not force and _MEM_CACHE and now - _MEM_CACHE[0] < _CACHE_TTL_SECONDS:
-            return _MEM_CACHE[1]
+            return _with_current_personal(_MEM_CACHE[1])
         try:
             payload = _json_safe(_build_dashboard())
             usable = any(row.get("available") for row in payload.get("products", []))
@@ -732,7 +1146,7 @@ def get_dashboard(force: bool = False) -> dict[str, Any]:
                 fallback["is_stale"] = True
                 fallback["stale_reason"] = "本次行情不可用，展示最近成功缓存"
                 _MEM_CACHE = (time.time(), fallback)
-                return fallback
+                return _with_current_personal(fallback)
             _MEM_CACHE = (time.time(), payload)
             if usable:
                 _write_disk_cache(payload)
@@ -743,13 +1157,14 @@ def get_dashboard(force: bool = False) -> dict[str, Any]:
                 fallback["is_stale"] = True
                 fallback["stale_reason"] = str(exc)
                 _MEM_CACHE = (time.time(), fallback)
-                return fallback
+                return _with_current_personal(fallback)
             raise
 
 
 __all__ = [
     "PRODUCTS",
     "get_dashboard",
+    "known_leverage_for",
     "_parse_finra_html",
     "_parse_finra_excel",
     "_parse_korea_margin_items",

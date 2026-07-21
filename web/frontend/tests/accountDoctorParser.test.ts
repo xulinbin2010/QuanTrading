@@ -67,16 +67,16 @@ SNDK  闪迪公司/特拉华州
 
   assert.equal(rows.length, 8)
   assert.deepEqual(
-    rows.map((row) => [row.symbol, row.market_value_usd, row.currency]),
+    rows.map((row) => [row.symbol, row.market_value_usd, row.currency, row.leverage_factor]),
     [
-      ['000660', 10844.44, 'KRW'],
-      ['ALAB', 3036.08, 'USD'],
-      ['ARMG', 2126, 'USD'],
-      ['DRAM', 10420, 'USD'],
-      ['MU', 33760, 'USD'],
-      ['MUU', 5376, 'USD'],
-      ['RAM', 2378, 'USD'],
-      ['SNDK', 5400.12, 'USD'],
+      ['000660', 10844.44, 'KRW', 1],
+      ['ALAB', 3036.08, 'USD', 1],
+      ['ARMG', 2126, 'USD', 2],
+      ['DRAM', 10420, 'USD', 1],
+      ['MU', 33760, 'USD', 1],
+      ['MUU', 5376, 'USD', 2],
+      ['RAM', 2378, 'USD', 2],
+      ['SNDK', 5400.12, 'USD', 1],
     ],
   )
 })

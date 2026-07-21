@@ -17,6 +17,14 @@ export type DoctorAccount = {
 }
 
 export const DEFAULT_KRW_RATE = 1350
+const KNOWN_DAILY_LEVERAGE: Record<string, number> = {
+  TQQQ: 3, SQQQ: 3, UPRO: 3, SPXU: 3, SOXL: 3, SOXS: 3,
+  TECL: 3, TECS: 3, TNA: 3, TZA: 3, FAS: 3, FAZ: 3,
+  LABU: 3, LABD: 3, NVDL: 2, TSLL: 2, MSTU: 2, BITX: 2,
+  MUU: 2, ARMG: 2, RAM: 2,
+  '122630.KS': 2, '252670.KS': 2, '233740.KS': 2,
+  '122630': 2, '252670': 2, '233740': 2,
+}
 
 const numOf = (s: string): number | null => {
   const cleaned = s.replace(/[$,%\s]/g, '')
@@ -67,8 +75,8 @@ export function parsePositionsBlock(text: string, krwRate: number): DoctorPositi
         name: current.name || undefined,
         market_value_usd: roundMoney(marketValue),
         theme: '其它',
-        leverage_factor: 1,
-        is_leveraged: false,
+        leverage_factor: KNOWN_DAILY_LEVERAGE[current.symbol.toUpperCase()] ?? 1,
+        is_leveraged: (KNOWN_DAILY_LEVERAGE[current.symbol.toUpperCase()] ?? 1) > 1,
         currency: current.krw ? 'KRW' : 'USD',
       })
     }

@@ -9,6 +9,9 @@ type ScoreComponent = {
   value: number | null
   points: number
   max_points: number
+  evidence_points?: number
+  quality?: number
+  provisional?: boolean
 }
 
 type MarketAggregate = {
@@ -23,6 +26,8 @@ type MarketAggregate = {
   median_abs_tracking_gap_1d: number | null
   unwind_score: number | null
   unwind_level: 'low' | 'mid' | 'high'
+  evidence_coverage?: number
+  confidence?: 'low' | 'medium' | 'high'
   score_components: ScoreComponent[]
 }
 
@@ -90,11 +95,78 @@ type LeverageDashboard = {
     unwind_score: number | null
     unwind_level: 'low' | 'mid' | 'high'
     dominant_market?: 'US' | 'KR' | null
+    trigger_score?: number | null
+    trigger_band?: 'low' | 'mid' | 'high'
+    crowding_score?: number | null
+    crowding_band?: 'low' | 'mid' | 'high'
+    state?: string
+    state_label?: string
+    confidence?: 'low' | 'medium' | 'high'
+    evidence_coverage?: number
+    trigger_method?: string
+    crowding_method?: string
+  }
+  posture?: {
+    code: string
+    label: string
+    level: 'low' | 'mid' | 'high'
+    reason: string
+    core: string
+    tactical: string
+    automated_action: boolean
+  }
+  personal?: {
+    available: boolean
+    error?: string
+    setup_hint?: string
+    source?: string
+    as_of?: string
+    net_liq?: number
+    gross_long?: number
+    maint_margin?: number
+    excess_liquidity?: number
+    margin_cushion_pct?: number
+    pressure_level?: string
+    margin_debt?: number
+    broker_leverage?: number
+    embedded_extra_exposure?: number
+    effective_exposure?: number
+    effective_leverage?: number
+    market_weights?: Record<'US' | 'KR', number>
+    leveraged_positions?: Array<{ symbol: string; market_value_usd: number; leverage: number; exposure_usd: number }>
+    stress_trigger_shock?: number | null
   }
   markets: { us: MarketAggregate; kr: MarketAggregate }
   funding: { us: FundingData; kr: FundingData }
+  evidence?: Array<{
+    key: string
+    layer: 'trigger' | 'crowding' | 'account'
+    market: 'US' | 'KR' | 'ACCOUNT'
+    label: string
+    value?: number | null
+    points?: number
+    max_points?: number
+    comparison?: { mom?: number | null; yoy?: number | null; percentile?: number | null }
+    status: 'low' | 'mid' | 'high'
+    source?: string
+    as_of?: string
+    frequency?: string
+    confidence?: 'low' | 'medium' | 'high'
+    provisional?: boolean
+  }>
+  history?: Array<{
+    generated_at: string
+    trigger_score?: number | null
+    crowding_score?: number | null
+    state?: string
+    confidence?: string
+    evidence_coverage?: number
+    margin_cushion_pct?: number | null
+    effective_leverage?: number | null
+  }>
   products: ProductRow[]
   warnings: string[]
+  methodology_version?: string
 }
 
 const pct = (value: number | null | undefined, digits = 1) =>
@@ -136,31 +208,36 @@ function levelStyle(level?: string) {
   }
 }
 
-function ScoreCard({ title, score, level, subtitle }: {
+function DecisionCard({ title, value, unit, level, subtitle, meta }: {
   title: string
-  score: number | null
+  value: string
+  unit?: string
   level?: string
   subtitle: string
+  meta?: string
 }) {
   const style = levelStyle(level)
   return (
-    <div className={`rounded-xl border px-4 py-3 ${style.band}`}>
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-sm text-slate-300">{title}</div>
-        <span className={`text-xs font-medium ${style.text}`}>{style.label}</span>
+    <div className={`rounded-xl border px-4 py-3 min-h-[132px] ${style.band}`}>
+      <div className="text-sm text-slate-300">{title}</div>
+      <div className="flex items-baseline gap-2 mt-2">
+        <span className={`text-2xl font-semibold ${style.text}`}>{value}</span>
+        {unit && <span className="text-xs text-slate-500">{unit}</span>}
       </div>
-      <div className="flex items-end gap-2 mt-1">
-        <span className={`text-3xl font-semibold font-mono ${style.text}`}>
-          {score == null ? '—' : score.toFixed(0)}
-        </span>
-        <span className="text-xs text-slate-500 mb-1">/ 100</span>
-      </div>
-      <div className="h-1.5 rounded-full bg-slate-700 mt-2 overflow-hidden">
-        <div className={`h-full rounded-full ${style.fill}`} style={{ width: `${Math.max(0, Math.min(score ?? 0, 100))}%` }} />
-      </div>
-      <div className="text-xs text-slate-400 mt-2">{subtitle}</div>
+      <div className="text-xs text-slate-300 mt-2 leading-relaxed">{subtitle}</div>
+      {meta && <div className="text-[11px] text-slate-500 mt-1">{meta}</div>}
     </div>
   )
+}
+
+function ConfidenceBadge({ value }: { value?: string }) {
+  const label = value === 'high' ? '高' : value === 'medium' ? '中' : '低'
+  const cls = value === 'high'
+    ? 'bg-emerald-900/40 text-emerald-300'
+    : value === 'medium'
+      ? 'bg-yellow-900/40 text-yellow-300'
+      : 'bg-slate-700 text-slate-300'
+  return <span className={`text-[10px] px-1.5 py-0.5 rounded ${cls}`}>置信度 {label}</span>
 }
 
 function MarketCard({ market, data }: { market: 'US' | 'KR'; data: MarketAggregate }) {
@@ -178,6 +255,10 @@ function MarketCard({ market, data }: { market: 'US' | 'KR'; data: MarketAggrega
         <div className={`text-2xl font-mono font-semibold ${style.text}`}>
           {data.unwind_score == null ? '—' : data.unwind_score.toFixed(0)}
         </div>
+      </div>
+      <div className="flex items-center gap-2 mt-2">
+        <span className="text-[11px] text-slate-500">证据覆盖 {data.evidence_coverage?.toFixed(0) ?? '—'}%</span>
+        <ConfidenceBadge value={data.confidence} />
       </div>
       <div className="grid grid-cols-2 gap-x-4 gap-y-2 mt-4 text-xs">
         <div>
@@ -205,8 +286,188 @@ function MarketCard({ market, data }: { market: 'US' | 'KR'; data: MarketAggrega
               <div className="h-full bg-blue-500 rounded-full" style={{ width: `${c.max_points ? c.points / c.max_points * 100 : 0}%` }} />
             </div>
             <span className="font-mono text-slate-400 w-12 text-right">{c.points}/{c.max_points}</span>
+            {c.provisional && <span className="text-[9px] text-yellow-400">盘中</span>}
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+function HistoryCard({ history }: { history: NonNullable<LeverageDashboard['history']> }) {
+  const shown = history.slice(-120)
+  const option = {
+    backgroundColor: 'transparent',
+    grid: { left: 42, right: 44, top: 30, bottom: 34 },
+    legend: {
+      top: 0,
+      textStyle: { color: '#94a3b8', fontSize: 10 },
+      data: ['Unwind Trigger', 'Crowding', '账户缓冲', '有效杠杆'],
+    },
+    tooltip: { trigger: 'axis' },
+    xAxis: {
+      type: 'category',
+      data: shown.map(p => new Date(p.generated_at).toLocaleString('zh-CN', {
+        timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+      })),
+      axisLabel: { color: '#64748b', fontSize: 9, hideOverlap: true },
+      axisLine: { lineStyle: { color: '#334155' } },
+    },
+    yAxis: [
+      {
+        type: 'value', min: 0, max: 100,
+        axisLabel: { color: '#64748b', fontSize: 9, formatter: '{value}' },
+        splitLine: { lineStyle: { color: '#33415555' } },
+      },
+      {
+        type: 'value', min: 0, max: (value: { max: number }) => Math.max(2, Math.ceil(value.max * 1.15)),
+        axisLabel: { color: '#64748b', fontSize: 9, formatter: '{value}×' },
+        splitLine: { show: false },
+      },
+    ],
+    series: [
+      {
+        name: 'Unwind Trigger', type: 'line', showSymbol: false, connectNulls: true,
+        data: shown.map(p => p.trigger_score), lineStyle: { color: '#f87171', width: 2 },
+        markLine: {
+          symbol: 'none', label: { color: '#94a3b8', fontSize: 9 },
+          lineStyle: { type: 'dashed', color: '#64748b66' },
+          data: [{ yAxis: 35, name: '升温' }, { yAxis: 65, name: '高压' }],
+        },
+      },
+      {
+        name: 'Crowding', type: 'line', showSymbol: false, connectNulls: true,
+        data: shown.map(p => p.crowding_score), lineStyle: { color: '#a78bfa', width: 1.5 },
+      },
+      {
+        name: '账户缓冲', type: 'line', showSymbol: false, connectNulls: true,
+        data: shown.map(p => p.margin_cushion_pct), lineStyle: { color: '#38bdf8', width: 1.5 },
+      },
+      {
+        name: '有效杠杆', type: 'line', yAxisIndex: 1, showSymbol: false, connectNulls: true,
+        data: shown.map(p => p.effective_leverage), lineStyle: { color: '#facc15', width: 1.5 },
+      },
+    ],
+  }
+  return (
+    <div className="rounded-xl border border-slate-700 bg-slate-800/70 p-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-sm font-semibold text-white">风险状态历史</div>
+          <div className="text-xs text-slate-500 mt-0.5">保存 raw-derived 快照，方法版本变化后仍可区分</div>
+        </div>
+        <span className="text-xs text-slate-500">{shown.length} 个快照</span>
+      </div>
+      {shown.length > 0
+        ? <ReactECharts option={option} style={{ height: 260 }} notMerge />
+        : <div className="h-[260px] flex items-center justify-center text-sm text-slate-500">刷新后开始积累历史</div>}
+    </div>
+  )
+}
+
+function evidenceValue(row: NonNullable<LeverageDashboard['evidence']>[number]) {
+  if (row.layer === 'account')
+    return row.label.includes('缓冲') ? `${row.value?.toFixed(1) ?? '—'}%` : `${row.value?.toFixed(2) ?? '—'}×`
+  if (row.layer === 'crowding')
+    return row.comparison?.percentile == null ? '—' : `${(row.comparison.percentile * 100).toFixed(0)}%分位`
+  if (row.label.includes('成交')) return ratio(row.value)
+  return pct(row.value, row.label.includes('偏差') ? 2 : 1)
+}
+
+function EvidenceLedger({ rows }: { rows: NonNullable<LeverageDashboard['evidence']> }) {
+  const statusText = { low: '正常', mid: '观察', high: '高压' } as const
+  return (
+    <div className="rounded-xl border border-slate-700 bg-slate-800/60 overflow-hidden">
+      <div className="px-4 py-3 border-b border-slate-700">
+        <div className="text-sm font-semibold text-white">今日证据账本</div>
+        <div className="text-xs text-slate-500 mt-0.5">每条结论都保留数值、来源、as-of 与置信度</div>
+      </div>
+      <div className="overflow-x-auto max-h-[430px]">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-slate-800">
+            <tr className="border-b border-slate-700 text-xs text-slate-500">
+              <th className="text-left px-4 py-2 font-medium">层级 / 指标</th>
+              <th className="text-right px-3 py-2 font-medium">当前</th>
+              <th className="text-center px-3 py-2 font-medium">状态</th>
+              <th className="text-left px-3 py-2 font-medium">来源 / 时点</th>
+              <th className="text-right px-4 py-2 font-medium">质量</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(row => (
+              <tr key={row.key} className="border-b border-slate-700/40">
+                <td className="px-4 py-2">
+                  <div className="text-slate-200">{row.label}</div>
+                  <div className="text-[10px] text-slate-500">{row.layer.toUpperCase()} · {row.market}</div>
+                </td>
+                <td className="px-3 py-2 text-right font-mono text-slate-200">{evidenceValue(row)}</td>
+                <td className="px-3 py-2 text-center">
+                  <span className={`text-[11px] px-2 py-0.5 rounded ${
+                    row.status === 'high' ? 'bg-red-900/40 text-red-300'
+                      : row.status === 'mid' ? 'bg-yellow-900/40 text-yellow-300'
+                        : 'bg-emerald-900/30 text-emerald-300'
+                  }`}>{statusText[row.status]}</span>
+                </td>
+                <td className="px-3 py-2">
+                  <div className="text-xs text-slate-300">{row.source || '—'}</div>
+                  <div className="text-[10px] text-slate-500">{row.as_of || '—'} · {row.frequency || '—'}</div>
+                </td>
+                <td className="px-4 py-2 text-right">
+                  <ConfidenceBadge value={row.confidence} />
+                  {row.provisional && <div className="text-[9px] text-yellow-400 mt-1">Preliminary</div>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  )
+}
+
+function InterpretationCard({ data }: { data: LeverageDashboard }) {
+  const personal = data.personal
+  const history = data.history ?? []
+  const previous = history.length >= 2 ? history[history.length - 2] : undefined
+  const current = history.length ? history[history.length - 1] : undefined
+  const delta = current?.trigger_score != null && previous?.trigger_score != null
+    ? current.trigger_score - previous.trigger_score
+    : null
+  return (
+    <div className="rounded-xl border border-slate-700 bg-slate-800/70 p-4 space-y-4">
+      <div>
+        <div className="text-sm font-semibold text-white">风险解释</div>
+        <div className="text-xs text-slate-500 mt-0.5">确定性规则生成；AI 不参与计分</div>
+      </div>
+      <div className="rounded-lg bg-slate-900/50 border border-slate-700 px-3 py-2">
+        <div className="text-xs text-slate-500">当前状态</div>
+        <div className="text-lg font-semibold text-slate-100 mt-0.5">{data.summary.state_label || '—'}</div>
+        <div className="text-xs text-slate-400 mt-1">
+          Crowding {data.summary.crowding_score?.toFixed(0) ?? '—'} × Trigger {data.summary.trigger_score?.toFixed(0) ?? '—'}
+          {delta != null && <span className={delta > 0 ? 'text-red-300' : delta < 0 ? 'text-emerald-300' : ''}> · 较上次 {delta >= 0 ? '+' : ''}{delta.toFixed(1)}</span>}
+        </div>
+      </div>
+      <div className="space-y-2 text-sm text-slate-300 leading-relaxed">
+        <div>• {data.posture?.reason || '等待更多可用证据。'}</div>
+        {personal?.available
+          ? <>
+              <div>• 账户缓冲 {personal.margin_cushion_pct?.toFixed(1) ?? '—'}%，margin debt {numberCompact(personal.margin_debt, 'USD')}。</div>
+              <div>• Broker leverage {personal.broker_leverage?.toFixed(2) ?? '—'}×；计入 2X/3X 后 {personal.effective_leverage?.toFixed(2) ?? '—'}×。</div>
+            </>
+          : <div>• 未关联有效实盘诊断快照，当前姿态只反映市场，不反映你的爆仓距离。</div>}
+      </div>
+      <div className="border-t border-slate-700 pt-3 space-y-2">
+        <div>
+          <div className="text-xs text-slate-500">核心中长期仓</div>
+          <div className="text-sm text-slate-200 mt-0.5">{data.posture?.core}</div>
+        </div>
+        <div>
+          <div className="text-xs text-slate-500">杠杆 / 波段仓</div>
+          <div className="text-sm text-slate-200 mt-0.5">{data.posture?.tactical}</div>
+        </div>
+      </div>
+      <div className="text-[11px] text-slate-500">
+        Evidence coverage {data.summary.evidence_coverage?.toFixed(0) ?? '—'}% · methodology {data.methodology_version || '—'} · 不触发自动交易
       </div>
     </div>
   )
@@ -451,7 +712,10 @@ export default function LeverageMonitor({ embedded = false }: { embedded?: boole
     hour12: false,
   })
   const totalAvailable = data.products.filter(p => p.available).length
-  const global = levelStyle(data.summary.unwind_level)
+  const personal = data.personal
+  const personalLevel = personal?.pressure_level === 'critical' || personal?.pressure_level === 'high'
+    ? 'high'
+    : personal?.pressure_level === 'mid' ? 'mid' : 'low'
 
   return (
     <div className="space-y-5">
@@ -482,41 +746,46 @@ export default function LeverageMonitor({ embedded = false }: { embedded?: boole
         </div>
       )}
 
-      <div className={`rounded-xl border px-5 py-4 ${global.band}`}>
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div>
-            <div className="text-xs text-slate-400">当前去杠杆压力 · 取美韩两市场较高者</div>
-            <div className="flex items-baseline gap-3 mt-1">
-              <span className={`text-4xl font-mono font-semibold ${global.text}`}>
-                {data.summary.unwind_score?.toFixed(0) ?? '—'}
-              </span>
-              <span className={`text-sm font-medium ${global.text}`}>{global.label}</span>
-              {data.summary.dominant_market && (
-                <span className="text-xs px-2 py-0.5 rounded bg-slate-800/70 text-slate-300">
-                  主导市场 {data.summary.dominant_market === 'US' ? '🇺🇸 美国' : '🇰🇷 韩国'}
-                </span>
-              )}
-            </div>
-          </div>
-          <div className="max-w-xl text-sm text-slate-300 leading-relaxed">
-            {data.summary.unwind_level === 'high'
-              ? '多项即时信号正在共振：重点检查融资仓、2X/3X 产品和高 beta 主仓的隔夜跳空风险。'
-              : data.summary.unwind_level === 'mid'
-              ? '去杠杆信号开始升温，但尚未全面共振；关注反向 ETF 成交是否继续放大。'
-              : '即时去杠杆信号尚未形成明显共振；高融资余额仍可能代表潜在脆弱性。'}
-          </div>
-        </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+        <DecisionCard
+          title="市场去杠杆状态"
+          value={data.summary.state_label || '—'}
+          level={data.summary.unwind_level}
+          subtitle={`Crowding ${data.summary.crowding_score?.toFixed(0) ?? '—'} × Trigger ${data.summary.trigger_score?.toFixed(0) ?? '—'}`}
+          meta={`证据覆盖 ${data.summary.evidence_coverage?.toFixed(0) ?? '—'}% · 置信度 ${data.summary.confidence === 'high' ? '高' : data.summary.confidence === 'medium' ? '中' : '低'}`}
+        />
+        <DecisionCard
+          title="我的保证金缓冲"
+          value={personal?.available && personal.margin_cushion_pct != null ? `${personal.margin_cushion_pct.toFixed(1)}%` : '未关联'}
+          level={personal?.available ? personalLevel : 'low'}
+          subtitle={personal?.available
+            ? `Excess ${numberCompact(personal.excess_liquidity, 'USD')} / EWL`
+            : personal?.setup_hint || '先在实盘诊断保存账户快照'}
+          meta={personal?.as_of ? `快照 ${personal.as_of}` : '不接正式账户 API'}
+        />
+        <DecisionCard
+          title="穿透后有效杠杆"
+          value={personal?.available && personal.effective_leverage != null ? personal.effective_leverage.toFixed(2) : '—'}
+          unit={personal?.available ? '× 净值' : undefined}
+          level={(personal?.effective_leverage ?? 0) >= 1.5 ? 'high' : (personal?.effective_leverage ?? 0) >= 1.15 ? 'mid' : 'low'}
+          subtitle={personal?.available
+            ? `Broker ${personal.broker_leverage?.toFixed(2) ?? '—'}× + ETF embedded`
+            : '需要持仓市值与 2X/3X 产品映射'}
+          meta={personal?.available ? `融资负债 ${numberCompact(personal.margin_debt, 'USD')}` : undefined}
+        />
+        <DecisionCard
+          title="当前风控姿态"
+          value={data.posture?.label || '—'}
+          level={data.posture?.level}
+          subtitle={data.posture?.reason || '等待更多证据'}
+          meta="Guardrail，不是自动买卖信号"
+        />
       </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
-        <ScoreCard
-          title="跨市场 Unwind"
-          score={data.summary.unwind_score}
-          level={data.summary.unwind_level}
-          subtitle="即时价格 + 成交 pace + tracking dislocation"
-        />
         <MarketCard market="US" data={data.markets.us} />
         <MarketCard market="KR" data={data.markets.kr} />
+        <HistoryCard history={data.history ?? []} />
       </div>
 
       <div>
@@ -532,13 +801,20 @@ export default function LeverageMonitor({ embedded = false }: { embedded?: boole
         </div>
       </div>
 
+      <div className="grid grid-cols-1 xl:grid-cols-[1.65fr_1fr] gap-4">
+        <EvidenceLedger rows={data.evidence ?? []} />
+        <InterpretationCard data={data} />
+      </div>
+
       <ProductTable rows={data.products} />
 
       {/* 说明 */}
       <div className="text-sm text-slate-400 space-y-1">
-        <div>· <span className="text-slate-300">Unwind score</span> 是透明的观察指标，不直接触发交易：多头杠杆下跌、成交放大、反向产品上涨/放量、跟踪偏差和融资收缩按可用项归一化为 0–100。</div>
+        <div>· <span className="text-slate-300">二维状态</span> 把慢变量 Crowding 与快变量 Unwind Trigger 分开；FINRA/KOFIA 融资数据不再混入盘中触发分数。</div>
+        <div>· <span className="text-slate-300">Evidence coverage</span> 使用固定权重；缺数据会降低覆盖率与置信度，不会把少量可用指标重新归一化成 100 分。</div>
+        <div>· <span className="text-slate-300">个人账户</span> 只读取本地“实盘诊断”快照；穿透杠杆自动识别注册表中的 MUU、RAM、ARMG 等每日 2X/3X 产品，不连接正式账户 API。</div>
         <div>· <span className="text-slate-300">Tracking drag</span> 按“每日目标倍数”逐日复利计算，不用错误的“20 日指数涨幅 × 2/3”近似；震荡行情中的 volatility decay 会自然反映出来。</div>
-        <div>· <span className="text-slate-300">成交 pace</span> 在交易时段内按已过时间比例折算，标有“估”的值不是完整日成交量；yfinance 免费行情可能延迟，不能当作交易所 real-time feed。</div>
+        <div>· <span className="text-slate-300">成交 pace</span> 在交易时段内按已过时间比例折算，标有“估”的值只作 preliminary 展示、不进入正式 Trigger；yfinance 免费行情不能当作交易所 real-time feed。</div>
         {data.warnings.map((warning, i) => <div key={i}>· {warning}</div>)}
       </div>
     </div>

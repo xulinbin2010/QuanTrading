@@ -66,7 +66,7 @@ export default function AccountDoctor() {
     if (!ps.length && !accN) { setError('两个框都没解析出内容：①框贴持仓明细，②框贴账户总览。'); return }
     if (ps.length) setPositions(ps)
     if (accN) setAccount((a) => ({ ...a, ...acc }))
-    setNote(`已解析 ${ps.length} 只持仓${accN ? ` + ${accN} 个账户字段` : ''}。券商导出不含「主题」「杠杆×」，请在下表补这两列后再点「开始诊断」`)
+    setNote(`已解析 ${ps.length} 只持仓${accN ? ` + ${accN} 个账户字段` : ''}。已知 2X/3X 产品会自动识别；请核对「主题」与未收录产品的杠杆倍数后再诊断。`)
     setShowPaste(false); setPosPaste(''); setAccPaste('')
   }
 
@@ -163,7 +163,9 @@ export default function AccountDoctor() {
                   解析出 <b className="text-emerald-300">{posPreview.length}</b> 只：
                   {posPreview.map((p) => (
                     <span key={p.symbol} className="inline-block mr-2 font-mono">
-                      {p.symbol} ${fmt(p.market_value_usd)}{p.currency === 'KRW' ? <span className="text-amber-400">·KRW折</span> : ''}
+                      {p.symbol} ${fmt(p.market_value_usd)}
+                      {Number(p.leverage_factor) > 1 && <span className="text-blue-300">·{p.leverage_factor}X</span>}
+                      {p.currency === 'KRW' ? <span className="text-amber-400">·KRW折</span> : ''}
                     </span>
                   ))}
                 </div>

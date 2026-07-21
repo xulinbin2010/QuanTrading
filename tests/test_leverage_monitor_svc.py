@@ -10,7 +10,10 @@ from web.services.leverage_monitor_svc import (
     _parse_finra_html,
     _parse_korea_margin_items,
     _product_row,
+    _risk_posture,
+    _state_summary,
     _tracking_metrics,
+    known_leverage_for,
 )
 
 
@@ -93,6 +96,120 @@ class LeverageMonitorServiceTest(unittest.TestCase):
         self.assertEqual(result["as_of"], "2026-07-17")
         self.assertEqual(result["older_bar_count"], 0)
         self.assertEqual(sum(c["max_points"] for c in result["score_components"]), 100)
+        self.assertEqual(result["evidence_coverage"], 100.0)
+        self.assertEqual(result["confidence"], "high")
+
+    def test_missing_evidence_is_not_renormalized_to_full_score(self):
+        rows = [{
+            "available": True,
+            "direction": "long",
+            "latest_date": "2026-07-17",
+            "ret_1d": -0.06,
+            "volume_ratio": None,
+            "tracking_gap_1d": None,
+            "dollar_volume": 1_000_000,
+        }]
+
+        result = _market_aggregate(rows, funding={"available": False})
+
+        self.assertIsNone(result["unwind_score"])
+        self.assertEqual(result["evidence_coverage"], 35.0)
+        self.assertEqual(result["confidence"], "low")
+
+    def test_monthly_funding_does_not_enter_intraday_unwind_score(self):
+        rows = [
+            {
+                "available": True,
+                "direction": "long",
+                "latest_date": "2026-07-17",
+                "ret_1d": 0.0,
+                "volume_ratio": 1.0,
+                "tracking_gap_1d": 0.0,
+                "dollar_volume": 1_000_000,
+            },
+            {
+                "available": True,
+                "direction": "inverse",
+                "latest_date": "2026-07-17",
+                "ret_1d": 0.0,
+                "volume_ratio": 1.0,
+                "tracking_gap_1d": 0.0,
+                "dollar_volume": 1_000_000,
+            },
+        ]
+
+        result = _market_aggregate(rows, funding={"available": True, "mom": -0.20})
+
+        self.assertEqual(result["unwind_score"], 0.0)
+        self.assertNotIn("融资余额收缩", [c["name"] for c in result["score_components"]])
+
+    def test_forming_bar_volume_is_preliminary_and_not_scored(self):
+        rows = [
+            {
+                "available": True,
+                "direction": "long",
+                "latest_date": "2026-07-17",
+                "ret_1d": -0.06,
+                "volume_ratio": 3.0,
+                "volume_estimated": True,
+                "tracking_gap_1d": -0.02,
+                "dollar_volume": 1_000_000,
+            },
+            {
+                "available": True,
+                "direction": "inverse",
+                "latest_date": "2026-07-17",
+                "ret_1d": 0.06,
+                "volume_ratio": 3.0,
+                "volume_estimated": True,
+                "tracking_gap_1d": 0.02,
+                "dollar_volume": 1_000_000,
+            },
+        ]
+
+        result = _market_aggregate(rows, funding=None)
+
+        volume = [c for c in result["score_components"] if "成交" in c["name"]]
+        self.assertTrue(all(c["provisional"] for c in volume))
+        self.assertTrue(all(c["points"] == 0 for c in volume))
+        self.assertEqual(result["unwind_score"], 65.0)
+        self.assertEqual(result["evidence_coverage"], 65.0)
+
+    def test_personal_leveraged_products_are_in_explicit_registry(self):
+        self.assertEqual(known_leverage_for("MUU"), 2.0)
+        self.assertEqual(known_leverage_for("RAM"), 2.0)
+        self.assertEqual(known_leverage_for("ARMG"), 2.0)
+        self.assertEqual(known_leverage_for("MU"), 1.0)
+
+    def test_state_uses_personal_market_exposure_weights(self):
+        markets = {
+            "us": {"unwind_score": 20.0, "evidence_coverage": 100.0},
+            "kr": {"unwind_score": 80.0, "evidence_coverage": 80.0},
+        }
+        funding = {
+            "us": {"available": True, "crowding_score": 70.0},
+            "kr": {"available": True, "crowding_score": 90.0},
+        }
+        personal = {
+            "available": True,
+            "market_weights": {"US": 0.25, "KR": 0.75},
+        }
+
+        result = _state_summary(markets, funding, personal)
+
+        self.assertEqual(result["trigger_score"], 65.0)
+        self.assertEqual(result["crowding_score"], 85.0)
+        self.assertEqual(result["state"], "forced_unwind")
+        self.assertEqual(result["trigger_method"], "personal_exposure_weighted")
+
+    def test_posture_is_guardrail_not_automated_action(self):
+        posture = _risk_posture(
+            {"state": "unwind_heating"},
+            {"available": True, "margin_cushion_pct": 31.2},
+        )
+
+        self.assertEqual(posture["code"], "defensive")
+        self.assertFalse(posture["automated_action"])
 
     def test_parse_finra_html_normalizes_and_sorts_months(self):
         html = """

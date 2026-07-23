@@ -199,8 +199,8 @@ export const getComparison = (symbols: string[], start: string, end?: string) =>
 export const scanAITracker     = (force = false) =>
   api.get('/ai/scan', { params: { force }, timeout: 120_000 }).then(r => r.data)
 export const getAIUniverse     = () => api.get('/ai/universe').then(r => r.data)
-export const getIndexMembership = () =>
-  api.get('/ai/index-membership', { timeout: 30_000 }).then(r => r.data)
+export const getIndexMembership = (force = false) =>
+  api.get('/ai/index-membership', { params: { force }, timeout: 30_000 }).then(r => r.data)
 export const addAISymbol       = (group: string, symbol: string) =>
   api.post(`/ai/universe/${group}/${symbol}`).then(r => r.data)
 export const removeAISymbol    = (symbol: string) =>

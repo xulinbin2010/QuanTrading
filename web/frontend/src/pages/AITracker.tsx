@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import SymbolLink from '../components/SymbolLink'
 import AIChainHeatmap from '../components/AIChainHeatmap'
-import { AI_COMPANY_META, AI_CHAIN_LAYERS, MEGA_CAPS, SMALL_CAPS } from '../data/aiCompanyMeta'
+import { AI_COMPANY_META, AI_CHAIN_LAYERS, SMALL_CAPS } from '../data/aiCompanyMeta'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import ReactECharts from 'echarts-for-react'
 import {
@@ -39,21 +39,16 @@ function fmtCap(b: number | null | undefined) {
   return `$${Math.round(b * 1000)}M`
 }
 
-/** 市值分档徽章：龙头金色 pill / 中盘素色文字 / 小盘灰 pill（无数据时显「小盘」字样）。
- *  设计原则：档位靠颜色编码，所有卡片可读性平等——不要用透明度/降饱和压暗小盘卡（用户反馈看不清）。 */
-function CapBadge({ cap, tier }: { cap: number | null | undefined; tier: 'mega' | 'mid' | 'small' }) {
-  if (cap == null) {
-    return tier === 'small'
-      ? <span className="text-[10px] px-1 py-0.5 rounded bg-slate-700/60 text-slate-400 shrink-0" title="微小盘（约 ≤ $5B）">小盘</span>
-      : null
-  }
-  if (tier === 'mega') {
-    return <span className="text-xs font-mono font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 shrink-0" title="大盘龙头（≥ $100B）">{fmtCap(cap)}</span>
-  }
-  if (tier === 'small') {
-    return <span className="text-[11px] font-mono px-1.5 py-0.5 rounded bg-slate-700/60 text-slate-400 shrink-0" title="微小盘（≤ $5B）">{fmtCap(cap)}</span>
-  }
-  return <span className="text-xs font-mono font-bold text-slate-400 shrink-0" title="流通市值(约)">{fmtCap(cap)}</span>
+/** 市值只作为客观数据展示与排序依据，不用颜色、明暗或边框暗示公司质量。 */
+function CapBadge({ cap }: { cap: number | null | undefined }) {
+  return (
+    <span
+      className="text-[11px] font-mono px-1.5 py-0.5 rounded border border-slate-600/60 bg-slate-700/40 text-slate-300 shrink-0"
+      title={cap == null ? '扫描完成后更新实时市值' : '实时市值（约）'}
+    >
+      市值 {cap == null ? '待更新' : fmtCap(cap)}
+    </span>
+  )
 }
 
 function GroupBadge({ label, color }: { label: string; color: string }) {
@@ -93,11 +88,12 @@ export default function AITracker() {
     staleTime: 60_000,
   })
 
-  // S&P500 / Nasdaq100 成分（图谱角标），成分变化慢，缓存 24h
+  // S&P500 / Nasdaq100 成分（图谱角标）；后端 6h TTL，前端 1h 后可自动重查
   const { data: idxMem } = useQuery({
-    queryKey: ['ai-index-membership'],
-    queryFn: getIndexMembership,
-    staleTime: 24 * 3_600_000,
+    queryKey: ['ai-index-membership-v2'],
+    queryFn: () => getIndexMembership(false),
+    staleTime: 60 * 60_000,
+    refetchInterval: 6 * 3_600_000,
     retry: false,
   })
   const sp500Set = new Set<string>(idxMem?.sp500 ?? [])
@@ -105,9 +101,10 @@ export default function AITracker() {
 
   const refresh = () => {
     setForcing(true)
-    scanAITracker(true)
-      .then(d => { qc.setQueryData(['ai-tracker-scan'], d); setForcing(false) })
-      .catch(() => setForcing(false))
+    Promise.allSettled([
+      scanAITracker(true).then(d => qc.setQueryData(['ai-tracker-scan'], d)),
+      getIndexMembership(true).then(d => qc.setQueryData(['ai-index-membership-v2'], d)),
+    ]).finally(() => setForcing(false))
   }
 
   const runAnalyze = () => {
@@ -214,19 +211,12 @@ export default function AITracker() {
   const showRetirePanel = !retireDismissed && (retireSuggestions.length > 0 || retireMutation.isSuccess)
 
   const hiddenGroups = hiddenGroupKeys(universe)
-  // symbol → 市值(十亿美元)，取自扫描结果(4h缓存)；扫描未就绪时为空，卡片市值显示空白
+  // symbol → 市值(十亿美元)，取自扫描结果(4h缓存)
   const capMap: Record<string, number> = {}
   for (const r of (scanData?.rows ?? [])) {
     if (r?.market_cap_b != null) capMap[r.symbol] = r.market_cap_b
   }
-  // 市值档位动态判定：优先用扫描实时市值（≥$100B=龙头👑 / ≤$5B=微小盘暗淡），
-  // 扫描未就绪时回退 aiCompanyMeta 静态名单，避免新加入成员档位失真
-  const tierOf = (sym: string): 'mega' | 'mid' | 'small' => {
-    const cap = capMap[sym]
-    if (cap != null) return cap >= 100 ? 'mega' : cap <= 5 ? 'small' : 'mid'
-    return MEGA_CAPS.has(sym) ? 'mega' : SMALL_CAPS.has(sym) ? 'small' : 'mid'
-  }
-  // 组内按市值降序（龙头置前；无市值数据的排最后并保持原顺序）
+  // 组内只按市值降序；扫描未就绪的成员排在后面，并保持原清单顺序
   const sortByCap = (syms: string[]) => [...syms].sort((a, b) => (capMap[b] ?? -1) - (capMap[a] ?? -1))
   // symbol → 实盘优先开关（缺省 true，向后兼容）。控制是否进 auto_trader AI 优先池
   const tpMap: Record<string, boolean> = (universe?.trade_priority as Record<string, boolean>) ?? {}
@@ -356,9 +346,7 @@ export default function AITracker() {
                       className="absolute top-1 right-1 text-slate-600 hover:text-red-400 text-xs leading-none">✕</button>
                     <div className="flex items-baseline gap-1.5 pr-4 flex-wrap">
                       <SymbolLink symbol={p.symbol} className="font-semibold text-white text-sm" />
-                      {p.market_cap_b != null && (
-                        <CapBadge cap={p.market_cap_b} tier={p.market_cap_b >= 100 ? 'mega' : p.market_cap_b <= 5 ? 'small' : 'mid'} />
-                      )}
+                      <CapBadge cap={p.market_cap_b} />
                       {p.revenue_growth != null && (
                         <span className={`text-[10px] font-mono ${p.revenue_growth >= 0 ? 'text-emerald-400' : 'text-red-400'}`} title="营收同比增速">
                           营收{pct(p.revenue_growth)}
@@ -410,7 +398,7 @@ export default function AITracker() {
                   {retireSuggestions.map((x: any) => (
                     <div key={x.symbol} className="flex items-center gap-2 flex-wrap bg-slate-900/40 border border-slate-700/60 rounded px-2.5 py-1.5">
                       <SymbolLink symbol={x.symbol} className="font-semibold text-white text-sm" />
-                      {capMap[x.symbol] != null && <CapBadge cap={capMap[x.symbol]} tier={tierOf(x.symbol)} />}
+                      <CapBadge cap={capMap[x.symbol]} />
                       <span className="text-[10px] px-1 rounded bg-slate-700/70 text-slate-400">{x.group_label || x.group}</span>
                       {x.trade_priority && <span className="text-[10px] px-1 rounded bg-emerald-900/60 text-emerald-300" title="仍在实盘优先池，移出前留意是否持仓">优先池</span>}
                       <span className="text-xs text-slate-400 flex-1 min-w-[200px]">{x.reason}</span>
@@ -501,26 +489,18 @@ export default function AITracker() {
                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2">
                         {sortByCap(syms).map(sym => {
                           const meta = AI_COMPANY_META[sym]
-                          const tier = tierOf(sym)
-                          const isMega = tier === 'mega'
-                          // 市值档位：龙头正向强调(亮底+亮边+👑+金色市值徽章)，其余卡片底色一致、
-                          // 可读性平等——小盘靠灰 pill 徽章辨识，不再压暗（透明度/降饱和影响可读性）。
-                          const tierCls = isMega
-                            ? 'bg-slate-500/70 border-slate-300 ring-1 ring-slate-300/40 shadow-md shadow-black/40'
-                            : 'bg-slate-800/70 border-slate-700/60'
                           return (
                             <div key={sym}
-                              className={`group relative border rounded-lg px-2.5 py-2 hover:border-slate-500 hover:bg-slate-800 transition-all ${tierCls}`}
+                              className="group relative border rounded-lg px-2.5 py-2 bg-slate-800/70 border-slate-700/60 hover:border-slate-500 hover:bg-slate-800 transition-all"
                               style={{ borderLeftColor: color, borderLeftWidth: 3 }}>
                               <button onClick={() => removeMutation.mutate(sym)} title="从池中移除"
                                 className="absolute top-1 right-1 text-slate-600 hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity text-xs leading-none">✕</button>
                               <div className="flex items-baseline justify-between gap-1 pr-4">
                                 <div className="flex items-baseline gap-1 min-w-0">
-                                  {isMega && <span title="大盘龙头" className="text-[11px] leading-none">👑</span>}
-                                  <SymbolLink symbol={sym} className={`${isMega ? 'font-bold' : 'font-semibold'} text-white text-sm`} />
+                                  <SymbolLink symbol={sym} className="font-semibold text-white text-sm" />
                                   {meta?.name && <span className="text-[11px] text-slate-400 truncate">{meta.name}</span>}
                                 </div>
-                                <CapBadge cap={capMap[sym]} tier={tier} />
+                                <CapBadge cap={capMap[sym]} />
                               </div>
                               <div className="flex items-end justify-between gap-1 mt-0.5">
                                 <span className="text-[10px] text-slate-500 leading-snug truncate" title={meta?.desc || ''}>
@@ -538,8 +518,8 @@ export default function AITracker() {
                                       : 'bg-slate-700/70 text-slate-500 hover:bg-slate-600/70'}`}>
                                     {isTradePriority(sym) ? '优先池' : '观察'}
                                   </button>
-                                  {sp500Set.has(sym) && <span title="S&P 500 成分" className="text-[8px] leading-tight px-1 rounded bg-blue-900/50 text-blue-300">S&P</span>}
-                                  {ndxSet.has(sym) && <span title="Nasdaq 100 成分" className="text-[8px] leading-tight px-1 rounded bg-purple-900/50 text-purple-300">100</span>}
+                                  {sp500Set.has(sym) && <span title="S&P 500 成分" className="text-[9px] leading-tight px-1 py-0.5 rounded border border-slate-600/60 bg-slate-700/40 text-slate-400">标普500</span>}
+                                  {ndxSet.has(sym) && <span title="Nasdaq 100 成分" className="text-[9px] leading-tight px-1 py-0.5 rounded border border-slate-600/60 bg-slate-700/40 text-slate-400">纳指100</span>}
                                 </span>
                               </div>
                             </div>
@@ -591,7 +571,7 @@ export default function AITracker() {
         <div>· 每只右侧 <span className="px-1 rounded bg-emerald-900/60 text-emerald-300">优先池</span>/<span className="px-1 rounded bg-slate-700/70 text-slate-500">观察</span> 切换是否纳入 auto_trader 的 AI 优先池：<span className="text-slate-400">优先池</span>=宽松扫描+置顶+行业豁免（动能轮动里标 ⭐）；<span className="text-slate-400">观察</span>=仅研究不下单。新增成员默认「观察」，老成员默认「优先池」（向后兼容）</div>
         <div>· 「手动加入」识别行业并归组；评分/动量数据见「动能轮动」</div>
         <div>· 吐故纳新：清单管理顶部两个面板——<span className="text-emerald-400">📥 建议纳入</span>（「🔍 自动发现」扫指数成分 $2B–$500B + ai_ipo_discover 新股检索的候选，按市值排序）和 <span className="text-amber-400">🧹 建议移出</span>（近 2 个月持续弱势：RS 池内后 20% + 破 EMA21，调度任务跑完自动显示）；加入/移出/保留都需人工确认，不会自动改池。tab 上的数字角标 = 两类待办合计</div>
-        <div>· <span className="text-slate-400">👑</span> 市值档位按<span className="text-slate-300">实时市值</span>判定：≥ $100B 龙头卡片<span className="px-1 rounded bg-slate-500/70 ring-1 ring-slate-300/40 text-white">提亮+描边</span>+<span className="px-1 rounded bg-amber-500/15 text-amber-300 font-mono">金色市值</span>徽章；≤ $5B 显示<span className="px-1 rounded bg-slate-700/60 text-slate-400">灰色市值/小盘</span>徽章（卡片不压暗，可读性一致）；扫描未就绪时用内置名单兜底。组内卡片按市值从大到小排列，龙头恒在前；<span className="text-blue-300">S&P</span>=标普500 / <span className="text-purple-300">100</span>=纳指100 成分</div>
+        <div>· 清单卡片使用统一亮度、背景和边框；市值只负责组内从大到小排序，并在每张卡上直接显示。扫描未就绪时显示「市值待更新」，相关成员保持原清单顺序；指数身份直接显示为「标普500 / 纳指100」。</div>
       </div>
     </div>
   )

@@ -5,6 +5,7 @@
 import io
 import os
 import pickle
+import re
 import requests
 import pandas as pd
 import yfinance as yf
@@ -50,6 +51,12 @@ _BUILTIN_NDX = [
 
 _BUILTIN_SP500 = sorted(set(_BUILTIN_SP500))
 _BUILTIN_NDX   = sorted(set(_BUILTIN_NDX))
+_NDX_SOURCE_META: dict[str, str | int | None] = {
+    'source': 'not_loaded',
+    'as_of': None,
+    'fetched_at': None,
+    'count': 0,
+}
 
 
 # ── 公共获取函数 ──────────────────────────────────────────────────
@@ -69,13 +76,31 @@ def get_sp500_tickers(extra: list[str] = None) -> list[str]:
 
 
 def get_nasdaq100_tickers(extra: list[str] = None) -> list[str]:
-    tickers = _try_wikipedia(
-        url='https://en.wikipedia.org/wiki/Nasdaq-100',
-        table_id='constituents',
-        col='Ticker',
-        label='NASDAQ-100',
-    ) or list(_BUILTIN_NDX)
+    tickers = _try_nasdaq100_official()
+    if not tickers:
+        tickers = _try_wikipedia(
+            url='https://en.wikipedia.org/wiki/Nasdaq-100',
+            table_id='constituents',
+            col='Ticker',
+            label='NASDAQ-100',
+        )
+        if tickers:
+            _set_ndx_source_meta('wikipedia', None, len(tickers))
+            _save_universe_cache('nasdaq100', tickers)
+    if not tickers:
+        tickers = _load_universe_cache('nasdaq100')
+        if tickers:
+            _set_ndx_source_meta('local_cache', None, len(tickers))
+    if not tickers:
+        tickers = list(_BUILTIN_NDX)
+        _set_ndx_source_meta('builtin_stale', None, len(tickers))
+        print(f"  [警告] NASDAQ-100 使用陈旧内置名单（{len(tickers)} 只）")
     return _append_extra(tickers, extra)
+
+
+def get_nasdaq100_source_meta() -> dict[str, str | int | None]:
+    """返回最近一次 Nasdaq-100 成分抓取的来源、日期和数量，供 UI 标注 freshness。"""
+    return dict(_NDX_SOURCE_META)
 
 
 
@@ -404,6 +429,50 @@ def _reject_bot_challenge(resp) -> None:
     head = resp.text[:200].lstrip().lower()
     if head.startswith('<!doctype') or head.startswith('<html'):
         raise ValueError('返回 HTML bot 防护页而非 CSV（iShares 已屏蔽程序化抓取）')
+
+
+def _set_ndx_source_meta(source: str, as_of: str | None, count: int) -> None:
+    _NDX_SOURCE_META.update({
+        'source': source,
+        'as_of': as_of,
+        'fetched_at': datetime.now().isoformat(timespec='seconds'),
+        'count': count,
+    })
+
+
+def _try_nasdaq100_official() -> list[str]:
+    """从 Nasdaq 官方 JSON 获取当前 Nasdaq-100 成分证券。"""
+    url = 'https://api.nasdaq.com/api/quote/list-type/nasdaq100'
+    headers = {
+        'User-Agent': (
+            'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) '
+            'AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36'
+        ),
+        'Accept': 'application/json, text/plain, */*',
+    }
+    try:
+        resp = requests.get(url, headers=headers, timeout=20)
+        resp.raise_for_status()
+        payload = resp.json()
+        root = payload.get('data') or {}
+        rows = ((root.get('data') or {}).get('rows') or [])
+        seen: set[str] = set()
+        tickers: list[str] = []
+        for row in rows:
+            symbol = str(row.get('symbol') or '').strip().upper().replace('.', '-')
+            if re.fullmatch(r'[A-Z][A-Z0-9-]{0,9}', symbol) and symbol not in seen:
+                seen.add(symbol)
+                tickers.append(symbol)
+        if not 90 <= len(tickers) <= 120:
+            raise ValueError(f'成分数量异常：{len(tickers)}')
+        as_of = str(root.get('date') or '') or None
+        _set_ndx_source_meta('nasdaq_official', as_of, len(tickers))
+        _save_universe_cache('nasdaq100', tickers)
+        print(f"  Nasdaq 官方获取成功：{len(tickers)} 只 NASDAQ-100 成分股（{as_of or '日期未知'}）")
+        return tickers
+    except Exception as e:
+        print(f"  Nasdaq 官方请求失败（NASDAQ-100）：{e}")
+        return []
 
 
 def _try_vtwo_holdings() -> list[str]:

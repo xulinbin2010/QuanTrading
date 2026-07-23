@@ -20,6 +20,34 @@ class _Resp:
 
 
 class UniverseSourceTests(unittest.TestCase):
+    def test_nasdaq_official_constituents_parse_and_persist(self):
+        payload = {
+            'data': {
+                'date': 'Jul 23, 2026 9:30 AM',
+                'data': {
+                    'rows': [{'symbol': f'X{i:03d}'} for i in range(100)]
+                            + [{'symbol': 'ALAB'}, {'symbol': 'CRWV'}, {'symbol': 'ALAB'}],
+                },
+            },
+        }
+        with (
+            tempfile.TemporaryDirectory() as td,
+            patch.object(universe, '_UNIVERSE_CACHE_DIR', td),
+            patch.object(universe.requests, 'get', return_value=_Resp(payload)),
+        ):
+            result = universe._try_nasdaq100_official()
+
+        self.assertEqual(102, len(result))
+        self.assertIn('ALAB', result)
+        self.assertIn('CRWV', result)
+        self.assertEqual('nasdaq_official', universe.get_nasdaq100_source_meta()['source'])
+        self.assertEqual('Jul 23, 2026 9:30 AM', universe.get_nasdaq100_source_meta()['as_of'])
+
+    def test_nasdaq_rejects_implausibly_short_official_response(self):
+        payload = {'data': {'data': {'rows': [{'symbol': 'ALAB'}]}}}
+        with patch.object(universe.requests, 'get', return_value=_Resp(payload)):
+            self.assertEqual([], universe._try_nasdaq100_official())
+
     def test_vtwo_paginates_and_deduplicates(self):
         def entities(start: int, count: int):
             return [{'ticker': f'X{i:04d}'} for i in range(start, start + count)]

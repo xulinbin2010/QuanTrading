@@ -141,18 +141,7 @@ export const AI_CHAIN_LAYERS: { title: string; flow: string; groups: string[] }[
   { title: '配套 · 电力 / 散热',   flow: '能源与冷却贯穿全链', groups: ['power_cooling'] },
 ]
 
-/**
- * 市值档位静态名单——仅作扫描市值未就绪时的兜底（AITracker tierOf 优先用实时市值分档）。
- * MEGA：大盘龙头（约 ≥ $100B）→ 卡片高亮 + 👑 + 金色市值徽章
- * SMALL：微小盘（约 ≤ $5B）→ 灰色「小盘」徽章（不压暗卡片，保持可读性）
- * 其余默认中档样式。归属可按需增删。
- */
-export const MEGA_CAPS = new Set<string>([
-  'NVDA', 'AVGO', 'TSM', 'AMD', 'QCOM', 'TXN', 'ARM', 'ASML', 'MU', 'ADI',
-  'AMAT', 'LRCX', 'KLAC', 'MCHP', 'NXPI', 'INTC', 'MRVL', 'ANET', 'CSCO',
-  'AMZN', 'GOOGL', 'IBM', 'ETN', 'CAT', 'GEV', 'VST', 'CEG', 'AMT', 'EQIX',
-  'DLR', 'DELL', 'GLW', 'TEL',
-])
+/** 动能表的微小盘提示名单；清单管理不再按市值档位改变卡片样式。 */
 export const SMALL_CAPS = new Set<string>([
   'AEHR', 'DGXX', 'LPTH', 'AXTI', 'VICR', 'CRDO', 'CALX', 'LASR', 'AGX',
   'PSIX', 'NVEC', 'IPWR', 'MRAM', 'SLNH', 'HYLN', 'NVTS', 'POWI', 'AOSL',

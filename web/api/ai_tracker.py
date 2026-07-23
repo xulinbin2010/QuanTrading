@@ -51,21 +51,43 @@ def get_universe():
     return load_universe()
 
 
-from functools import lru_cache
+import threading
+import time
 
 
-@lru_cache(maxsize=1)
-def _index_sets():
-    """S&P500 / Nasdaq100 成分（进程级缓存，成分变化慢；首次走 IVV/wiki/builtin 兜底）。"""
-    from core.universe import get_sp500_tickers, get_nasdaq100_tickers
-    return sorted(set(get_sp500_tickers())), sorted(set(get_nasdaq100_tickers()))
+_INDEX_CACHE: tuple[float, dict] | None = None
+_INDEX_CACHE_TTL_SECONDS = 6 * 60 * 60
+_INDEX_LOCK = threading.Lock()
+
+
+def _index_sets(force: bool = False) -> dict:
+    """S&P500 / Nasdaq100 成分；6 小时 TTL，避免一次 fallback 被锁到进程重启。"""
+    global _INDEX_CACHE
+    now = time.time()
+    if not force and _INDEX_CACHE and now - _INDEX_CACHE[0] < _INDEX_CACHE_TTL_SECONDS:
+        return _INDEX_CACHE[1]
+    with _INDEX_LOCK:
+        now = time.time()
+        if not force and _INDEX_CACHE and now - _INDEX_CACHE[0] < _INDEX_CACHE_TTL_SECONDS:
+            return _INDEX_CACHE[1]
+        from core.universe import (
+            get_sp500_tickers,
+            get_nasdaq100_tickers,
+            get_nasdaq100_source_meta,
+        )
+        result = {
+            'sp500': sorted(set(get_sp500_tickers())),
+            'ndx': sorted(set(get_nasdaq100_tickers())),
+            'ndx_meta': get_nasdaq100_source_meta(),
+        }
+        _INDEX_CACHE = (now, result)
+        return result
 
 
 @router.get('/index-membership')
-def index_membership():
+def index_membership(force: bool = Query(False)):
     """产业图谱用：标记每只 AI 股是否属于 S&P500 / Nasdaq100 成分。"""
-    sp, ndx = _index_sets()
-    return {'sp500': sp, 'ndx': ndx}
+    return _index_sets(force=force)
 
 
 # NOTE: pending 字面路由必须在 /universe/{group}/{symbol} 之前注册，
@@ -158,5 +180,4 @@ def retire_keep(symbol: str = Body(..., embed=True)):
         return keep_retire_suggestion(symbol)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
-
 

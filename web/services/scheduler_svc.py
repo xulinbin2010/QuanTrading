@@ -98,12 +98,12 @@ DEFAULT_TASKS = [
     },
     {
         'task_id':  'core_intel_cards',
-        'name':     '核心票每日情报卡（Claude+联网检索）',
+        'name':     '核心票每日情报卡（AI+联网检索）',
         'command':  f'{PYTHON} -m web.services.intel_svc --core-cards',
         'cron_expr': '15 8 * * 1-5',   # 美东 8:15（纽约时区），开盘前生成，「盘前扫描 → 情报卡」查看
         'enabled':  False,
-        'description': '对盘前清单 core 组每只票做 Claude 联网检索（隔夜要闻/产业链同行/华尔街/催化剂 + 论点检查）。'
-                       '默认走本机 claude CLI 订阅额度（无 API 费用，INTEL_ENGINE 可切 api）。'
+        'description': '对盘前清单 core 组每只票做 AI 联网检索（隔夜要闻/产业链同行/华尔街/催化剂 + 论点检查）。'
+                       '默认走本机 Codex CLI 登录态（无 API 费用），失败再尝试 Claude CLI；不自动调用付费 API。'
                        '默认关闭：页面手动点「生成情报卡」即可；想每天盘前自动生成再开启此任务。',
     },
     {

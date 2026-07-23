@@ -233,7 +233,7 @@ export default function PremarketBriefingModal({ onClose }: { onClose: () => voi
 
               <div className="text-sm text-slate-400 space-y-1 mt-3">
                 <div>· Pre-market 报价流动性稀薄，可能与开盘价显著偏离，仅供参考。</div>
-                <div>· 隔夜新闻 / 财报 / 行动建议的大盘简报（模块 2/4）未启用；核心票的联网情报用「核心票情报卡」tab（走本机 Claude 订阅，无 API 费用）。</div>
+                <div>· 隔夜新闻 / 财报 / 行动建议的大盘简报（模块 2/4）未启用；核心票联网情报默认走本机 Codex 登录态，无 API 费用。</div>
               </div>
             </>
           )}
@@ -252,7 +252,7 @@ export default function PremarketBriefingModal({ onClose }: { onClose: () => voi
                 <div className="text-sm text-slate-500 space-y-1">
                   <div>还没有情报卡。先到「清单配置」把核心持仓（含持有逻辑 / 失效条件 / 催化剂日历）填好并保存，再点「生成情报卡」。</div>
                   <div>每张卡：隔夜要闻 · 产业链/同行动向 · 华尔街评级 · 催化剂倒计时 + 对照你的论点给出「强化 / 中性 / 削弱 / 失效预警」检查结论。</div>
-                  <div>也可在「任务调度」开启 core_intel_cards 任务，每天美东 8:15 盘前自动生成（默认走本机 Claude 订阅额度，无 API 费用）。</div>
+                  <div>也可在「任务调度」开启 core_intel_cards 任务，每天美东 8:15 盘前自动生成（默认走本机 Codex 登录态，无 API 费用）。</div>
                 </div>
               )}
               <div className="space-y-3">
@@ -272,7 +272,7 @@ export default function PremarketBriefingModal({ onClose }: { onClose: () => voi
               </div>
               {cards?.cards?.length > 0 && (
                 <div className="text-sm text-slate-400 space-y-1 mt-4">
-                  <div>· 情报由 Claude 联网检索生成，来源以卡内标注为准；「论点检查」对照的是你在清单配置里手填的持有逻辑与失效条件。</div>
+                  <div>· 情报由 AI 联网检索生成，来源以卡内标注为准；「论点检查」对照的是你在清单配置里手填的持有逻辑与失效条件。</div>
                   <div>· 出现「削弱 / 失效预警」时建议人工核实原始新闻源后再决策，不要只凭卡片行动。</div>
                 </div>
               )}
@@ -308,7 +308,7 @@ export default function PremarketBriefingModal({ onClose }: { onClose: () => voi
               ))}
               <div className="text-sm text-slate-400 space-y-1 mt-3">
                 <div>· 核心持仓可点「从 IB 导入」自动拉 ticker + 成本（需 IB 已连接），再补持有逻辑/仓位%。</div>
-                <div>· 「失效条件」写清楚什么情况下承认看错（如：HBM 报价连续两季下跌）、「催化剂日历」写日期+事件；这两栏是「核心票情报卡」做论点检查的依据，写得越具体，Claude 的检查越有用。</div>
+                <div>· 「失效条件」写清楚什么情况下承认看错（如：HBM 报价连续两季下跌）、「催化剂日历」写日期+事件；这两栏是「核心票情报卡」做论点检查的依据，写得越具体，AI 的检查越有用。</div>
                 <div>· 保存后「盘前扫描」tab 会自动按新清单刷新逐只报价。</div>
               </div>
             </>

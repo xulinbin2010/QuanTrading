@@ -1,4 +1,4 @@
-"""定向个股情报引擎（Claude + web_search）— 两条业务线共用：
+"""定向个股情报引擎（订阅 CLI + web search）— 多条业务线共用：
 
   ① 出场待确认情报（exit intel）：auto_trader 触发 -15%/EMA21 出场后不再直接卖，
      改挂「待确认出场」记录；本模块对触发标的检索个股新闻/产业链龙头动向，并判断
@@ -7,11 +7,13 @@
      （隔夜要闻/产业链同行/华尔街动向/催化剂），并对照手填的持有逻辑与失效条件
      给出论点检查结论（强化/中性/削弱/失效预警）。缓存 data/.core_cards_cache.json。
 
-双引擎（自动选择，`INTEL_ENGINE` 环境变量可强制 cli/api）：
-  - **cli**（默认优先）：本机 `claude` CLI 无头模式（-p + WebSearch 工具），走 Claude **订阅**
-    额度（OAuth），不消耗 API 余额。子进程会剥掉 ANTHROPIC_API_KEY 防止误走 API 计费；
-    模型默认 sonnet（INTEL_CLI_MODEL 可改）。
-  - **api**：Anthropic API（claude-opus-4-8 + web_search server tool），需 API key 且有余额。
+引擎选择（`INTEL_ENGINE` 可强制 codex/claude/api）：
+  - **auto**（默认）：先用本机 Codex CLI 登录态，再尝试 Claude CLI 登录态；两者都失败时返回
+    可操作错误，绝不自动降级到付费 API。
+  - **codex**：Codex CLI 无头模式，走 Codex 登录态；子进程剥掉 OPENAI_API_KEY，避免误走 API。
+  - **claude**（兼容旧值 cli）：Claude CLI 无头模式，走 Claude 订阅 OAuth；子进程剥掉
+    ANTHROPIC_API_KEY，避免误走 API。
+  - **api**：仅显式选择时调用 Anthropic API，要求 API key 且账户有余额。
 所有实时价格由 yfinance 拉取（复用 premarket_svc.get_quotes），禁止模型编造价格。
 两个引擎都不可用时抛 MissingAPIKey，调用方优雅降级（出场确认流程不依赖情报）。
 """
@@ -45,8 +47,23 @@ def _cli_path() -> str | None:
     return fallback if os.path.exists(fallback) else None
 
 
+def _codex_path() -> str | None:
+    import os
+    import shutil
+    exe = shutil.which('codex')
+    if exe:
+        return exe
+    for fallback in (
+        '/Applications/ChatGPT.app/Contents/Resources/codex',
+        os.path.expanduser('~/.local/bin/codex'),
+    ):
+        if os.path.exists(fallback):
+            return fallback
+    return None
+
+
 def _call_claude(system: str, user: str, max_tokens: int = 12000) -> tuple[str, dict | None]:
-    """按引擎优先级调用 Claude。auto（默认）：先订阅 CLI（零边际成本），失败/未装再试 API。"""
+    """按引擎优先级调用模型；auto 只使用订阅 CLI，不隐式调用付费 API。"""
     import os
     try:
         from dotenv import load_dotenv
@@ -54,27 +71,83 @@ def _call_claude(system: str, user: str, max_tokens: int = 12000) -> tuple[str, 
     except Exception:
         pass
     engine = (os.environ.get('INTEL_ENGINE') or 'auto').lower()
-    cli = _cli_path()
-    has_key = bool(os.environ.get('ANTHROPIC_API_KEY'))
 
     if engine == 'api':
         return _call_claude_api(system, user, max_tokens)
-    if engine == 'cli':
+    if engine == 'codex':
+        return _call_codex_cli(system, user)
+    if engine in {'cli', 'claude'}:
         return _call_claude_cli(system, user)
-    # auto：订阅 CLI 优先，API 兜底
-    if cli:
+    if engine != 'auto':
+        raise MissingAPIKey(
+            f'不支持的 INTEL_ENGINE={engine!r}；可选 auto/codex/claude/api。')
+
+    errors: list[str] = []
+    if _codex_path():
+        try:
+            return _call_codex_cli(system, user)
+        except Exception as e:
+            errors.append(f'Codex CLI: {e}')
+            print(f'  [情报] Codex CLI 失败（{e}），尝试 Claude CLI…')
+    else:
+        errors.append('Codex CLI: 未安装')
+
+    if _cli_path():
         try:
             return _call_claude_cli(system, user)
         except Exception as e:
-            if not has_key:
-                raise
-            print(f'  [情报] CLI 引擎失败（{e}），降级尝试 API…')
-            return _call_claude_api(system, user, max_tokens)
-    if has_key:
-        return _call_claude_api(system, user, max_tokens)
+            errors.append(f'Claude CLI: {e}')
+    else:
+        errors.append('Claude CLI: 未安装')
+
     raise MissingAPIKey(
-        '没有可用的 Claude 引擎：本机未找到 claude CLI（订阅），也未配置 ANTHROPIC_API_KEY。'
-        '装有 Claude Code 的机器无需任何配置即可用订阅引擎。')
+        '没有可用的订阅 CLI 引擎：' + '；'.join(errors) + '。'
+        '请确认 Codex 已登录，或运行 `claude /login` 登录 Claude Code。'
+        '为避免意外计费，auto 模式不会调用 Anthropic API；只有明确设置 INTEL_ENGINE=api 才会调用。')
+
+
+def _call_codex_cli(system: str, user: str) -> tuple[str, dict | None]:
+    """Codex CLI 无头模式：使用 Codex 登录态，并将最终回答写入独立文件。"""
+    import os
+    import subprocess
+    import tempfile
+
+    exe = _codex_path()
+    if not exe:
+        raise MissingAPIKey('本机未安装 Codex CLI。')
+
+    env = dict(os.environ)
+    env.pop('OPENAI_API_KEY', None)  # 强制使用 Codex 登录态，避免误走 API key 计费
+    env.pop('ANTHROPIC_API_KEY', None)
+    prompt = f'{system}\n\n---\n\n{user}'
+    model = (os.environ.get('INTEL_CODEX_MODEL') or '').strip()
+
+    with tempfile.TemporaryDirectory(prefix='quantrading-intel-') as td:
+        output_file = str(Path(td) / 'last-message.txt')
+        cmd = [
+            exe, 'exec', '--ephemeral', '--skip-git-repo-check', '--ignore-rules',
+            '--ignore-user-config',
+            '--sandbox', 'read-only', '--color', 'never',
+            '--output-last-message', output_file,
+        ]
+        if model:
+            cmd += ['--model', model]
+        cmd.append(prompt)
+        r = subprocess.run(
+            cmd, capture_output=True, text=True, timeout=900,
+            env=env, cwd=tempfile.gettempdir(),
+        )
+        if r.returncode != 0:
+            detail = (r.stderr or r.stdout).strip().replace('\n', ' ')
+            raise RuntimeError(f'Codex CLI 退出码 {r.returncode}：{detail[-500:]}')
+        try:
+            text = Path(output_file).read_text('utf-8').strip()
+        except OSError as e:
+            raise RuntimeError(f'Codex CLI 未写出最终回答：{e}') from e
+    if not text:
+        raise RuntimeError('Codex CLI 无输出')
+    engine = f'cli/codex/{model}' if model else 'cli/codex/default'
+    return text, {'engine': engine}
 
 
 def _call_claude_cli(system: str, user: str) -> tuple[str, dict | None]:

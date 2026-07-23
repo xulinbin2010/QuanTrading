@@ -14,6 +14,49 @@ from web.services import intel_svc, social_svc
 
 
 class IntelSocialTests(unittest.TestCase):
+    def test_intel_auto_prefers_codex_subscription(self):
+        with (
+            patch.dict('os.environ', {'INTEL_ENGINE': 'auto'}, clear=False),
+            patch.object(intel_svc, '_codex_path', return_value='/bin/codex'),
+            patch.object(intel_svc, '_call_codex_cli', return_value=('ok', {'engine': 'cli/codex/default'})) as codex,
+            patch.object(intel_svc, '_call_claude_cli') as claude,
+            patch.object(intel_svc, '_call_claude_api') as api,
+        ):
+            text, usage = intel_svc._call_claude('system', 'user')
+
+        self.assertEqual('ok', text)
+        self.assertEqual('cli/codex/default', usage['engine'])
+        codex.assert_called_once_with('system', 'user')
+        claude.assert_not_called()
+        api.assert_not_called()
+
+    def test_intel_auto_falls_back_to_claude_cli_but_never_paid_api(self):
+        with (
+            patch.dict('os.environ', {
+                'INTEL_ENGINE': 'auto',
+                'ANTHROPIC_API_KEY': 'configured-but-must-not-auto-spend',
+            }, clear=False),
+            patch.object(intel_svc, '_codex_path', return_value='/bin/codex'),
+            patch.object(intel_svc, '_cli_path', return_value='/bin/claude'),
+            patch.object(intel_svc, '_call_codex_cli', side_effect=RuntimeError('not logged in')),
+            patch.object(intel_svc, '_call_claude_cli', side_effect=RuntimeError('not logged in')),
+            patch.object(intel_svc, '_call_claude_api') as api,
+        ):
+            with self.assertRaisesRegex(intel_svc.MissingAPIKey, '不会调用 Anthropic API'):
+                intel_svc._call_claude('system', 'user')
+
+        api.assert_not_called()
+
+    def test_intel_explicit_api_still_supported(self):
+        with (
+            patch.dict('os.environ', {'INTEL_ENGINE': 'api'}, clear=False),
+            patch.object(intel_svc, '_call_claude_api', return_value=('api', None)) as api,
+        ):
+            text, _ = intel_svc._call_claude('system', 'user', max_tokens=321)
+
+        self.assertEqual('api', text)
+        api.assert_called_once_with('system', 'user', 321)
+
     def test_parse_events_accepts_markdown_json_and_normalizes(self):
         raw = '''```json
 {"events":[{"scope":"候选池","type":"大单合作","symbols":["nvda"],

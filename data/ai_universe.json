@@ -641,7 +641,8 @@
     "NVTS": true,
     "LWLG": false,
     "OUST": false,
-    "SKHY": true
+    "SKHY": true,
+    "FCEL": true
   },
   "retire_keep": {}
 }

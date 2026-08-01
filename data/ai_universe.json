@@ -111,7 +111,6 @@
         "GLW",
         "COHR",
         "SMTC",
-        "LPTH",
         "SITM",
         "MXL",
         "ALAB",
@@ -130,7 +129,6 @@
         "WULF",
         "CORZ",
         "BTDR",
-        "HIVE",
         "CIFR",
         "HUT",
         "EQIX",
@@ -151,7 +149,6 @@
         "BE",
         "FCEL",
         "FLNC",
-        "DGXX",
         "MOD",
         "AAON",
         "TE",
@@ -595,6 +592,135 @@
       "market_cap_b": 6.7,
       "revenue_growth": 0.2,
       "discovered_at": "2026-07-06T18:31:19"
+    },
+    {
+      "symbol": "ONDS",
+      "suggest_group": "ai_networking",
+      "sector": "Technology",
+      "industry": "Communication Equipment",
+      "market_cap_b": 4.3,
+      "revenue_growth": 10.799,
+      "discovered_at": "2026-08-01T08:01:21"
+    },
+    {
+      "symbol": "AMBA",
+      "suggest_group": "semicon_equip",
+      "sector": "Technology",
+      "industry": "Semiconductor Equipment & Materials",
+      "market_cap_b": 3.8,
+      "revenue_growth": 0.169,
+      "discovered_at": "2026-08-01T08:01:21"
+    },
+    {
+      "symbol": "KN",
+      "suggest_group": "ai_networking",
+      "sector": "Technology",
+      "industry": "Electronic Components",
+      "market_cap_b": 3.1,
+      "revenue_growth": 0.143,
+      "discovered_at": "2026-08-01T08:01:21"
+    },
+    {
+      "symbol": "UUUU",
+      "suggest_group": "power_cooling",
+      "sector": "Energy",
+      "industry": "Uranium",
+      "market_cap_b": 2.9,
+      "revenue_growth": 1.121,
+      "discovered_at": "2026-08-01T08:01:21"
+    },
+    {
+      "symbol": "VISN",
+      "suggest_group": "ai_networking",
+      "sector": "Technology",
+      "industry": "Communication Equipment",
+      "market_cap_b": 2.6,
+      "revenue_growth": 0.216,
+      "discovered_at": "2026-08-01T08:01:21"
+    },
+    {
+      "symbol": "ATKR",
+      "suggest_group": "power_cooling",
+      "sector": "Industrials",
+      "industry": "Electrical Equipment & Parts",
+      "market_cap_b": 2.5,
+      "revenue_growth": 0.042,
+      "discovered_at": "2026-08-01T08:01:21"
+    },
+    {
+      "symbol": "ROG",
+      "suggest_group": "ai_networking",
+      "sector": "Technology",
+      "industry": "Electronic Components",
+      "market_cap_b": 2.2,
+      "revenue_growth": 0.069,
+      "discovered_at": "2026-08-01T08:01:21"
+    },
+    {
+      "symbol": "CBRS",
+      "name": "Cerebras Systems",
+      "suggest_group": "gpu_compute",
+      "note": "IPO发现·2026-05上市·晶圆级AI加速器已商业化，新IPO挑战GPU架构",
+      "industry": "Semiconductors",
+      "sector": "Technology",
+      "market_cap_b": 44.3,
+      "revenue_growth": 0.944,
+      "discovered_at": "2026-08-01T08:31:04"
+    },
+    {
+      "symbol": "MAIR",
+      "name": "Madison Air Solutions",
+      "suggest_group": "power_cooling",
+      "note": "IPO发现·2026-04上市·旗下Nortek提供数据中心冷却，新IPO受AI需求驱动",
+      "industry": "Building Products & Equipment",
+      "sector": "Industrials",
+      "market_cap_b": 14.6,
+      "revenue_growth": 0.338,
+      "discovered_at": "2026-08-01T08:31:05"
+    },
+    {
+      "symbol": "FRVO",
+      "name": "Fervo Energy",
+      "suggest_group": "power_cooling",
+      "note": "IPO发现·2026-05上市·增强型地热供应稳定电力，新IPO切入AI电力瓶颈",
+      "industry": "Utilities - Renewable",
+      "sector": "Utilities",
+      "market_cap_b": 6.6,
+      "revenue_growth": null,
+      "discovered_at": "2026-08-01T08:31:07"
+    },
+    {
+      "symbol": "XE",
+      "name": "X-Energy",
+      "suggest_group": "power_cooling",
+      "note": "IPO发现·2026-04上市·与亚马逊推进数据中心核电，新IPO卡位AI供电",
+      "industry": "Specialty Industrial Machinery",
+      "sector": "Industrials",
+      "market_cap_b": 4.7,
+      "revenue_growth": 1.335,
+      "discovered_at": "2026-08-01T08:31:08"
+    },
+    {
+      "symbol": "BXDC",
+      "name": "Blackstone Digital Infrastructure Trust",
+      "suggest_group": "datacenter_infra",
+      "note": "IPO发现·2026-05上市·持有超大规模客户租用的数据中心，新上市纯IDC载体",
+      "industry": "REIT - Specialty",
+      "sector": "Real Estate",
+      "market_cap_b": 2.1,
+      "revenue_growth": null,
+      "discovered_at": "2026-08-01T08:31:10"
+    },
+    {
+      "symbol": "SOLS",
+      "name": "Solstice Advanced Materials",
+      "suggest_group": "semicon_equip",
+      "note": "IPO发现·2025-10上市·供应半导体材料及冷媒，分拆后受AI制造与冷却催化",
+      "industry": "Specialty Chemicals",
+      "sector": "Basic Materials",
+      "market_cap_b": 9.6,
+      "revenue_growth": 0.111,
+      "discovered_at": "2026-08-01T08:31:12"
     }
   ],
   "rejected": [
@@ -627,10 +753,13 @@
     "NRG",
     "EME",
     "CEG",
-    "DLR"
+    "DLR",
+    "DGXX",
+    "HIVE",
+    "LPTH"
   ],
   "trade_priority": {
-    "UCTT": false,
+    "UCTT": true,
     "LRCX": true,
     "POWI": false,
     "PENG": false,
@@ -642,7 +771,28 @@
     "LWLG": false,
     "OUST": false,
     "SKHY": true,
-    "FCEL": true
+    "FCEL": true,
+    "GEV": false,
+    "VST": false,
+    "ETR": false,
+    "GNRC": false,
+    "AAON": false,
+    "POWL": false,
+    "AGX": false,
+    "MOD": false,
+    "CRWV": false,
+    "EQIX": false,
+    "WULF": false,
+    "BTDR": false,
+    "IREN": false,
+    "NOK": false,
+    "CSCO": false,
+    "LASR": false,
+    "VIAV": false,
+    "SITM": false,
+    "SMTC": false,
+    "JBL": false,
+    "CLS": false
   },
   "retire_keep": {}
 }

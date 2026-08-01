@@ -53,6 +53,7 @@ _AI_NEWS_CACHE       = ROOT / 'data' / '.ai_news_cache.pkl'
 _AI_CACHE_TTL_HOURS  = 1   # 1 小时缓存（短期动量列要求更新及时）
 _AI_CAPEX_TTL_DAYS   = 7   # capex 缓存 7 天（财报数据，更新慢）
 _AI_NEWS_TTL_HOURS   = 12  # news 缓存 12 小时（新闻日更，半天足够）
+_MIN_UNIVERSE_MARKET_CAP_B = 1.0  # 正式清单下限；市值缺失时不猜测、不按 0 处理
 
 # 后台扫描状态
 _ai_scan_running: dict[str, bool] = {}
@@ -585,6 +586,12 @@ def add_symbol_to_universe(symbol: str, group: str, trade_priority: bool = False
     sym = symbol.upper().strip()
     is_new = sym not in syms
     if is_new:
+        from core.universe import get_stock_info
+        cap = get_stock_info([sym]).get(sym, {}).get('market_cap_b')
+        if cap is None:
+            raise ValueError(f'{sym} 市值暂不可用，无法验证是否达到 $1B 清单门槛')
+        if cap < _MIN_UNIVERSE_MARKET_CAP_B:
+            raise ValueError(f'{sym} 当前市值 ${cap:.2f}B，低于 $1B 清单门槛')
         syms.append(sym)
     # 新成员默认进「研究观察」(trade_priority=False)，需手动开启实盘优先；
     # 已有成员重复加入不改动其开关。watchlist 展示不受影响，仅实盘优先池过滤用。
@@ -638,10 +645,15 @@ def set_trade_priority(symbol: str, enabled: bool) -> dict:
 
 def approve_pending(symbol: str, group: str) -> dict:
     """将待审核股票移入正式列表"""
+    # 先走正式清单的实时市值校验；失败时保留 pending，避免候选静默丢失。
+    add_symbol_to_universe(symbol, group)
     u = load_universe()
-    u['pending_review'] = [p for p in u.get('pending_review', []) if p.get('symbol') != symbol.upper()]
+    u['pending_review'] = [
+        p for p in u.get('pending_review', [])
+        if p.get('symbol') != symbol.upper()
+    ]
     save_universe(u)
-    return add_symbol_to_universe(symbol, group)
+    return u
 
 
 def reject_pending(symbol: str) -> dict:
@@ -1045,5 +1057,4 @@ if __name__ == '__main__':
                   f'as-of {res.get("last_updated")}')
     else:
         parser.print_help()
-
 

@@ -465,8 +465,12 @@ _UNDERLYING: dict[str, list[str]] = {
 }
 
 
-def _holdings_for_intel() -> list[dict]:
-    """持仓清单 = 实盘诊断最近录入 ∪ IB 模拟持仓；thesis 从盘前 core 组按 symbol 补齐。"""
+def _holdings_for_intel(include_ib: bool = True) -> list[dict]:
+    """持仓清单 = 实盘诊断最近录入 ∪（可选）IB 模拟持仓。
+
+    定时/CLI 的纯情报任务应传 ``include_ib=False``：它们没有必要抢占 Web
+    的 master clientId，也不能因 Gateway 短暂不可用而影响离线采集。
+    """
     from web.services.premarket_svc import get_config
     thesis_map = {
         (r.get('ticker') or '').strip().upper(): (r.get('thesis') or '').strip()
@@ -486,17 +490,18 @@ def _holdings_for_intel() -> list[dict]:
                 }
     except Exception:
         pass
-    # ② IB 模拟持仓（Gateway 在线时 best-effort 合并）
-    try:
-        from web.services.portfolio_svc import get_positions
-        for p in get_positions():
-            sym = str(p.get('symbol') or '').upper()
-            # 只并入普通股票代码；期权组合串（含空格/数字）与现金等价 ETF 跳过
-            if sym and sym.isalpha() and sym not in _CASH_EQUIV and sym not in rows:
-                rows[sym] = {'symbol': sym, 'name': '', 'theme': '', 'leverage': 1,
-                             'thesis': thesis_map.get(sym, ''), 'source': '模拟'}
-    except Exception:
-        pass
+    # ② IB 模拟持仓（仅交互式 Web 调用；Gateway 在线时 best-effort 合并）
+    if include_ib:
+        try:
+            from web.services.portfolio_svc import get_positions
+            for p in get_positions():
+                sym = str(p.get('symbol') or '').upper()
+                # 只并入普通股票代码；期权组合串（含空格/数字）与现金等价 ETF 跳过
+                if sym and sym.isalpha() and sym not in _CASH_EQUIV and sym not in rows:
+                    rows[sym] = {'symbol': sym, 'name': '', 'theme': '', 'leverage': 1,
+                                 'thesis': thesis_map.get(sym, ''), 'source': '模拟'}
+        except Exception:
+            pass
     return list(rows.values())
 
 

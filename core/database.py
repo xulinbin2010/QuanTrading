@@ -157,6 +157,21 @@ class Database:
 
             CREATE INDEX IF NOT EXISTS idx_social_mentions_sym
                 ON social_mentions(symbol, source, trade_date);
+
+            CREATE TABLE IF NOT EXISTS social_collection_runs (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                source          TEXT NOT NULL,
+                trade_date      TEXT NOT NULL,
+                status          TEXT NOT NULL,  -- ok / partial / unavailable / disabled
+                requested_count INTEGER,
+                covered_count   INTEGER,
+                row_count       INTEGER,
+                detail          TEXT,
+                created_at      TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_social_collection_runs_source
+                ON social_collection_runs(source, trade_date, id);
         """)
 
     # ---------- orders ----------
@@ -656,22 +671,61 @@ class Database:
         self.conn.commit()
         return len(payload)
 
-    def get_social_daily(self, source: str, days: int = 14) -> list:
-        """按 (symbol, trade_date) 聚合的日度序列（盘中多次采样取当日最大提及数），供 z-score 基线。"""
+    def add_social_collection_runs(self, runs: list[dict]) -> int:
+        """记录每轮各数据源覆盖状态，避免把未采到误当成 0。"""
+        if not runs or not self._ensure_conn():
+            return 0
+        payload = [(
+            r['source'], r['trade_date'], r['status'],
+            r.get('requested_count'), r.get('covered_count'),
+            r.get('row_count'), r.get('detail'),
+        ) for r in runs]
+        self.cursor.executemany("""
+            INSERT INTO social_collection_runs
+                (source, trade_date, status, requested_count, covered_count, row_count, detail)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+        """, payload)
+        self.conn.commit()
+        return len(payload)
+
+    def get_latest_social_collection_runs(self) -> list:
+        """返回各 source 最近一轮采集状态。"""
         if not self._ensure_conn():
             return []
         self.cursor.execute("""
-            SELECT symbol, trade_date,
-                   MAX(mentions)  AS mentions,
-                   MIN(rank)      AS best_rank,
-                   MAX(upvotes)   AS upvotes,
-                   MAX(bull_cnt)  AS bull_cnt,
-                   MAX(bear_cnt)  AS bear_cnt
-              FROM social_mentions
-             WHERE source = ?
-               AND trade_date >= DATE('now', ?)
-             GROUP BY symbol, trade_date
-             ORDER BY symbol, trade_date
+            SELECT r.source, r.trade_date, r.status, r.requested_count,
+                   r.covered_count, r.row_count, r.detail, r.created_at
+              FROM social_collection_runs r
+             WHERE r.id = (
+                   SELECT MAX(r2.id)
+                     FROM social_collection_runs r2
+                    WHERE r2.source = r.source
+             )
+             ORDER BY r.source
+        """)
+        return self.cursor.fetchall()
+
+    def get_social_daily(self, source: str, days: int = 14) -> list:
+        """按 (symbol, trade_date) 返回当天最后一个完整快照，供日度基线。
+
+        旧实现分别取 MAX(mentions/bull/bear)，可能把不同采样时点拼成不存在的快照。
+        """
+        if not self._ensure_conn():
+            return []
+        self.cursor.execute("""
+            SELECT sm.symbol, sm.trade_date, sm.mentions, sm.rank, sm.upvotes,
+                   sm.bull_cnt, sm.bear_cnt, sm.created_at, sm.extra
+              FROM social_mentions sm
+             WHERE sm.source = ?
+               AND sm.trade_date >= DATE('now', ?)
+               AND sm.id = (
+                   SELECT MAX(sm2.id)
+                     FROM social_mentions sm2
+                    WHERE sm2.source = sm.source
+                      AND sm2.symbol = sm.symbol
+                      AND sm2.trade_date = sm.trade_date
+               )
+             ORDER BY sm.symbol, sm.trade_date
         """, (source, f'-{int(days)} days'))
         return self.cursor.fetchall()
 

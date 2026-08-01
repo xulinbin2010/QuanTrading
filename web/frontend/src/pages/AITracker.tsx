@@ -30,13 +30,12 @@ function fmt(v: number | null | undefined) {
   return v >= 1000 ? `$${(v / 1000).toFixed(1)}T` : `$${v.toFixed(1)}B`
 }
 
-// 市值紧凑显示（输入单位：十亿美元）：≥1T→$X.XT，≥1B→$XB，<1B→$XXXM
+// 清单管理统一使用十亿美元（B），避免同一列在 T/B/M 之间切换单位。
 function fmtCap(b: number | null | undefined) {
   if (b == null) return ''
-  if (b >= 1000) return `$${(b / 1000).toFixed(1)}T`
-  if (b >= 10) return `$${Math.round(b)}B`
-  if (b >= 1) return `$${b.toFixed(1)}B`
-  return `$${Math.round(b * 1000)}M`
+  if (b >= 100) return `$${Math.round(b).toLocaleString('en-US')}B`
+  if (b >= 10) return `$${b.toFixed(1)}B`
+  return `$${b.toFixed(2)}B`
 }
 
 /** 市值只作为客观数据展示与排序依据，不用颜色、明暗或边框暗示公司质量。 */
@@ -416,7 +415,9 @@ export default function AITracker() {
           {/* 手动加入折叠面板（输入代码→识别行业→选组加入） */}
           {showAddTool && (() => {
             const ar = analyzeResult
-            const canAdd = ar && !ar.already_in_group && (analyzeGroupOverride || ar.suggest_group)
+            const canAdd = ar && !ar.already_in_group
+              && ar.market_cap_b != null && ar.market_cap_b >= 1
+              && (analyzeGroupOverride || ar.suggest_group)
             return (
               <div className="bg-slate-800 rounded-lg p-3 border border-slate-700">
                 <div className="flex gap-2">
@@ -436,12 +437,16 @@ export default function AITracker() {
                     <div className="flex items-baseline gap-3 flex-wrap">
                       <span className="text-base font-semibold text-white">{ar.symbol}</span>
                       <span className="text-xs text-slate-400">{ar.industry || '—'}</span>
-                      <span className="text-xs text-slate-300 font-mono">市值 {fmt(ar.market_cap_b)}</span>
+                      <span className="text-xs text-slate-300 font-mono">市值 {ar.market_cap_b == null ? '待验证' : fmtCap(ar.market_cap_b)}</span>
                       <span className="text-xs text-slate-300 font-mono">营收 {ar.revenue_growth != null ? pct(ar.revenue_growth, 0) : '—'}</span>
                     </div>
                     <div className="text-xs text-slate-300">{ar.reason}</div>
                     {ar.already_in_group ? (
                       <div className="text-xs text-amber-400">已在池中</div>
+                    ) : ar.market_cap_b == null ? (
+                      <div className="text-xs text-amber-400">市值暂不可用，不能验证是否达到 $1B 清单门槛</div>
+                    ) : ar.market_cap_b < 1 ? (
+                      <div className="text-xs text-amber-400">当前市值 {fmtCap(ar.market_cap_b)}，低于 $1B 清单门槛</div>
                     ) : (
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs text-slate-400">加入分组：</span>
@@ -571,7 +576,7 @@ export default function AITracker() {
         <div>· 每只右侧 <span className="px-1 rounded bg-emerald-900/60 text-emerald-300">优先池</span>/<span className="px-1 rounded bg-slate-700/70 text-slate-500">观察</span> 切换是否纳入 auto_trader 的 AI 优先池：<span className="text-slate-400">优先池</span>=宽松扫描+置顶+行业豁免（动能轮动里标 ⭐）；<span className="text-slate-400">观察</span>=仅研究不下单。新增成员默认「观察」，老成员默认「优先池」（向后兼容）</div>
         <div>· 「手动加入」识别行业并归组；评分/动量数据见「动能轮动」</div>
         <div>· 吐故纳新：清单管理顶部两个面板——<span className="text-emerald-400">📥 建议纳入</span>（「🔍 自动发现」扫指数成分 $2B–$500B + ai_ipo_discover 新股检索的候选，按市值排序）和 <span className="text-amber-400">🧹 建议移出</span>（近 2 个月持续弱势：RS 池内后 20% + 破 EMA21，调度任务跑完自动显示）；加入/移出/保留都需人工确认，不会自动改池。tab 上的数字角标 = 两类待办合计</div>
-        <div>· 清单卡片使用统一亮度、背景和边框；市值只负责组内从大到小排序，并在每张卡上直接显示。扫描未就绪时显示「市值待更新」，相关成员保持原清单顺序；指数身份直接显示为「标普500 / 纳指100」。</div>
+        <div>· 清单卡片使用统一亮度、背景和边框；市值统一用十亿美元（B）显示，只负责组内从大到小排序。正式清单门槛为 $1B，市值缺失时显示「市值待更新」且不按 0 处理；指数身份直接显示为「标普500 / 纳指100」。</div>
       </div>
     </div>
   )

@@ -3,9 +3,11 @@ import threading
 import time
 import tempfile
 import unittest
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from unittest.mock import patch
+
+import requests
 
 import config
 from core import social_buzz
@@ -106,6 +108,116 @@ class IntelSocialTests(unittest.TestCase):
         self.assertEqual(10, result['NVDA']['avg7'])
         self.assertGreater(result['NVDA']['z'], 2)
 
+    def test_zscore_does_not_signal_on_weekend(self):
+        rows = [
+            ('NVDA', '2026-07-15', 20),
+            ('NVDA', '2026-07-16', 20),
+            ('NVDA', '2026-07-17', 20),
+            ('NVDA', '2026-07-19', 1),
+        ]
+        result = social_svc._zscore_map(rows)
+        self.assertEqual(1, result['NVDA']['today'])
+        self.assertIsNone(result['NVDA']['z'])
+        self.assertEqual('non_trading_day', result['NVDA']['status'])
+
+    def test_stocktwits_sentiment_uses_strict_24h_window(self):
+        recent = datetime.now(timezone.utc) - timedelta(hours=2)
+        old = datetime.now(timezone.utc) - timedelta(days=2)
+
+        class FakeResponse:
+            status_code = 200
+
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {'messages': [
+                    {'created_at': recent.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                     'entities': {'sentiment': {'basic': 'Bearish'}}},
+                    {'created_at': old.strftime('%Y-%m-%dT%H:%M:%SZ'),
+                     'entities': {'sentiment': {'basic': 'Bullish'}}},
+                ]}
+
+        with (
+            patch.object(social_buzz.requests, 'get', return_value=FakeResponse()),
+            patch.object(social_buzz.time, 'sleep'),
+        ):
+            batch = social_buzz.fetch_stocktwits(['NVDA'])
+
+        self.assertEqual('ok', batch['status'])
+        self.assertEqual(1, batch['rows'][0]['mentions'])
+        self.assertEqual(0, batch['rows'][0]['bull_cnt'])
+        self.assertEqual(1, batch['rows'][0]['bear_cnt'])
+        self.assertEqual(24, batch['rows'][0]['extra']['window_hours'])
+
+    def test_stocktwits_cloudflare_challenge_stops_remaining_requests(self):
+        class ChallengeResponse:
+            status_code = 403
+            headers = {'cf-mitigated': 'challenge'}
+
+            def raise_for_status(self):
+                raise AssertionError('challenge should be handled before raise_for_status')
+
+        with (
+            patch.object(social_buzz.requests, 'get', return_value=ChallengeResponse()) as get,
+            patch.object(social_buzz.time, 'sleep'),
+        ):
+            batch = social_buzz.fetch_stocktwits(['NVDA', 'AMD', 'MU'])
+
+        self.assertEqual('unavailable', batch['status'])
+        self.assertEqual(0, batch['covered_count'])
+        self.assertEqual([], batch['rows'])
+        self.assertIn('Cloudflare browser challenge', batch['detail'])
+        get.assert_called_once()
+
+    def test_social_monitored_does_not_connect_ib_gateway(self):
+        with (
+            patch('web.services.ai_tracker_svc.load_universe', return_value={
+                'groups': {'gpu': {'symbols': ['NVDA']}}
+            }),
+            patch('web.services.intel_svc._holdings_for_intel', return_value=[
+                {'symbol': 'MUU'}
+            ]) as holdings,
+            patch('web.services.intel_svc._news_symbols', return_value=['MU']),
+        ):
+            tags = social_svc._monitored()
+
+        holdings.assert_called_once_with(include_ib=False)
+        self.assertEqual({'NVDA': 'AI池', 'MU': '持仓'}, tags)
+
+    def test_apewisdom_retries_transient_timeout(self):
+        class GoodResponse:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {'results': [{'ticker': 'NVDA', 'mentions': '12', 'rank': '8'}]}
+
+        with (
+            patch.object(social_buzz.requests, 'get', side_effect=[
+                requests.Timeout('temporary timeout'), GoodResponse(), GoodResponse(),
+            ]) as get,
+            patch.object(social_buzz.time, 'sleep'),
+        ):
+            batch = social_buzz.fetch_apewisdom({'NVDA'}, pages=2)
+
+        self.assertEqual('ok', batch['status'])
+        self.assertEqual(2, batch['row_count'])
+        self.assertEqual(3, get.call_count)
+
+    def test_sentiment_compares_with_own_strict_window_baseline(self):
+        extra = '{"window_hours": 24, "sampled_24h": 30}'
+        rows = [
+            ('NVDA', '2026-07-13', 30, None, None, 8, 2, '2026-07-13 21:00:00', extra),
+            ('NVDA', '2026-07-14', 30, None, None, 8, 2, '2026-07-14 21:00:00', extra),
+            ('NVDA', '2026-07-15', 30, None, None, 8, 2, '2026-07-15 21:00:00', extra),
+            ('NVDA', '2026-07-16', 30, None, None, 4, 6, '2026-07-16 21:00:00', extra),
+        ]
+        result = social_svc._sentiment_map(rows)['NVDA']
+        self.assertEqual(0.8, result['bull_baseline'])
+        self.assertEqual(-40.0, result['bull_delta_pp'])
+        self.assertEqual('deteriorating', result['sentiment_shift'])
+
     def test_collect_degrades_when_all_sources_return_empty(self):
         class FakeDB:
             def connect(self):
@@ -128,7 +240,12 @@ class IntelSocialTests(unittest.TestCase):
             patch('core.database.Database', return_value=FakeDB()),
         ):
             result = social_buzz.collect({'NVDA'}, ['NVDA'])
-        self.assertEqual({'apewisdom': 0, 'reddit_posts': 0, 'stocktwits': 0, 'saved': 0}, result)
+        self.assertEqual(0, result['saved'])
+        self.assertEqual({
+            'apewisdom': 'unavailable',
+            'reddit_posts': 'unavailable',
+            'stocktwits': 'unavailable',
+        }, result['source_status'])
 
     def test_social_mentions_database_round_trip_and_prune(self):
         with tempfile.TemporaryDirectory() as td, patch.object(config, 'DB_PATH', str(Path(td) / 'test.db')):
@@ -137,16 +254,25 @@ class IntelSocialTests(unittest.TestCase):
             saved = db.add_social_mentions([
                 {'symbol': 'NVDA', 'source': 'apewisdom', 'trade_date': date.today().isoformat(),
                  'mentions': 42, 'rank': 3, 'extra': {'sample': True}},
+                {'symbol': 'NVDA', 'source': 'apewisdom', 'trade_date': date.today().isoformat(),
+                 'mentions': 35, 'rank': 5, 'extra': {'sample': 'latest'}},
                 {'symbol': 'OLD', 'source': 'apewisdom', 'trade_date': '2000-01-01',
                  'mentions': 1},
             ])
+            db.add_social_collection_runs([{
+                'source': 'apewisdom', 'trade_date': date.today().isoformat(),
+                'status': 'ok', 'requested_count': 80, 'covered_count': 20,
+                'row_count': 20, 'detail': 'top 200',
+            }])
             rows = db.get_social_daily('apewisdom', days=14)
+            runs = db.get_latest_social_collection_runs()
             pruned = db.prune_social_mentions(keep_days=90)
             db.close()
 
-        self.assertEqual(2, saved)
+        self.assertEqual(3, saved)
         self.assertEqual('NVDA', rows[0][0])
-        self.assertEqual(42, rows[0][2])
+        self.assertEqual(35, rows[0][2])
+        self.assertEqual('ok', runs[0][2])
         self.assertEqual(1, pruned)
 
 

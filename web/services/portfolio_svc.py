@@ -76,7 +76,7 @@ def _ensure_connected():
             # 必须与 Gateway「Configuration→API→Master API client ID」一致 → Web 成为主控
             # client，才能撤销/管理任意 client（含 auto_trader clientId=1）下的订单。固定 id 是
             # master 的前提；万一旧连接未释放报 Error 326，由 IBConnection 重试兜底。
-            cid = getattr(config, 'IB_WEB_CLIENT_ID', config.IB_CLIENT_ID + 10)
+            cid = config.IB_WEB_CLIENT_ID
             _conn = IBConnection(
                 host=config.IB_HOST,
                 port=config.IB_PORT,
@@ -580,4 +580,3 @@ def get_signals(universe: str = 'sp500') -> dict:
         for s in signals.get('sell', [])
     ]
     return {"buy": buy, "sell": sell, "spy_brake": signals.get('spy_brake', False)}
-

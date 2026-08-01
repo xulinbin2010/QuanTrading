@@ -62,6 +62,51 @@ class AITrackerMaintenanceTests(unittest.TestCase):
 
         self.assertEqual([], result['suggestions'])
 
+    def test_add_symbol_rejects_sub_1b_market_cap(self):
+        universe = {
+            'groups': {'visible': {'label': '可见池', 'symbols': []}},
+            'trade_priority': {},
+        }
+        with patch.object(ai_tracker_svc, 'load_universe', return_value=universe), \
+             patch('core.universe.get_stock_info',
+                   return_value={'TINY': {'market_cap_b': 0.99}}), \
+             patch.object(ai_tracker_svc, 'save_universe') as save:
+            with self.assertRaisesRegex(ValueError, r'低于 \$1B'):
+                ai_tracker_svc.add_symbol_to_universe('TINY', 'visible')
+
+        self.assertEqual([], universe['groups']['visible']['symbols'])
+        save.assert_not_called()
+
+    def test_add_symbol_rejects_missing_market_cap(self):
+        universe = {
+            'groups': {'visible': {'label': '可见池', 'symbols': []}},
+            'trade_priority': {},
+        }
+        with patch.object(ai_tracker_svc, 'load_universe', return_value=universe), \
+             patch('core.universe.get_stock_info', return_value={'UNKNOWN': {}}), \
+             patch.object(ai_tracker_svc, 'save_universe') as save:
+            with self.assertRaisesRegex(ValueError, '市值暂不可用'):
+                ai_tracker_svc.add_symbol_to_universe('UNKNOWN', 'visible')
+
+        self.assertEqual([], universe['groups']['visible']['symbols'])
+        save.assert_not_called()
+
+    def test_add_symbol_at_or_above_1b_keeps_manual_priority_default(self):
+        universe = {
+            'groups': {'visible': {'label': '可见池', 'symbols': []}},
+            'trade_priority': {},
+            'rejected': ['OK'],
+        }
+        with patch.object(ai_tracker_svc, 'load_universe', return_value=universe), \
+             patch('core.universe.get_stock_info',
+                   return_value={'OK': {'market_cap_b': 1.0}}), \
+             patch.object(ai_tracker_svc, 'save_universe'):
+            result = ai_tracker_svc.add_symbol_to_universe('OK', 'visible')
+
+        self.assertEqual(['OK'], result['groups']['visible']['symbols'])
+        self.assertFalse(result['trade_priority']['OK'])
+        self.assertNotIn('OK', result['rejected'])
+
 
 if __name__ == '__main__':
     unittest.main()

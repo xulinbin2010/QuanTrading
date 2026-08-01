@@ -20,6 +20,7 @@ def ib_debug():
         'config_port': config.IB_PORT,
         'config_host': config.IB_HOST,
         'config_client_id': config.IB_CLIENT_ID,
+        'web_client_id': config.IB_WEB_CLIENT_ID,
         'is_live_port': config.IB_PORT == 4001,
     }
     # 主动尝试连接，并捕获具体错误

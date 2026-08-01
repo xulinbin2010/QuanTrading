@@ -111,9 +111,46 @@ html.day {
   --color-yellow-400: #d97706;
   --color-yellow-300: #a16207;
 
+  /* 语义色：琥珀（警告/低置信度）
+     浅色主题不能沿用深色模式的浅黄文字；文字色满足白底 WCAG AA。 */
+  --color-amber-950: #fffbeb;
+  --color-amber-900: #fef3c7;
+  --color-amber-800: #fcd34d;
+  --color-amber-700: #d97706;
+  --color-amber-600: #d97706;
+  --color-amber-500: #f59e0b;
+  --color-amber-400: #b45309;
+  --color-amber-300: #92400e;
+  --color-amber-200: #78350f;
+
+  /* 语义色：翠绿（正向/正常） */
+  --color-emerald-950: #ecfdf5;
+  --color-emerald-900: #d1fae5;
+  --color-emerald-800: #6ee7b7;
+  --color-emerald-700: #10b981;
+  --color-emerald-600: #34d399;
+  --color-emerald-500: #34d399;
+  --color-emerald-400: #047857;
+  --color-emerald-300: #065f46;
+  --color-emerald-200: #064e3b;
+  --color-emerald-100: #052e16;
+
+  /* 辅助语义色：浅色背景使用深色文字、浅色边框 */
+  --color-sky-800: #7dd3fc;
+  --color-sky-400: #0369a1;
+  --color-sky-300: #075985;
+  --color-cyan-800: #67e8f9;
+  --color-cyan-400: #0e7490;
+  --color-cyan-300: #155e75;
+  --color-purple-800: #c4b5fd;
+  --color-purple-400: #7e22ce;
+  --color-purple-300: #6b21a8;
+
   /* 语义色：橙 */
   --color-orange-900: #ffedd5;
-  --color-orange-700: #fb923c;
+  --color-orange-800: #fdba74;
+  --color-orange-700: #f97316;
+  --color-orange-400: #c2410c;
   --color-orange-300: #c2410c;
 }
 
@@ -180,9 +217,46 @@ html.night {
   --color-yellow-400: #d97706;
   --color-yellow-300: #a16207;
 
+  /* 语义色：琥珀（警告/低置信度）
+     night 也是浅色暖白主题，使用与 day 相同的可读性映射。 */
+  --color-amber-950: #fffbeb;
+  --color-amber-900: #fef3c7;
+  --color-amber-800: #fcd34d;
+  --color-amber-700: #d97706;
+  --color-amber-600: #d97706;
+  --color-amber-500: #f59e0b;
+  --color-amber-400: #b45309;
+  --color-amber-300: #92400e;
+  --color-amber-200: #78350f;
+
+  /* 语义色：翠绿（正向/正常） */
+  --color-emerald-950: #ecfdf5;
+  --color-emerald-900: #d1fae5;
+  --color-emerald-800: #6ee7b7;
+  --color-emerald-700: #10b981;
+  --color-emerald-600: #34d399;
+  --color-emerald-500: #34d399;
+  --color-emerald-400: #047857;
+  --color-emerald-300: #065f46;
+  --color-emerald-200: #064e3b;
+  --color-emerald-100: #052e16;
+
+  /* 辅助语义色：浅色背景使用深色文字、浅色边框 */
+  --color-sky-800: #7dd3fc;
+  --color-sky-400: #0369a1;
+  --color-sky-300: #075985;
+  --color-cyan-800: #67e8f9;
+  --color-cyan-400: #0e7490;
+  --color-cyan-300: #155e75;
+  --color-purple-800: #c4b5fd;
+  --color-purple-400: #7e22ce;
+  --color-purple-300: #6b21a8;
+
   /* 语义色：橙 */
   --color-orange-900: #ffedd5;
-  --color-orange-700: #fb923c;
+  --color-orange-800: #fdba74;
+  --color-orange-700: #f97316;
+  --color-orange-400: #c2410c;
   --color-orange-300: #c2410c;
 }
 

@@ -73,8 +73,12 @@ Always respond in Chinese (中文). Do not mix Korean or other languages into re
 
 - Match existing button styles (e.g., backtest button style) rather than introducing new colors like amber
 - Keep theme options minimal — do not over-engineer with multiple theme variants unless explicitly requested
-- When fixing theme colors, audit ALL color mappings (including blue-200, etc.) in one pass
-- For any theme change: first grep the entire frontend for every color token and Tailwind class in use, produce a mapping table of old→new, and only then apply changes in one commit. Do not fix colors reactively as user spots them.
+- **所有 UI 新增或修改都必须把 `dark`、`day`、`night` 视为同等验收目标。** 不得只在当前主题下检查；本项目的 `day` 和 `night` 都属于浅色背景主题。
+- 新增或修改 warning / success / danger / info 等语义色时，必须同时检查文字、背景、边框及透明度组合，不能仅凭 Tailwind token 名称判断可读性。浅色背景上的普通文字目标为 WCAG AA 对比度 `>= 4.5:1`，大号或粗体文字至少 `>= 3:1`。
+- 使用新的 Tailwind 色阶前，先确认 `web/frontend/src/index.css` 是否为 `day` / `night` 提供了完整、可读的 theme override；若缺失，应补全共享 palette，不得只在单个组件写临时颜色补丁。
+- UI 交付前必须在真实浏览器中切换并检查深色、浅色白天、浅色夜晚三种实际样式，至少覆盖 normal / hover / active / disabled，以及 alert、badge、table 等本次受影响状态；同时检查 browser console。
+- When fixing theme colors, audit ALL color mappings (including blue-200, amber-300, etc.) in one pass
+- For any theme change: first grep the entire frontend for every color token and Tailwind class in use, produce a mapping table of old→new, and only then apply changes as one focused patch (and one focused commit when a commit is requested). Do not fix colors reactively as user spots them.
 
 ---
 

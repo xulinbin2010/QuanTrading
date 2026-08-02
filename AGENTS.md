@@ -25,6 +25,12 @@ Always respond in Chinese (中文). Do not mix Korean or other languages into re
 
 ---
 
+## Git 提交与同步
+
+- 用户明确要求拉取最新代码、提交或推送时，普通改动默认直接在当前 `main` 分支完成并推送到 `main`，不要自行新建分支。
+- 只有用户明确要求创建分支/PR，或 `main` 受到保护规则阻止直接推送、且无法在不扩大范围的情况下处理时，才使用独立分支；遇到这种例外先说明原因。
+- 执行同步前仍需检查工作区、远端领先/落后关系并保留本地改动；禁止用 `git reset --hard` 或无确认的清理操作覆盖用户工作。
+
 ## Data Safety
 
 - NEVER mass-delete parquet/cache files based on transient API failures (e.g., yfinance timeouts)

@@ -5,8 +5,8 @@ FastAPI 服务器入口
 
 启动：
   cd /path/to/QuanTrading
-  python -m web.server              # 默认端口 3001
-  python -m web.server --port 3001  # 指定端口
+  uv run python -m web.server              # 默认端口 3001
+  uv run python -m web.server --port 3001  # 指定端口
 """
 import sys
 import os
@@ -24,7 +24,7 @@ _LOG_DIR  = os.path.join(ROOT, 'logs')
 _LOG_FILE = os.path.join(_LOG_DIR, 'server.log')
 os.makedirs(_LOG_DIR, exist_ok=True)
 
-# 幂等添加：`python -m web.server` 会把本模块当 __main__ 跑一遍，uvicorn 的
+# 幂等添加：`uv run python -m web.server` 会把本模块当 __main__ 跑一遍，uvicorn 的
 # 'web.server:app' 又会把它作为 web.server 再 import 一遍 —— 同进程下顶层代码执行两次。
 # 若不去重，root 会挂上两个相同的文件 handler，导致每行日志写两遍（看起来像任务双跑）。
 # 用 tag 标记，root 上已存在则跳过。

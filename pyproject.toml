@@ -1,0 +1,32 @@
+[project]
+name = "quantrading"
+version = "0.1.0"
+description = "IBKR personal quantitative trading platform"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "ib-insync==0.9.86",
+    "pymysql==1.1.2",
+    "pyarrow==23.0.1",
+    "yfinance==1.2.0",
+    "numpy==2.4.3",
+    "pandas==3.0.1",
+    "requests==2.32.5",
+    "lxml==6.0.2",
+    "html5lib==1.1",
+    "fastapi==0.135.2",
+    "uvicorn[standard]==0.42.0",
+    "apscheduler==3.11.2",
+    "python-dotenv==1.2.2",
+    # The Anthropic SDK was added after the original environment snapshot and
+    # remains intentionally unpinned until its production API path is enabled.
+    "anthropic",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "ruff",
+]
+
+[tool.uv]
+package = false

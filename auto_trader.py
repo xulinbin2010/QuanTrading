@@ -3,21 +3,21 @@
 
 执行时机（日线策略）：
   每天盘前跑一次（北京时间晚 9:00 = 美东早 9:00，开盘前 30 分钟）：
-      python auto_trader.py --run
+      uv run python auto_trader.py --run
 
   订单类型自动选择：
     - 盘前（美东 9:30 前）→ OPG 开盘集合竞价单，9:30 自动成交
     - 盘中（美东 9:30-16:00）→ DAY 市价单，立即成交
 
   可选：提前预览信号（不下单）：
-      python auto_trader.py --dry-run
+      uv run python auto_trader.py --dry-run
 
 用法：
-  python auto_trader.py --dry-run                          # 扫描信号，不下单
-  python auto_trader.py --run                              # 正式下单
-  python auto_trader.py --run --held NVDA AMD              # 同时监控持仓报警
-  python auto_trader.py --run --extra SNDK TSM             # 追加非 S&P500 股票
-  python auto_trader.py --dry-run --universe nasdaq100     # 切换股票池
+  uv run python auto_trader.py --dry-run                          # 扫描信号，不下单
+  uv run python auto_trader.py --run                              # 正式下单
+  uv run python auto_trader.py --run --held NVDA AMD              # 同时监控持仓报警
+  uv run python auto_trader.py --run --extra SNDK TSM             # 追加非 S&P500 股票
+  uv run python auto_trader.py --dry-run --universe nasdaq100     # 切换股票池
 """
 import argparse
 import warnings

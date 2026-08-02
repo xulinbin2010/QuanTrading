@@ -2,9 +2,9 @@
 Walk-Forward 验证 —— 滚动窗口检验策略是否过拟合。
 
 用法（CLI）：
-  python -m tests.walk_forward
-  python -m tests.walk_forward --train 24 --test 12 --start 2020-01-01
-  python -m tests.walk_forward --train 18 --test 6  --start 2019-01-01
+  uv run python -m tests.walk_forward
+  uv run python -m tests.walk_forward --train 24 --test 12 --start 2020-01-01
+  uv run python -m tests.walk_forward --train 18 --test 6  --start 2019-01-01
 
 说明：
   使用固定默认参数（不调参），验证策略在样本外（OOS）是否一致。

@@ -8,9 +8,9 @@ yfinance vs IBKR 数据比对工具
   - 输出终端报告 + 返回结构化 dict（供 Web API 使用）
 
 用法：
-  python -m tools.compare_data --symbols AAPL NVDA --start 2024-01-01
-  python -m tools.compare_data --universe sp500 --sample 30 --start 2024-06-01
-  python -m tools.compare_data --symbols MSFT --start 2024-01-01 --host 127.0.0.1 --port 4002
+  uv run python -m tools.compare_data --symbols AAPL NVDA --start 2024-01-01
+  uv run python -m tools.compare_data --universe sp500 --sample 30 --start 2024-06-01
+  uv run python -m tools.compare_data --symbols MSFT --start 2024-01-01 --host 127.0.0.1 --port 4002
 
 注意：
   - 需要 IB Gateway 运行（模拟盘 4002 / 实盘 4001）
@@ -267,8 +267,8 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 示例：
-  python -m tools.compare_data --symbols AAPL NVDA --start 2024-01-01
-  python -m tools.compare_data --universe sp500 --sample 30 --start 2024-06-01
+  uv run python -m tools.compare_data --symbols AAPL NVDA --start 2024-01-01
+  uv run python -m tools.compare_data --universe sp500 --sample 30 --start 2024-06-01
         """,
     )
     parser.add_argument('--symbols',   nargs='+', help='股票代码列表（与 --universe 二选一）')

@@ -186,7 +186,7 @@ def _call_claude_api(system: str, user: str, max_tokens: int = 12000) -> tuple[s
     try:
         import anthropic
     except ImportError:
-        raise MissingAPIKey('未安装 anthropic SDK。请在 .venv 中执行：pip install anthropic')
+        raise MissingAPIKey('未安装 anthropic SDK。请执行 uv sync 后重启 Web 服务')
 
     client = anthropic.Anthropic()
     tools = [{'type': 'web_search_20260209', 'name': 'web_search'}]

@@ -2,7 +2,7 @@
 一次性迁移脚本：MySQL quantrading → SQLite data/quantrading.db
 
 用法：
-    .venv/bin/python scripts/migrate_mysql_to_sqlite.py
+    uv run python scripts/migrate_mysql_to_sqlite.py
 """
 import os
 import sys

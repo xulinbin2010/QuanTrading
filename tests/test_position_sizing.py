@@ -5,8 +5,8 @@
 直接提取核心公式并通过 MockIB 验证下单数量。
 
 运行方式：
-    python -m tests.test_position_sizing
-    python tests/test_position_sizing.py
+    uv run python -m tests.test_position_sizing
+    uv run python tests/test_position_sizing.py
 """
 
 from __future__ import annotations

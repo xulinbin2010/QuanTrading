@@ -1,15 +1,17 @@
 .PHONY: preflight validate-backtest detect-lookahead install-hooks full-check
 
+UV_RUN = uv run
+
 preflight:
 	@echo "Running IBKR live trading preflight..."
-	.venv/bin/python scripts/preflight.py
+	$(UV_RUN) python scripts/preflight.py
 	@echo "See scripts/preflight_report.md for details"
 
 validate-backtest:
-	.venv/bin/python scripts/validate_change.py
+	$(UV_RUN) python scripts/validate_change.py
 
 detect-lookahead:
-	.venv/bin/python scripts/detect_lookahead.py
+	$(UV_RUN) python scripts/detect_lookahead.py
 
 install-hooks:
 	bash scripts/install_hooks.sh

@@ -64,7 +64,7 @@ class IBKRDataStore:
         try:
             from ib_insync import IB
         except ImportError:
-            raise RuntimeError("ib_insync 未安装，请执行：pip install ib_insync")
+            raise RuntimeError("ib_insync 未安装，请执行：uv sync")
 
         self._ib = IB()
         self._ib.connect(host, port, clientId=client_id, timeout=30)

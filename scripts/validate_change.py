@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run python
 """
 回测退步验证脚本（validate_change.py）。
 
@@ -7,10 +7,10 @@
 输出 markdown 报告到文件并同时 print 到 stdout。
 
 用法：
-  python scripts/validate_change.py
-  python scripts/validate_change.py --threshold 0.10
-  python scripts/validate_change.py --report scripts/my_report.md
-  python scripts/validate_change.py --baseline scripts/golden_baseline.json
+  uv run python scripts/validate_change.py
+  uv run python scripts/validate_change.py --threshold 0.10
+  uv run python scripts/validate_change.py --report scripts/my_report.md
+  uv run python scripts/validate_change.py --baseline scripts/golden_baseline.json
 
 退出码：
   0  全部通过

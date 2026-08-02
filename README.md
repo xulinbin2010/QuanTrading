@@ -15,13 +15,9 @@
 ## 安装
 
 ```bash
-# 1. 创建虚拟环境
-python3.12 -m venv .venv
-source .venv/bin/activate
-
-# 2. 安装依赖
-pip install ib_insync yfinance numpy pandas pyarrow requests lxml html5lib \
-            fastapi "uvicorn[standard]" apscheduler python-dotenv
+# 1. 安装 uv（macOS 可用：brew install uv）
+# 2. 使用项目声明的 Python 3.12 和 uv.lock 同步依赖
+uv sync
 
 # 3. 创建 .env 文件（已加入 .gitignore）
 cat > .env << EOF
@@ -82,10 +78,10 @@ cd web/frontend && npm install && npm run build && cd ../..
 
 ```bash
 # 北京时间 22:00（美东 9:00 AM，开盘前30分钟）
-python auto_trader.py --run          # 提交 OPG 单，提交完即可断开
+uv run python auto_trader.py --run          # 提交 OPG 单，提交完即可断开
 
 # 北京时间 22:35（美东 9:35 AM，开盘后5分钟）
-python confirm_fills.py              # 查询成交回报，回写 DB，写日志
+uv run python confirm_fills.py              # 查询成交回报，回写 DB，写日志
 ```
 
 ---
@@ -95,29 +91,29 @@ python confirm_fills.py              # 查询成交回报，回写 DB，写日�
 ### 选股扫描（无需 IB）
 
 ```bash
-python sp500_scanner.py                                 # 扫描 S&P 500，显示前15名
-python sp500_scanner.py --top 20                        # 显示前20名
-python sp500_scanner.py --held NVDA AMD STX             # 监控持仓卖出报警
-python sp500_scanner.py --universe nasdaq100            # 切换股票池
-python sp500_scanner.py --extra TSLA PLTR --held NVDA   # 追加自选股
+uv run python sp500_scanner.py                                 # 扫描 S&P 500，显示前15名
+uv run python sp500_scanner.py --top 20                        # 显示前20名
+uv run python sp500_scanner.py --held NVDA AMD STX             # 监控持仓卖出报警
+uv run python sp500_scanner.py --universe nasdaq100            # 切换股票池
+uv run python sp500_scanner.py --extra TSLA PLTR --held NVDA   # 追加自选股
 ```
 
 ### 回测（无需 IB）
 
 ```bash
-python -m tests.backtest_rs --period 3mo                          # 最近3个月
-python -m tests.backtest_rs --start 2024-01-01 --end 2024-12-31  # 指定区间
-python -m tests.backtest_rs --start 2025-01-01 --daily           # 含每日持仓明细
-python -m tests.backtest --symbol NVDA --fast 5 --slow 20         # MA 均线单股回测
+uv run python -m tests.backtest_rs --period 3mo                          # 最近3个月
+uv run python -m tests.backtest_rs --start 2024-01-01 --end 2024-12-31  # 指定区间
+uv run python -m tests.backtest_rs --start 2025-01-01 --daily           # 含每日持仓明细
+uv run python -m tests.backtest --symbol NVDA --fast 5 --slow 20         # MA 均线单股回测
 ```
 
 ### 自动交易（需要 IB Gateway）
 
 ```bash
-python auto_trader.py --run                     # 正式下单
-python auto_trader.py --run --held NVDA AMD     # 同时监控持仓止损
-python auto_trader.py --dry-run                 # 仅预览信号，不下单
-python auto_trader.py --dry-run --universe nasdaq100
+uv run python auto_trader.py --run                     # 正式下单
+uv run python auto_trader.py --run --held NVDA AMD     # 同时监控持仓止损
+uv run python auto_trader.py --dry-run                 # 仅预览信号，不下单
+uv run python auto_trader.py --dry-run --universe nasdaq100
 ```
 
 OPG 限价保护：买入限价 = 昨收 × (1 + `MAX_ENTRY_SLIPPAGE`)，默认 1%，开盘跳空超阈值自动放弃。
@@ -125,15 +121,15 @@ OPG 限价保护：买入限价 = 昨收 × (1 + `MAX_ENTRY_SLIPPAGE`)，默认 
 ### 成交确认（需要 IB Gateway）
 
 ```bash
-python confirm_fills.py                         # 确认今日成交（9:35 AM ET 后运行）
-python confirm_fills.py --date 2026-03-21       # 补确认历史某天
+uv run python confirm_fills.py                         # 确认今日成交（9:35 AM ET 后运行）
+uv run python confirm_fills.py --date 2026-03-21       # 补确认历史某天
 ```
 
 ### 数据质量比对
 
 ```bash
-python -m tools.compare_data --symbols AAPL NVDA MSFT --start 2024-01-01
-python -m tools.compare_data --universe sp500 --sample 30 --start 2024-06-01
+uv run python -m tools.compare_data --symbols AAPL NVDA MSFT --start 2024-01-01
+uv run python -m tools.compare_data --universe sp500 --sample 30 --start 2024-06-01
 ```
 
 ---

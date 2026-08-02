@@ -11,12 +11,12 @@
   7. 关键资产存在性  SPY / ^VIX / 行业 ETF / 杠杆 ETF 必须存在
 
 用法：
-  python -m tools.data_health                        # 仅扫描，输出报告
-  python -m tools.data_health --fix                  # 扫描 + 自动修复
-  python -m tools.data_health --fix --use-ibkr       # 修复时用 IBKR 兜底
-  python -m tools.data_health --critical-only        # 只检查关键资产
-  python -m tools.data_health --scope etf            # etf | leveraged | sp500 | full
-  python -m tools.data_health --symbols NVDA QQQ     # 只检查指定标的
+  uv run python -m tools.data_health                        # 仅扫描，输出报告
+  uv run python -m tools.data_health --fix                  # 扫描 + 自动修复
+  uv run python -m tools.data_health --fix --use-ibkr       # 修复时用 IBKR 兜底
+  uv run python -m tools.data_health --critical-only        # 只检查关键资产
+  uv run python -m tools.data_health --scope etf            # etf | leveraged | sp500 | full
+  uv run python -m tools.data_health --symbols NVDA QQQ     # 只检查指定标的
 """
 from __future__ import annotations
 import sys

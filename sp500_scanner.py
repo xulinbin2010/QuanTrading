@@ -8,14 +8,14 @@ RS 动量选股扫描器（独立运行，无需 IB Gateway）
   - 内部人买入：近 N 天有高管/董事主动买入的股票（按金额排序）
 
 用法：
-  python sp500_scanner.py                             # 扫描 S&P 500，显示前15名
-  python sp500_scanner.py --top 20                    # 显示前20名买入信号
-  python sp500_scanner.py --held NVDA AMD             # 监控指定持仓的卖出报警
-  python sp500_scanner.py --universe nasdaq100        # 扫描纳斯达克100
-  python sp500_scanner.py --universe russell2000      # 扫描罗素2000
-  python sp500_scanner.py --extra TSLA AAPL           # 追加自选股
-  python sp500_scanner.py --insider-days 60           # 查看近60天内部人买入
-  python sp500_scanner.py --universe nasdaq100 --top 10 --held NVDA
+  uv run python sp500_scanner.py                             # 扫描 S&P 500，显示前15名
+  uv run python sp500_scanner.py --top 20                    # 显示前20名买入信号
+  uv run python sp500_scanner.py --held NVDA AMD             # 监控指定持仓的卖出报警
+  uv run python sp500_scanner.py --universe nasdaq100        # 扫描纳斯达克100
+  uv run python sp500_scanner.py --universe russell2000      # 扫描罗素2000
+  uv run python sp500_scanner.py --extra TSLA AAPL           # 追加自选股
+  uv run python sp500_scanner.py --insider-days 60           # 查看近60天内部人买入
+  uv run python sp500_scanner.py --universe nasdaq100 --top 10 --held NVDA
 """
 import argparse
 import warnings

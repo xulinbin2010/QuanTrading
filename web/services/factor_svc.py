@@ -825,7 +825,7 @@ def delete_narrative_entry(entry_id: int) -> bool:
 
 
 # CLI 入口（供 scheduler 定时预热市场扫描缓存）：
-#   python -m web.services.factor_svc --universe ai --top 50
+#   uv run python -m web.services.factor_svc --universe ai --top 50
 if __name__ == '__main__':
     import argparse
     import logging

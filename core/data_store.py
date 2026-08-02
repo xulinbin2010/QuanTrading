@@ -20,7 +20,7 @@ Parquet-based 本地数据存储层（替代 MySQL + MarketCache）。
   spy = close['SPY']
 
 CLI（独立运行，下载 / 更新数据）：
-  python -m core.data_store --universe sp500 --start 2022-01-01
+  uv run python -m core.data_store --universe sp500 --start 2022-01-01
 """
 
 import logging

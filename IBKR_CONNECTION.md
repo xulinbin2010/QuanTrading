@@ -3,7 +3,7 @@
 ## 依赖
 
 ```bash
-pip install ib_insync
+uv sync
 ```
 
 IB Gateway 必须提前启动并开启 API（Configuration → API → Enable ActiveX and Socket Clients）。

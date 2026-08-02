@@ -24,36 +24,27 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v5
+      - name: Set up uv and Python 3.12
+        uses: astral-sh/setup-uv@v6
         with:
-          python-version: "3.12"
+          version: "0.12.1"
+          enable-cache: true
 
-      - name: Cache pip packages
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-pip-
-
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install yfinance numpy pandas
+      - name: Install locked dependencies
+        run: uv sync --locked --no-dev
 
       # ── Step 1: Lookahead detection（失败即 block）──────────────────────
       - name: Run lookahead detection
         id: lookahead
         run: |
-          python scripts/detect_lookahead.py
+          uv run --locked --no-dev python scripts/detect_lookahead.py
           echo "lookahead_ok=true" >> "$GITHUB_OUTPUT"
 
       # ── Step 2: 检查 baseline 是否已计算 ──────────────────────────────
       - name: Check golden baseline status
         id: baseline_check
         run: |
-          python - <<'EOF'
+          uv run --locked --no-dev python - <<'EOF'
           import json, sys, os
 
           baseline_path = "scripts/golden_baseline.json"
@@ -69,7 +60,7 @@ jobs:
           computed = data.get("computed", False)
           if not computed:
               print("::warning::golden_baseline.json has computed=false — backtest validation skipped.")
-              print("Run `python scripts/generate_baseline.py` locally to compute the baseline,")
+              print("Run `uv run python scripts/generate_baseline.py` locally to compute the baseline,")
               print("then commit scripts/golden_baseline.json before merging.")
 
           with open(os.environ["GITHUB_OUTPUT"], "a") as f:
@@ -80,13 +71,13 @@ jobs:
       - name: Run backtest validation
         if: steps.baseline_check.outputs.baseline_computed == 'true'
         run: |
-          python scripts/validate_change.py --threshold 0.05
+          uv run --locked --no-dev python scripts/validate_change.py --threshold 0.05
 
       - name: Skip backtest validation notice
         if: steps.baseline_check.outputs.baseline_computed != 'true'
         run: |
           echo "Backtest validation skipped: golden baseline not yet computed."
-          echo "To enable: run 'python scripts/generate_baseline.py' and commit the result."
+          echo "To enable: run 'uv run python scripts/generate_baseline.py' and commit the result."
 
       # ── Step 4: 上传报告 artifact ─────────────────────────────────────
       - name: Upload validation artifacts

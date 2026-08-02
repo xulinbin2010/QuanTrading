@@ -2,10 +2,10 @@
 5日动量策略回测（AI产业链专属）
 
 用法：
-  python -m tests.backtest_momentum5d --start 2024-01-01 --end 2024-12-31
-  python -m tests.backtest_momentum5d --start 2023-01-01
-  python -m tests.backtest_momentum5d --period 6mo
-  python -m tests.backtest_momentum5d --start 2025-01-01 --max-pos 3 --pos-pct 0.25 --daily
+  uv run python -m tests.backtest_momentum5d --start 2024-01-01 --end 2024-12-31
+  uv run python -m tests.backtest_momentum5d --start 2023-01-01
+  uv run python -m tests.backtest_momentum5d --period 6mo
+  uv run python -m tests.backtest_momentum5d --start 2025-01-01 --max-pos 3 --pos-pct 0.25 --daily
 
 策略规格：
   - 股票池  : data/ai_universe.json，剔除软件行业

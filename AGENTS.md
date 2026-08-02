@@ -87,16 +87,14 @@ Always respond in Chinese (中文). Do not mix Korean or other languages into re
 基于 Interactive Brokers（IBKR）的个人量化交易平台，目标资金 ~$60K，策略为**日线波段交易**（非日内/高频）。
 使用 yfinance 做历史回测，IB Gateway 做模拟/实盘执行。
 
-**Python 版本：3.12**（venv 路径 `.venv/`）
+**Python 版本：3.12**（由 `uv` 管理，项目环境为 `.venv/`）
 
 ---
 
 ## 安装依赖
 
 ```bash
-python3.12 -m venv .venv
-source .venv/bin/activate
-pip install ib_insync yfinance numpy pandas pyarrow requests lxml html5lib fastapi "uvicorn[standard]" apscheduler python-dotenv
+uv sync
 ```
 
 **注意：** 需手动创建 `.env` 文件（已加入 .gitignore），填写连接参数：
@@ -201,10 +199,10 @@ start_web.sh          一键启动脚本
 
 ```bash
 # 北京时间 晚 22:00（美东 9:00 AM，开盘前30分钟）
-python auto_trader.py --run              # 提交 OPG 单，提交完即可断开
+uv run python auto_trader.py --run              # 提交 OPG 单，提交完即可断开
 
 # 北京时间 晚 22:35（美东 9:35 AM，开盘后5分钟）
-python confirm_fills.py                  # 查询成交回报，回写 MySQL，写日志
+uv run python confirm_fills.py                  # 查询成交回报，回写 MySQL，写日志
 ```
 
 ---
@@ -216,12 +214,12 @@ python confirm_fills.py                  # 查询成交回报，回写 MySQL，�
 `sp500_scanner.py` — 每天收盘后扫描 RS 动量信号，输出买入候选、卖出报警、RS 排名。
 
 ```bash
-python sp500_scanner.py                                          # 扫描 S&P 500，显示前15名
-python sp500_scanner.py --top 20                                 # 显示前20名
-python sp500_scanner.py --held NVDA AMD STX                      # 监控持仓卖出报警
-python sp500_scanner.py --universe nasdaq100                     # 切换股票池
-python sp500_scanner.py --extra TSLA PLTR --held NVDA            # 追加自选股
-python sp500_scanner.py --universe nasdaq100 --top 10 --held NVDA AMD --extra MSFT
+uv run python sp500_scanner.py                                          # 扫描 S&P 500，显示前15名
+uv run python sp500_scanner.py --top 20                                 # 显示前20名
+uv run python sp500_scanner.py --held NVDA AMD STX                      # 监控持仓卖出报警
+uv run python sp500_scanner.py --universe nasdaq100                     # 切换股票池
+uv run python sp500_scanner.py --extra TSLA PLTR --held NVDA            # 追加自选股
+uv run python sp500_scanner.py --universe nasdaq100 --top 10 --held NVDA AMD --extra MSFT
 ```
 
 ---
@@ -231,11 +229,11 @@ python sp500_scanner.py --universe nasdaq100 --top 10 --held NVDA AMD --extra MS
 `tests/backtest_rs.py` — 逐日模拟 RS 动量策略，输出完整业绩报告。
 
 ```bash
-python -m tests.backtest_rs --period 3mo                         # 最近3个月（默认）
-python -m tests.backtest_rs --start 2024-01-01 --end 2024-12-31 # 指定区间
-python -m tests.backtest_rs --start 2025-10-01 --universe nasdaq100
-python -m tests.backtest_rs --start 2025-10-01 --daily          # 打印每日持仓明细
-python -m tests.backtest --symbol NVDA --fast 5 --slow 20        # MA 均线单股回测
+uv run python -m tests.backtest_rs --period 3mo                         # 最近3个月（默认）
+uv run python -m tests.backtest_rs --start 2024-01-01 --end 2024-12-31 # 指定区间
+uv run python -m tests.backtest_rs --start 2025-10-01 --universe nasdaq100
+uv run python -m tests.backtest_rs --start 2025-10-01 --daily          # 打印每日持仓明细
+uv run python -m tests.backtest --symbol NVDA --fast 5 --slow 20        # MA 均线单股回测
 ```
 
 ---
@@ -245,11 +243,11 @@ python -m tests.backtest --symbol NVDA --fast 5 --slow 20        # MA 均线单�
 `auto_trader.py` — 扫描信号 → 自动下单。
 
 ```bash
-python auto_trader.py --run                              # 正式下单（盘前提交 OPG）
-python auto_trader.py --run --held NVDA AMD STX          # 同时监控持仓止损/背离
-python auto_trader.py --run --extra MSFT TSM             # 追加非 S&P500 股票
-python auto_trader.py --dry-run                          # 仅预览信号不下单
-python auto_trader.py --dry-run --universe nasdaq100     # 切换股票池
+uv run python auto_trader.py --run                              # 正式下单（盘前提交 OPG）
+uv run python auto_trader.py --run --held NVDA AMD STX          # 同时监控持仓止损/背离
+uv run python auto_trader.py --run --extra MSFT TSM             # 追加非 S&P500 股票
+uv run python auto_trader.py --dry-run                          # 仅预览信号不下单
+uv run python auto_trader.py --dry-run --universe nasdaq100     # 切换股票池
 ```
 
 **OPG 限价保护：** 买入限价 = 昨收 × (1 + `MAX_ENTRY_SLIPPAGE`)，默认 1%。开盘跳空超阈值则自动放弃，不追高。
@@ -274,8 +272,8 @@ python auto_trader.py --dry-run --universe nasdaq100     # 切换股票池
 `confirm_fills.py` — 开盘后查询 OPG 成交回报，回写 `orders` 表 `filled_price`，写日志。
 
 ```bash
-python confirm_fills.py                      # 确认今日成交（9:35 AM ET 后运行）
-python confirm_fills.py --date 2026-03-21    # 补确认历史某天
+uv run python confirm_fills.py                      # 确认今日成交（9:35 AM ET 后运行）
+uv run python confirm_fills.py --date 2026-03-21    # 补确认历史某天
 ```
 
 ---
@@ -488,7 +486,7 @@ ai_priority_bonus  = +0.5（AI 优先池成员绝对置顶；rs_score 通常 [-0
 两条业务线共用（另有零成本兜底：待确认出场卡片始终显示 yfinance/SEC 新闻标题，不经 LLM）：
 
 1. **出场情报**（`generate_exit_intel` / `enrich_pending_exits`）：对触发出场的持仓检索个股新闻、板块龙头动向（如存储链看 SK 海力士），判断下跌归因（个股利空/板块拖累/系统性恐慌），给「卖出/保留/减半观察」倾向建议。auto_trader 触发后自动拉，Web UI 待确认卡可手动重试
-2. **核心票每日情报卡**（`generate_core_cards`，CLI `python -m web.services.intel_svc --core-cards`）：对盘前清单 core 组每只票出卡（隔夜要闻/产业链同行/华尔街/催化剂倒计时），并对照手填的**持有逻辑+失效条件**给论点检查档位（强化/中性/削弱/失效预警）。缓存 `data/.core_cards_cache.json`；入口：顶栏「盘前扫描」modal →「核心票情报卡」tab；调度任务 `core_intel_cards`（默认关闭，美东 8:15）
+2. **核心票每日情报卡**（`generate_core_cards`，CLI `uv run python -m web.services.intel_svc --core-cards`）：对盘前清单 core 组每只票出卡（隔夜要闻/产业链同行/华尔街/催化剂倒计时），并对照手填的**持有逻辑+失效条件**给论点检查档位（强化/中性/削弱/失效预警）。缓存 `data/.core_cards_cache.json`；入口：顶栏「盘前扫描」modal →「核心票情报卡」tab；调度任务 `core_intel_cards`（默认关闭，美东 8:15）
    - core 组配置在 `data/premarket_config.json`（「清单配置」tab 手填），字段：ticker/cost/weight/thesis/**invalidation（失效条件）**/**catalysts（催化剂日历）**——后两个字段是论点检查的依据
    - 每次生成 = 一次 Codex+联网调用；cli 引擎消耗订阅额度（无现金成本），api 引擎 5 只票约 $0.5-1.5
 
@@ -661,11 +659,11 @@ VIX得分    = clip((30 - VIX) / 100, -0.2, +0.2)      → [-0.2, +0.2]
 
 ```bash
 # 需要 IB Gateway 运行（模拟盘 4002）
-python -m tools.compare_data --symbols AAPL NVDA MSFT --start 2024-01-01
-python -m tools.compare_data --universe sp500 --sample 30 --start 2024-06-01
+uv run python -m tools.compare_data --symbols AAPL NVDA MSFT --start 2024-01-01
+uv run python -m tools.compare_data --universe sp500 --sample 30 --start 2024-06-01
 
 # 离线模式（已有 data/stocks_ibkr/ 缓存时可不连 IB）
-python -m tools.compare_data --symbols AAPL --start 2024-01-01 --port 9999
+uv run python -m tools.compare_data --symbols AAPL --start 2024-01-01 --port 9999
 ```
 
 **比对逻辑：** OHLC 差异 > 0.5% 标红，成交量差异 > 10% 标红。

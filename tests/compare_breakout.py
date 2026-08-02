@@ -2,8 +2,8 @@
 对比：严格突破 vs 宽松接近高点
 
 用法：
-  python -m tests.compare_breakout --start 2022-01-01 --end 2024-12-31
-  python -m tests.compare_breakout --start 2024-01-01
+  uv run python -m tests.compare_breakout --start 2022-01-01 --end 2024-12-31
+  uv run python -m tests.compare_breakout --start 2024-01-01
 """
 import argparse
 import warnings

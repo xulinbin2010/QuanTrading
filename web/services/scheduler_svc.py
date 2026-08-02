@@ -3,6 +3,7 @@ from __future__ import annotations
 import re
 import sys
 import os
+import shlex
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
 
 import subprocess
@@ -14,9 +15,64 @@ from core.database import Database
 
 # 项目根目录
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-PYTHON = os.path.join(ROOT, '.venv', 'bin', 'python')
-if not os.path.exists(PYTHON):
-    PYTHON = sys.executable
+UV = os.environ.get('UV_BIN') or 'uv'
+PYTHON = f'{shlex.quote(UV)} run --locked --no-dev python'
+
+
+def _legacy_python_args(command: str) -> list[str] | None:
+    """返回旧 Python 入口后的参数；非旧入口返回 None。"""
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        return None
+    if len(parts) < 2:
+        return None
+    executable = parts[0]
+    if (executable in {'python', 'python3', 'python3.12'}
+            or executable.endswith('/.venv/bin/python')
+            or executable.endswith('/bin/python')):
+        return parts[1:]
+    return None
+
+
+def _uv_python_args(command: str) -> list[str] | None:
+    """返回 uv runner 中 python 后的参数，用于默认任务命令迁移。"""
+    try:
+        parts = shlex.split(command)
+    except ValueError:
+        return None
+    try:
+        python_index = parts.index('python')
+    except ValueError:
+        return None
+    if python_index == 0 or not (parts[0] == 'uv' or parts[0].endswith('/uv')):
+        return None
+    return parts[python_index + 1:]
+
+
+def _needs_runner_migration(old_command: str, new_command: str) -> bool:
+    """迁移默认任务的旧 runner；仅改变 runner，不改变脚本参数。"""
+    old_args = _command_python_args(old_command)
+    new_args = _uv_python_args(new_command)
+    if old_args is None or new_args is None or old_args != new_args:
+        return False
+    try:
+        return shlex.join(shlex.split(old_command)) != shlex.join(shlex.split(new_command))
+    except ValueError:
+        return False
+
+
+def _command_python_args(command: str) -> list[str] | None:
+    """提取 legacy Python 或 uv Python runner 后的参数。"""
+    return _legacy_python_args(command) or _uv_python_args(command)
+
+
+def _migrate_legacy_command(command: str) -> str | None:
+    """将数据库中遗留的 `.venv/bin/python ...` 改为 uv runner。"""
+    args = _legacy_python_args(command)
+    if args is None:
+        return None
+    return f'{PYTHON} {shlex.join(args)}'
 
 # 调度器单实例锁：跨进程互斥，保证同一时刻只有一个进程真正启动 APScheduler。
 # 防止 uvicorn --reload 残留的孤儿 worker / 多开实例各起一个调度器导致定时任务重复执行
@@ -315,6 +371,14 @@ class SchedulerService:
                         cron_expr=migrate[old_cron],
                         enabled=existing[t['task_id']][4],
                     )
+                elif _needs_runner_migration(old_command, t['command']):
+                    db.upsert_task(
+                        task_id=t['task_id'],
+                        name=t['name'],
+                        command=t['command'],
+                        cron_expr=old_cron,
+                        enabled=existing[t['task_id']][4],
+                    )
                 elif _REPLACE_OLD_CRON.get(t['task_id']) == old_cron:
                     # 命中需替换的旧默认 cron → 升级到当前默认（同时刷新 name/description）
                     db.upsert_task(
@@ -324,6 +388,20 @@ class SchedulerService:
                         cron_expr=t['cron_expr'],
                         enabled=existing[t['task_id']][4],
                     )
+
+        # 用户在 UI 中创建的自定义任务也不能继续依赖已失效的 .venv runner。
+        # 只替换解释器前缀，保留脚本、参数、cron 和 enabled 状态。
+        for row in db.get_tasks():
+            task_id, name, command, cron_expr, enabled = row[:5]
+            migrated_command = _migrate_legacy_command(command)
+            if migrated_command is not None:
+                db.upsert_task(
+                    task_id=task_id,
+                    name=name,
+                    command=migrated_command,
+                    cron_expr=cron_expr,
+                    enabled=enabled,
+                )
 
     def _reload_jobs(self):
         """从 DB 重新加载所有启用的 job"""

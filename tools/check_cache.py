@@ -6,10 +6,10 @@ Parquet 缓存健康检查与修复工具
   2. 价格偏移：本地首日收盘价与 yfinance 同日价格偏差 >15%（拆股/复权未同步）
 
 用法：
-  python -m tools.check_cache                  # 扫描全部缓存，仅检查不修复
-  python -m tools.check_cache --fix            # 自动修复所有有问题的文件
-  python -m tools.check_cache --symbols TSLL NVDL QLD  # 只检查指定标的
-  python -m tools.check_cache --symbols TSLL --fix     # 只修复指定标的
+  uv run python -m tools.check_cache                  # 扫描全部缓存，仅检查不修复
+  uv run python -m tools.check_cache --fix            # 自动修复所有有问题的文件
+  uv run python -m tools.check_cache --symbols TSLL NVDL QLD  # 只检查指定标的
+  uv run python -m tools.check_cache --symbols TSLL --fix     # 只修复指定标的
 """
 import sys
 import os

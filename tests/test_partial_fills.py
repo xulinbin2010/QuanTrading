@@ -5,7 +5,7 @@ tests/test_partial_fills.py
 测试对象：auto_trader._handle_opg_partial_fills / _cancel_existing
 
 运行：
-    python -m tests.test_partial_fills
+    uv run python -m tests.test_partial_fills
 """
 import json
 import sys

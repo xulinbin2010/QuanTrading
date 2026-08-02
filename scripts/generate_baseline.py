@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env -S uv run python
 """
 生成回测基准（golden baseline）。
 
@@ -6,11 +6,11 @@
 每个年度单独跑一次并更新 yearly 字段；全段（2020-01-01 ~ 2024-12-31）也跑一次。
 
 用法：
-  python scripts/generate_baseline.py
-  python scripts/generate_baseline.py --universe nasdaq100
-  python scripts/generate_baseline.py --years 2022 2023 2024   # 只更新指定年度
-  python scripts/generate_baseline.py --full-only               # 只更新全段，不跑年度
-  python scripts/generate_baseline.py --yearly-only             # 只更新年度，不跑全段
+  uv run python scripts/generate_baseline.py
+  uv run python scripts/generate_baseline.py --universe nasdaq100
+  uv run python scripts/generate_baseline.py --years 2022 2023 2024   # 只更新指定年度
+  uv run python scripts/generate_baseline.py --full-only               # 只更新全段，不跑年度
+  uv run python scripts/generate_baseline.py --yearly-only             # 只更新年度，不跑全段
 """
 import argparse
 import json

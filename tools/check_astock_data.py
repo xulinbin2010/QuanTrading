@@ -12,11 +12,11 @@
   6. bad_value    OHLC 含 NaN/<=0，或 high<low 等逻辑错误
 
 用法：
-  python -m tools.check_astock_data                 # 体检主题池(默认)，仅报告
-  python -m tools.check_astock_data --all           # 体检 data/stocks_a 下所有票
-  python -m tools.check_astock_data --fix            # 报告 + 自愈(重拉缺口票覆盖本地)
-  python -m tools.check_astock_data --symbols 601133 300433
-  python -m tools.check_astock_data --recent-days 30 # tail_gap 判定窗口(默认30日历天)
+  uv run python -m tools.check_astock_data                 # 体检主题池(默认)，仅报告
+  uv run python -m tools.check_astock_data --all           # 体检 data/stocks_a 下所有票
+  uv run python -m tools.check_astock_data --fix            # 报告 + 自愈(重拉缺口票覆盖本地)
+  uv run python -m tools.check_astock_data --symbols 601133 300433
+  uv run python -m tools.check_astock_data --recent-days 30 # tail_gap 判定窗口(默认30日历天)
 """
 from __future__ import annotations
 

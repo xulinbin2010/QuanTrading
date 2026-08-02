@@ -4,10 +4,10 @@
 使用 AST 解析 + 正则扫描，检测量化因子/策略代码中常见的前瞻偏差模式。
 
 用法：
-    python scripts/detect_lookahead.py
-    python scripts/detect_lookahead.py --paths strategies/factors strategies/
-    python scripts/detect_lookahead.py --strict
-    python scripts/detect_lookahead.py --report scripts/lookahead_report.md
+    uv run python scripts/detect_lookahead.py
+    uv run python scripts/detect_lookahead.py --paths strategies/factors strategies/
+    uv run python scripts/detect_lookahead.py --strict
+    uv run python scripts/detect_lookahead.py --report scripts/lookahead_report.md
 
 退出码：
     0  无 CRITICAL（宽松模式）/ 无任何问题（严格模式）
@@ -460,10 +460,10 @@ def build_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=textwrap.dedent("""\
             示例：
-              python scripts/detect_lookahead.py
-              python scripts/detect_lookahead.py --paths strategies/factors strategies/
-              python scripts/detect_lookahead.py --strict
-              python scripts/detect_lookahead.py --report scripts/lookahead_report.md
+              uv run python scripts/detect_lookahead.py
+              uv run python scripts/detect_lookahead.py --paths strategies/factors strategies/
+              uv run python scripts/detect_lookahead.py --strict
+              uv run python scripts/detect_lookahead.py --report scripts/lookahead_report.md
         """),
     )
     parser.add_argument(

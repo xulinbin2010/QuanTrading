@@ -2,9 +2,9 @@
 维护清理：删除过期日志、调度执行记录，以及 30 天前的订单历史。
 
 供调度任务 log_cleanup 调用，也可手动运行：
-  python -m tools.clean_logs                 # 删除 3 天前日志（默认）
-  python -m tools.clean_logs --days 7        # 改为 7 天
-  python -m tools.clean_logs --dry-run       # 只列出将删除的文件，不实际删
+  uv run python -m tools.clean_logs                 # 删除 3 天前日志（默认）
+  uv run python -m tools.clean_logs --days 7        # 改为 7 天
+  uv run python -m tools.clean_logs --dry-run       # 只列出将删除的文件，不实际删
 
 安全约束（遵守 CLAUDE.md 数据安全）：
 - 日志只动 logs/ 目录顶层文件，不递归、不碰行情 parquet/cache

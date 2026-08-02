@@ -256,11 +256,11 @@ def generate_briefing() -> dict:
     if not os.environ.get('ANTHROPIC_API_KEY'):
         raise MissingAPIKey(
             '未配置 ANTHROPIC_API_KEY。请在项目根目录 .env 中加入 ANTHROPIC_API_KEY=sk-ant-...，'
-            '并确认已 pip install anthropic（重启 Web 服务后生效）。')
+            '并确认已执行 uv sync（重启 Web 服务后生效）。')
     try:
         import anthropic
     except ImportError:
-        raise MissingAPIKey('未安装 anthropic SDK。请在 .venv 中执行：pip install anthropic')
+        raise MissingAPIKey('未安装 anthropic SDK。请执行 uv sync 后重启 Web 服务')
 
     cfg = get_config()
     snapshot = get_market_snapshot()

@@ -2,8 +2,8 @@
 RS 动量策略回测 —— 模拟完整交易过程。
 
 用法：
-  python -m tests.backtest_rs --period 3mo          # 最近3个月
-  python -m tests.backtest_rs --period 6mo --top 20 # 最近6个月，最多持20只
+  uv run python -m tests.backtest_rs --period 3mo          # 最近3个月
+  uv run python -m tests.backtest_rs --period 6mo --top 20 # 最近6个月，最多持20只
 """
 import argparse
 import warnings

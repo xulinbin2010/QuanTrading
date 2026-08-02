@@ -6,9 +6,9 @@
   OPG 单在 9:30 开盘撮合，5分钟后基本全部有结果。
 
 用法：
-  python confirm_fills.py                      # 确认今日成交
-  python confirm_fills.py --date 2026-03-21    # 补确认历史某天
-  python confirm_fills.py --debug              # 打印 IB 原始数据用于排查
+  uv run python confirm_fills.py                      # 确认今日成交
+  uv run python confirm_fills.py --date 2026-03-21    # 补确认历史某天
+  uv run python confirm_fills.py --debug              # 打印 IB 原始数据用于排查
 """
 import argparse
 from datetime import date, datetime

@@ -8,8 +8,8 @@ tests/test_zombie_orders.py
   - auto_trader._execute_inner 中 existing_orders / _cancel_existing 逻辑
 
 运行：
-    python -m tests.test_zombie_orders
-    python -m pytest tests/test_zombie_orders.py -v
+    uv run python -m tests.test_zombie_orders
+    uv run python -m pytest tests/test_zombie_orders.py -v
 """
 
 from __future__ import annotations

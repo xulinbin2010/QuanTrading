@@ -9,8 +9,8 @@
 旧逻辑用本文件内冻结的副本(还原重构前 auto_trader 的行为)，不依赖被改动的代码。
 
 用法：
-  python -m tests.compare_pool_refactor
-  python -m tests.compare_pool_refactor --universe ai
+  uv run python -m tests.compare_pool_refactor
+  uv run python -m tests.compare_pool_refactor --universe ai
 """
 import argparse
 import json

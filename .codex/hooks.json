@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "if [[ $CLAUDE_FILE_PATH == *.py ]]; then python -m py_compile $CLAUDE_FILE_PATH && ruff check $CLAUDE_FILE_PATH; fi"
+            "command": "if [[ $CLAUDE_FILE_PATH == *.py ]]; then uv run python -m py_compile \"$CLAUDE_FILE_PATH\" && uv run ruff check \"$CLAUDE_FILE_PATH\"; fi"
           }
         ]
       }

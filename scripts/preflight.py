@@ -6,10 +6,10 @@ IBKR Live Trading Preflight Check
 并行运行5个测试文件，聚合结果，输出 go/no-go 裁决 + markdown postmortem。
 
 用法：
-    .venv/bin/python scripts/preflight.py
-    .venv/bin/python scripts/preflight.py --timeout 60
-    .venv/bin/python scripts/preflight.py --report scripts/preflight_report.md
-    .venv/bin/python scripts/preflight.py --python .venv/bin/python
+    uv run python scripts/preflight.py
+    uv run python scripts/preflight.py --timeout 60
+    uv run python scripts/preflight.py --report scripts/preflight_report.md
+    uv run python scripts/preflight.py --python /path/to/python
 
 退出码：0 = GO，1 = NO-GO
 """
@@ -394,9 +394,9 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument(
         "--python",
-        default=".venv/bin/python",
+        default=None,
         metavar="PATH",
-        help="Python interpreter to use (default: .venv/bin/python)",
+        help="可选的 Python interpreter 路径（默认使用当前 uv run interpreter）",
     )
     return p.parse_args()
 
@@ -407,13 +407,16 @@ def main() -> int:
     # Resolve project root (scripts/preflight.py lives in scripts/)
     project_root = str(Path(__file__).resolve().parent.parent)
 
-    # Resolve python executable
-    python_exe = args.python
-    if not Path(python_exe).is_absolute():
-        python_exe = str(Path(project_root) / python_exe)
-
-    if not Path(python_exe).exists():
-        print(f"[preflight] WARNING: Python not found at {python_exe}, falling back to sys.executable", file=sys.stderr)
+    # 默认使用当前进程的解释器；通过 `uv run python ...` 启动时，
+    # 这里天然就是项目锁定的 Python 3.12 环境。
+    if args.python:
+        python_exe = args.python
+        if not Path(python_exe).is_absolute():
+            python_exe = str(Path(project_root) / python_exe)
+        if not Path(python_exe).exists():
+            print(f"[preflight] WARNING: Python not found at {python_exe}, falling back to sys.executable", file=sys.stderr)
+            python_exe = sys.executable
+    else:
         python_exe = sys.executable
 
     is_tty = sys.stdout.isatty()

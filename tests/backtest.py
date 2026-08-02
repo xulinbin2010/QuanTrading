@@ -2,9 +2,9 @@
 简单回测引擎。
 
 用法：
-  python -m tests.backtest                        # 回测 NVDA，MA(10,30)
-  python -m tests.backtest --symbol AAPL --fast 5 --slow 20
-  python -m tests.backtest --symbol NVDA AAPL TSLA  # 批量回测
+  uv run python -m tests.backtest                        # 回测 NVDA，MA(10,30)
+  uv run python -m tests.backtest --symbol AAPL --fast 5 --slow 20
+  uv run python -m tests.backtest --symbol NVDA AAPL TSLA  # 批量回测
 """
 import argparse
 import yfinance as yf

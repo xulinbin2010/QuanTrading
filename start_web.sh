@@ -11,6 +11,8 @@ if ! command -v "${UV_BIN}" >/dev/null 2>&1; then
     exit 1
 fi
 
+PNPM_BIN="${PNPM_BIN:-pnpm}"
+
 is_running() {
     kill -0 "$1" 2>/dev/null
 }
@@ -38,6 +40,10 @@ for PORT in 3001; do
     fi
 done
 if [ "${1:-}" = "--dev" ]; then
+    if ! command -v "${PNPM_BIN}" >/dev/null 2>&1; then
+        echo "未找到 pnpm，请先安装 pnpm 或设置 PNPM_BIN"
+        exit 1
+    fi
     PIDS=$(port_pids 5178)
     if [ -n "${PIDS}" ]; then
         echo "端口 5178 已被占用 (PID: ${PIDS})，请先执行 ./stop_web.sh 或检查占用进程"
@@ -112,7 +118,7 @@ if [ "${1:-}" = "--dev" ]; then
     exit 1
   fi
 
-  cd web/frontend && npm run dev
+  cd web/frontend && "${PNPM_BIN}" run dev
 else
   echo "生产模式启动..."
   "${RUNNER[@]}" -m web.server &

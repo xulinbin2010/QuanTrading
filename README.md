@@ -40,7 +40,7 @@ EOF
 
 ```bash
 # 首次运行需构建前端
-cd web/frontend && npm install && npm run build && cd ../..
+cd web/frontend && pnpm install --frozen-lockfile && pnpm run build && cd ../..
 
 # 生产模式（推荐）：http://localhost:3001
 ./start_web.sh

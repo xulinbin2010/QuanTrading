@@ -105,7 +105,7 @@ IB_TIMEOUT=60
 
 **首次运行需构建前端：**
 ```bash
-cd web/frontend && npm install && npm run build && cd ../..
+cd web/frontend && pnpm install --frozen-lockfile && pnpm run build && cd ../..
 ```
 
 **顶部导航栏（所有页面共享）：**
@@ -331,7 +331,7 @@ web/
   models.py          # Pydantic 请求/响应模型
   frontend/          # React + TS + Vite 前端
     src/pages/       # 各功能页面组件（Portfolio/MarketScan/Backtest/AITracker/AStockTracker/Scheduler/Config 等）
-    dist/            # 生产构建（npm run build 生成，FastAPI 静态服务）
+    dist/            # 生产构建（pnpm run build 生成，FastAPI 静态服务）
 start_web.sh         # 一键启动脚本
 ```
 

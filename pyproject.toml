@@ -8,12 +8,14 @@ dependencies = [
     "pymysql==1.1.2",
     "pyarrow==23.0.1",
     "yfinance==1.2.0",
+    "akshare==1.18.81",
     "numpy==2.4.3",
     "pandas==3.0.1",
     "requests==2.32.5",
     "lxml==6.0.2",
     "html5lib==1.1",
     "fastapi==0.135.2",
+    "pydantic==2.13.4",
     "uvicorn[standard]==0.42.0",
     "apscheduler==3.11.2",
     "python-dotenv==1.2.2",
@@ -26,6 +28,7 @@ dependencies = [
 dev = [
     "pytest",
     "ruff",
+    "python-dateutil==2.9.0.post0",
 ]
 
 [tool.uv]

@@ -43,11 +43,13 @@ def backtest_status(task_id: str):
 
 
 @router.get('/momentum')
-def momentum(mode: str = Query('theme'), force: bool = Query(False)):
-    """A 股板块强度 + 个股动能（主题板块）。"""
+def momentum(mode: str = Query('theme'), force: bool = Query(False),
+             include_watchlist: bool = Query(False)):
+    """A 股板块强度 + 个股动能；默认只扫 core，可选纳入 watchlist。"""
     try:
         from web.services.astock_momentum_svc import scan_momentum
-        return scan_momentum(mode=mode, force=force)
+        return scan_momentum(mode=mode, force=force,
+                             include_watchlist=include_watchlist)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -80,10 +82,21 @@ def fundamental_detail(
 
 @router.get('/universe')
 def universe():
-    """返回主题板块定义。"""
+    """返回完整主题板块定义及 core/watchlist/exclude 元数据。"""
     try:
         from core import astock_universe as au
-        return {'themes': au.load_themes().get('groups', {})}
+        data = au.load_themes()
+        meta = data.get('stock_meta', {})
+        counts = {'core': 0, 'watchlist': 0, 'exclude': 0}
+        for code in {str(s).zfill(6) for g in data.get('groups', {}).values()
+                     for s in g.get('symbols', [])}:
+            role = au.get_stock_meta(code, data)['pool_role']
+            counts[role] += 1
+        return {
+            'themes': data.get('groups', {}),
+            'stock_meta': meta,
+            'pool_summary': counts,
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -103,6 +116,11 @@ def update_themes(data: dict = Body(...)):
     """覆盖保存主题板块定义（{groups: {...}}）。"""
     try:
         from core import astock_universe as au
+        # 兼容旧客户端只提交 groups 的请求，不能因此丢掉 stock_meta。
+        if 'stock_meta' not in data:
+            current = au.load_themes()
+            if current.get('stock_meta'):
+                data = {**data, 'stock_meta': current['stock_meta']}
         au.save_themes(data)
         return {'ok': True}
     except Exception as e:

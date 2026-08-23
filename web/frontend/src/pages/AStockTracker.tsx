@@ -27,8 +27,8 @@ function pctColor(v: number | null | undefined): string {
   return 'text-red-500/80'
 }
 
-// 主题板块归并为 17 个中类（板块卡 + 过滤用）。仅 theme 模式生效；sw（申万行业）模式保持原行业分组不变。
-// AI 硬件产业链分层（上游→中游→下游→配套），每层挂其子主题；覆盖全部 17 主题
+// 主题板块归并为 19 个中类（含「其他」兜底；主产业链分层展示 18 个）。仅 theme 模式生效；sw（申万行业）模式保持原行业分组不变。
+// AI 硬件产业链分层（上游→中游→下游→配套），每层挂其子主题；「其他」用于未纳入主链的观察分类
 // ⚠️ 以后通过 /#/astock 新增「全新主题板块」时，务必在下方某一层的 groups 里挂上对应 key，
 //    否则该板块会落入自动兜底的「其他」层（该层 cards 为空时隐藏，等于前端看不到）。
 const ASTOCK_CHAIN_LAYERS: { title: string; flow: string; groups: string[] }[] = [
@@ -36,15 +36,15 @@ const ASTOCK_CHAIN_LAYERS: { title: string; flow: string; groups: string[] }[] =
     groups: ['semi_material', 'ccl_material', 'adv_substrate'] },
   { title: '上游 · 设备', flow: '造芯片的工具',
     groups: ['semi_equip'] },
-  { title: '上游 · 芯片设计', flow: 'GPU/算力 · 存储 · 模拟/功率',
-    groups: ['chip_compute', 'storage', 'analog_power_chip'] },
+  { title: '上游 · 芯片设计', flow: 'GPU/算力 · 网络芯片 · 存储 · 模拟/功率',
+    groups: ['chip_compute', 'network_chip', 'storage', 'analog_power_chip'] },
   { title: '中游 · 制造封测', flow: '晶圆代工与封装测试',
     groups: ['foundry_pkg'] },
   { title: '中游 · 元件 / 载板', flow: '被动元件·算力 PCB 载板',
     groups: ['passive', 'pcb'] },
   { title: '中游 · 光互连 / 连接', flow: '光模块·光纤·光交换·高速铜缆',
     groups: ['optical', 'connector'] },
-  { title: '下游 · 服务器 / 数据中心', flow: '整机·运营租赁·散热·显示',
+  { title: '下游 · 服务器 / 数据中心', flow: '整机·结构件·运营租赁·散热·显示',
     groups: ['server', 'idc', 'cooling', 'display_panel'] },
   { title: '配套 · 电力', flow: '电网·变压·燃机·算电协同·配电，贯穿全链',
     groups: ['power'] },
@@ -222,7 +222,7 @@ export default function AStockTracker() {
   }
 
   const rows: any[] = data?.rows ?? []
-  const groups: any[] = data?.groups ?? []          // 板块(17):板块卡 / 强度 / 筛选 / 分层
+  const groups: any[] = data?.groups ?? []          // 板块(19，含 other):板块卡 / 强度 / 筛选 / 分层
   const subcats: any[] = data?.subcats ?? []        // 细分(50+):股票标签 + 添加下拉
   const basket = data?.basket
   const benchmark = data?.benchmark

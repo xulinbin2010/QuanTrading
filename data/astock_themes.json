@@ -38,7 +38,9 @@
         "300706",
         "300263",
         "688432",
-        "600888"
+        "600888",
+        "688783",
+        "688584"
       ]
     },
     "semi_litho": {
@@ -86,7 +88,8 @@
         "603690",
         "688729",
         "688147",
-        "688120"
+        "688120",
+        "688630"
       ]
     },
     "semi_metrology": {
@@ -103,7 +106,8 @@
       "symbols": [
         "300604",
         "603061",
-        "301369"
+        "301369",
+        "688200"
       ]
     },
     "semi_parts": {
@@ -111,20 +115,19 @@
       "color": "#fcd34d",
       "symbols": [
         "688409",
-        "688652"
+        "688652",
+        "688797",
+        "688809"
       ]
     },
     "equip_offtopic": {
-      "label": "非半导体主业(蹭)",
+      "label": "跨行业设备·观察",
       "color": "#94a3b8",
       "symbols": [
         "002975",
         "002008",
         "301200",
         "300410",
-        "300776",
-        "300724",
-        "688003",
         "603283",
         "300480"
       ]
@@ -133,8 +136,8 @@
       "label": "设备·待核实",
       "color": "#64748b",
       "symbols": [
-        "688808",
-        "688797"
+        "688003",
+        "300757"
       ]
     },
     "chip_compute": {
@@ -158,7 +161,8 @@
         "688018",
         "301095",
         "688206",
-        "603893"
+        "603893",
+        "688802"
       ]
     },
     "analog_chip": {
@@ -171,6 +175,7 @@
         "688368",
         "688798",
         "688595",
+        "600171",
         "603501",
         "688213",
         "300782",
@@ -222,7 +227,6 @@
       "symbols": [
         "688981",
         "688347",
-        "600171",
         "688249",
         "688469"
       ]
@@ -241,7 +245,7 @@
         "688403",
         "600667",
         "000021",
-        "688200"
+        "688820"
       ]
     },
     "passive": {
@@ -276,7 +280,8 @@
         "002261",
         "000034",
         "000628",
-        "603296"
+        "603296",
+        "001339"
       ]
     },
     "optical": {
@@ -327,7 +332,6 @@
         "603920",
         "001389",
         "300903",
-        "688813",
         "002815",
         "300657",
         "603936",
@@ -338,8 +342,7 @@
         "002463",
         "300476",
         "002938",
-        "603228",
-        "688603"
+        "603228"
       ]
     },
     "connector": {
@@ -371,7 +374,6 @@
         "300684",
         "300990",
         "300249",
-        "688600",
         "301128",
         "002126",
         "300547"
@@ -405,7 +407,8 @@
         "600845",
         "603887",
         "603912",
-        "300895"
+        "300895",
+        "603220"
       ]
     },
     "power_grid": {
@@ -422,9 +425,7 @@
         "688676",
         "301291",
         "000682",
-        "688303",
-        "600353",
-        "301303"
+        "600353"
       ]
     },
     "copper_foil": {
@@ -491,7 +492,6 @@
       "label": "燃气轮机",
       "color": "#dc2626",
       "symbols": [
-        "002353",
         "605060",
         "603308",
         "600875",
@@ -515,7 +515,6 @@
       "label": "算力租赁/调度",
       "color": "#2563eb",
       "symbols": [
-        "603629",
         "300857",
         "301396",
         "688158",
@@ -551,7 +550,6 @@
       "symbols": [
         "301377",
         "000657",
-        "301362",
         "688308",
         "600549"
       ]
@@ -645,9 +643,147 @@
       "symbols": [
         "601133",
         "603929",
-        "688596",
-        "000333"
+        "688596"
+      ]
+    },
+    "pcb_chem": {
+      "label": "PCB/先进封装湿化学品",
+      "color": "#8b5cf6",
+      "symbols": [
+        "688603"
+      ]
+    },
+    "copper_foil_equip": {
+      "label": "铜箔/电化学设备",
+      "color": "#f59e0b",
+      "symbols": [
+        "688813"
+      ]
+    },
+    "optical_test": {
+      "label": "高速光电/半导体测试",
+      "color": "#06b6d4",
+      "symbols": [
+        "688808"
+      ]
+    },
+    "edge_ai": {
+      "label": "边缘AI/视觉芯片",
+      "color": "#dc2626",
+      "symbols": [
+        "688343",
+        "300613",
+        "688591",
+        "688220"
+      ]
+    },
+    "network_chip": {
+      "label": "网络交换/PHY芯片",
+      "color": "#0891b2",
+      "symbols": [
+        "688702",
+        "688515"
+      ]
+    },
+    "server_chassis": {
+      "label": "服务器结构件",
+      "color": "#3b82f6",
+      "symbols": [
+        "603629"
+      ]
+    },
+    "ai_cloud": {
+      "label": "AI云/系统集成",
+      "color": "#0ea5e9",
+      "symbols": [
+        "000032",
+        "600602",
+        "600850"
+      ]
+    },
+    "pcb_review": {
+      "label": "高频高速PCB·待核实",
+      "color": "#6366f1",
+      "symbols": [
+        "300814",
+        "300739",
+        "605058",
+        "600601"
+      ]
+    },
+    "connector_review": {
+      "label": "高速连接器·观察",
+      "color": "#ec4899",
+      "symbols": [
+        "002179",
+        "002025"
+      ]
+    },
+    "adjacent_infra": {
+      "label": "相邻产业/非核心",
+      "color": "#64748b",
+      "symbols": [
+        "301362",
+        "688303",
+        "301303",
+        "000333",
+        "688600",
+        "002353",
+        "300724",
+        "300776"
       ]
     }
+  },
+  "stock_meta": {
+    "688200": {"primary_group": "semi_test", "secondary_tags": ["test_equipment"], "pool_role": "core"},
+    "600171": {"primary_group": "analog_chip", "secondary_tags": ["ic_design"], "pool_role": "core"},
+    "688603": {"primary_group": "pcb_chem", "secondary_tags": ["advanced_packaging", "wet_chemistry"], "pool_role": "core"},
+    "688813": {"primary_group": "copper_foil_equip", "secondary_tags": ["copper_foil_equipment", "electrochemical_equipment"], "pool_role": "core"},
+    "688797": {"primary_group": "semi_parts", "secondary_tags": ["semiconductor_parts", "display_equipment_parts"], "pool_role": "core"},
+    "688808": {"primary_group": "optical_test", "secondary_tags": ["optical_test", "semiconductor_test"], "pool_role": "core"},
+    "688802": {"primary_group": "chip_compute", "secondary_tags": ["gpu", "ai_accelerator"], "pool_role": "core"},
+    "688343": {"primary_group": "edge_ai", "secondary_tags": ["edge_ai", "ai_chip"], "pool_role": "core"},
+    "688702": {"primary_group": "network_chip", "secondary_tags": ["ethernet_switch", "data_center_network"], "pool_role": "core"},
+    "688515": {"primary_group": "network_chip", "secondary_tags": ["ethernet_phy", "network_chip"], "pool_role": "core"},
+    "688820": {"primary_group": "packaging", "secondary_tags": ["advanced_packaging", "chiplet"], "pool_role": "core"},
+    "688783": {"primary_group": "semi_substrate", "secondary_tags": ["12inch_wafer", "silicon_wafer"], "pool_role": "core"},
+    "688584": {"primary_group": "semi_substrate", "secondary_tags": ["silicon_wafer", "substrate"], "pool_role": "core"},
+    "688630": {"primary_group": "semi_equip_fab", "secondary_tags": ["direct_write_lithography", "advanced_packaging_equipment"], "pool_role": "core"},
+    "688809": {"primary_group": "semi_parts", "secondary_tags": ["probe_card", "test_parts"], "pool_role": "core"},
+    "001339": {"primary_group": "server", "secondary_tags": ["ai_server", "edge_server"], "pool_role": "core"},
+    "603629": {"primary_group": "server_chassis", "secondary_tags": ["server_chassis", "data_center"], "pool_role": "core"},
+    "002975": {"primary_group": "equip_offtopic", "secondary_tags": ["industrial_automation"], "pool_role": "watchlist"},
+    "002008": {"primary_group": "equip_offtopic", "secondary_tags": ["laser_equipment", "cross_industry"], "pool_role": "watchlist"},
+    "301200": {"primary_group": "equip_offtopic", "secondary_tags": ["pcb_equipment", "cross_industry"], "pool_role": "watchlist"},
+    "300410": {"primary_group": "equip_offtopic", "secondary_tags": ["electronics_manufacturing_equipment"], "pool_role": "watchlist"},
+    "688003": {"primary_group": "semi_equip_review", "secondary_tags": ["machine_vision", "semiconductor_inspection"], "pool_role": "watchlist"},
+    "603283": {"primary_group": "equip_offtopic", "secondary_tags": ["electronics_automation", "cross_industry"], "pool_role": "watchlist"},
+    "300480": {"primary_group": "equip_offtopic", "secondary_tags": ["semiconductor_equipment", "cross_industry"], "pool_role": "watchlist"},
+    "603220": {"primary_group": "idc", "secondary_tags": ["computing_infrastructure", "data_center", "round2_watchlist"], "pool_role": "watchlist"},
+    "300757": {"primary_group": "semi_equip_review", "secondary_tags": ["semiconductor_equipment", "pv_equipment", "round2_watchlist"], "pool_role": "watchlist"},
+    "000032": {"primary_group": "ai_cloud", "secondary_tags": ["ai_cloud", "system_integration", "round2_watchlist"], "pool_role": "watchlist"},
+    "600602": {"primary_group": "ai_cloud", "secondary_tags": ["ai_cloud", "data_center", "round2_watchlist"], "pool_role": "watchlist"},
+    "600850": {"primary_group": "ai_cloud", "secondary_tags": ["ai_cloud", "system_integration", "round2_watchlist"], "pool_role": "watchlist"},
+    "300814": {"primary_group": "pcb_review", "secondary_tags": ["high_speed_pcb", "server_customer_verification", "round2_watchlist"], "pool_role": "watchlist"},
+    "300739": {"primary_group": "pcb_review", "secondary_tags": ["high_speed_pcb", "server_customer_verification", "round2_watchlist"], "pool_role": "watchlist"},
+    "605058": {"primary_group": "pcb_review", "secondary_tags": ["high_speed_pcb", "server_customer_verification", "round2_watchlist"], "pool_role": "watchlist"},
+    "600601": {"primary_group": "pcb_review", "secondary_tags": ["high_speed_pcb", "server_customer_verification", "round2_watchlist"], "pool_role": "watchlist"},
+    "002179": {"primary_group": "connector_review", "secondary_tags": ["high_speed_connector", "military_exposure", "round2_watchlist"], "pool_role": "watchlist"},
+    "002025": {"primary_group": "connector_review", "secondary_tags": ["high_speed_connector", "military_exposure", "round2_watchlist"], "pool_role": "watchlist"},
+    "300613": {"primary_group": "edge_ai", "secondary_tags": ["edge_ai", "vision_chip", "round2_watchlist"], "pool_role": "watchlist"},
+    "688591": {"primary_group": "edge_ai", "secondary_tags": ["edge_ai", "iot_chip", "round2_watchlist"], "pool_role": "watchlist"},
+    "688220": {"primary_group": "edge_ai", "secondary_tags": ["edge_ai", "iot_chip", "round2_watchlist"], "pool_role": "watchlist"},
+    "301071": {"primary_group": "diamond_cooling", "secondary_tags": ["diamond_material", "thermal_management"], "pool_role": "watchlist"},
+    "600172": {"primary_group": "diamond_cooling", "secondary_tags": ["diamond_material", "thermal_management"], "pool_role": "watchlist"},
+    "300179": {"primary_group": "diamond_cooling", "secondary_tags": ["diamond_material", "thermal_management"], "pool_role": "watchlist"},
+    "688028": {"primary_group": "diamond_cooling", "secondary_tags": ["diamond_material", "thermal_management"], "pool_role": "watchlist"},
+    "301362": {"primary_group": "adjacent_infra", "secondary_tags": ["led_lighting", "non_ai_core"], "pool_role": "exclude"},
+    "688303": {"primary_group": "adjacent_infra", "secondary_tags": ["polysilicon", "pv_material", "non_ai_core"], "pool_role": "exclude"},
+    "301303": {"primary_group": "adjacent_infra", "secondary_tags": ["gas_meter", "utility_meter", "non_ai_core"], "pool_role": "exclude"},
+    "000333": {"primary_group": "adjacent_infra", "secondary_tags": ["home_appliance", "non_ai_core"], "pool_role": "exclude"},
+    "688600": {"primary_group": "adjacent_infra", "secondary_tags": ["environmental_instrument", "non_ai_core"], "pool_role": "exclude"},
+    "002353": {"primary_group": "adjacent_infra", "secondary_tags": ["oilfield_equipment", "non_ai_core"], "pool_role": "exclude"},
+    "300724": {"primary_group": "adjacent_infra", "secondary_tags": ["pv_equipment", "non_ai_core"], "pool_role": "exclude"},
+    "300776": {"primary_group": "adjacent_infra", "secondary_tags": ["pv_equipment", "non_ai_core"], "pool_role": "exclude"}
   }
 }

@@ -74,9 +74,14 @@ def _limit_up_metrics(df: pd.DataFrame, code: str, lookback: int = LIMIT_UP_LOOK
             break
     return {'n_limit_up': n, 'consecutive': consec, 'is_limit_up': bool(flags[-1])}
 
-# 每种 mode 独立缓存文件
-def _cache_path(mode: str) -> Path:
-    return ROOT / 'data' / f'.astock_momentum_{mode}_cache.json'
+# 每种 mode / pool scope 独立缓存文件。
+# v2 用于隔离旧版「全量主题都进排名」缓存，避免分类更新后继续读到旧结果。
+_POOL_SCOPE_VERSION = 'v2'
+
+
+def _cache_path(mode: str, scope: str = 'core') -> Path:
+    suffix = '' if scope == 'core' else f'_{scope}'
+    return ROOT / 'data' / f'.astock_momentum_{mode}{suffix}_{_POOL_SCOPE_VERSION}_cache.json'
 
 _scan_running: dict[str, bool] = {}
 _scan_lock = threading.Lock()
@@ -84,24 +89,32 @@ _scan_lock = threading.Lock()
 
 # ── 板块定义：theme（主题板块）──────────────────────────────
 
-def _build_groups(mode: str = 'theme') -> tuple[dict, dict, dict, dict, dict]:
+def _build_groups(mode: str = 'theme', include_watchlist: bool = False) -> tuple[dict, dict, dict, dict, dict]:
     """两级返回 (subcats_cfg, sym_to_subcat, boards_cfg, sym_to_board, code_names)。
 
     subcats_cfg : 细分小分类(50+) { subcat_key: {label,color,symbols[]} } —— 每只股票后面跟的「分类」标签来源
     sym_to_subcat: { code: subcat_key }
-    boards_cfg  : 板块(17) { board_key: {label,color} } —— 板块卡 / 板块强度 / 筛选 / 分层 的聚合维度
+    boards_cfg  : 板块(19，含 other) { board_key: {label,color} } —— 板块卡 / 板块强度 / 筛选 / 分层 的聚合维度
     sym_to_board: { code: board_key }（= board_of(细分)）
     code_names  : { code: 名称 }
     """
     subcats_cfg: dict = {}
     sym_to_subcat: dict = {}
 
-    themes = _au.load_themes().get('groups', {})
+    themes_data = _au.load_themes()
+    themes = themes_data.get('groups', {})
     for gk, gv in themes.items():
+        eligible = []
+        for raw_code in gv.get('symbols', []):
+            code = str(raw_code).zfill(6)
+            role = _au.get_stock_meta(code, themes_data)['pool_role']
+            if role == 'exclude' or (role == 'watchlist' and not include_watchlist):
+                continue
+            eligible.append(code)
         subcats_cfg[gk] = {
             'label': gv['label'],
             'color': gv.get('color', '#94a3b8'),
-            'symbols': [str(s).zfill(6) for s in gv.get('symbols', [])],
+            'symbols': eligible,
         }
         for code in subcats_cfg[gk]['symbols']:
             if code not in sym_to_subcat:
@@ -115,8 +128,8 @@ def _build_groups(mode: str = 'theme') -> tuple[dict, dict, dict, dict, dict]:
 
 # ── 缓存 ──────────────────────────────────────────────────
 
-def _read_cache(mode: str) -> dict | None:
-    p = _cache_path(mode)
+def _read_cache(mode: str, scope: str = 'core') -> dict | None:
+    p = _cache_path(mode, scope)
     if not p.exists():
         return None
     try:
@@ -126,8 +139,8 @@ def _read_cache(mode: str) -> dict | None:
         return None
 
 
-def _write_cache(mode: str, data: dict) -> None:
-    p = _cache_path(mode)
+def _write_cache(mode: str, data: dict, scope: str = 'core') -> None:
+    p = _cache_path(mode, scope)
     p.parent.mkdir(parents=True, exist_ok=True)
     try:
         with open(p, 'w', encoding='utf-8') as f:
@@ -138,11 +151,13 @@ def _write_cache(mode: str, data: dict) -> None:
 
 # ── 主入口 ──────────────────────────────────────────────────
 
-def scan_momentum(mode: str = 'theme', force: bool = False) -> dict:
+def scan_momentum(mode: str = 'theme', force: bool = False,
+                  include_watchlist: bool = False) -> dict:
     """A 股动能扫描（主题板块）。mode 兼容旧参数，恒按 theme 处理。"""
     mode = 'theme'
 
-    cached = _read_cache(mode)
+    scope = 'all' if include_watchlist else 'core'
+    cached = _read_cache(mode, scope)
     if not force and cached is not None:
         try:
             age = datetime.now() - datetime.fromisoformat(cached['last_updated'])
@@ -151,37 +166,42 @@ def scan_momentum(mode: str = 'theme', force: bool = False) -> dict:
         except Exception:
             pass
 
-    key = f'astock_{mode}'
+    key = f'astock_{mode}_{scope}'
     thread_to_wait = None
     with _scan_lock:
         if not _scan_running.get(key, False):
             _scan_running[key] = True
-            t = threading.Thread(target=_run_scan_bg, args=(mode,), daemon=True)
+            t = threading.Thread(target=_run_scan_bg,
+                                 args=(mode, include_watchlist), daemon=True)
             t.start()
             if cached is None or force:
                 thread_to_wait = t
 
     if thread_to_wait is not None:
         thread_to_wait.join()
-        cached = _read_cache(mode)
+        cached = _read_cache(mode, scope)
 
     if cached is not None:
         return {**cached, 'scanning': _scan_running.get(key, False)}
-    return {'rows': [], 'groups': [], 'basket': {}, 'top4': [], 'mode': mode, 'scanning': True}
+    return {'rows': [], 'groups': [], 'basket': {}, 'top4': [], 'mode': mode,
+            'pool_scope': scope, 'scanning': True}
 
 
-def _run_scan_bg(mode: str) -> None:
+def _run_scan_bg(mode: str, include_watchlist: bool = False) -> None:
     try:
-        _do_scan(mode)
+        _do_scan(mode, include_watchlist=include_watchlist)
     except Exception as e:
         _logger.error(f'[AStockMomentum/{mode}] 扫描失败：{e}', exc_info=True)
     finally:
         with _scan_lock:
-            _scan_running.pop(f'astock_{mode}', None)
+            scope = 'all' if include_watchlist else 'core'
+            _scan_running.pop(f'astock_{mode}_{scope}', None)
 
 
-def _do_scan(mode: str, refresh: bool = False) -> dict:
-    subcats_cfg, sym_to_subcat, boards_cfg, sym_to_board, code_names = _build_groups(mode)
+def _do_scan(mode: str, refresh: bool = False,
+             include_watchlist: bool = False) -> dict:
+    subcats_cfg, sym_to_subcat, boards_cfg, sym_to_board, code_names = _build_groups(
+        mode, include_watchlist=include_watchlist)
     all_syms = list(sym_to_subcat.keys())
     _logger.info(f'[AStockMomentum/{mode}] 扫描 {len(all_syms)} 只...')
 
@@ -263,7 +283,7 @@ def _do_scan(mode: str, refresh: bool = False) -> dict:
         board = sym_to_board[sym]
         raw_rows.append({
             'symbol': sym, 'name': code_names.get(sym, sym),
-            # group = 板块(17):驱动板块卡 / 板块强度(group_rank) / 组内(rs_vs_group) / 筛选
+            # group = 板块(19，含 other):驱动板块卡 / 板块强度(group_rank) / 组内(rs_vs_group) / 筛选
             'group': board, 'group_label': boards_cfg[board]['label'],
             'group_color': boards_cfg[board].get('color', '#94a3b8'),
             # subcat = 细分(50+):股票后面跟的「分类」标签(前端 badge 用)
@@ -339,7 +359,7 @@ def _do_scan(mode: str, refresh: bool = False) -> dict:
             r['group_rank'] = idx + 1
             r['group_size'] = len(_members)
 
-    # 板块聚合(17 板块,空板块跳过)
+    # 板块聚合(19 板块,空板块跳过)
     def _med(ms: list[dict], fld: str):
         vs = [r[fld] for r in ms if r.get(fld) is not None]
         return float(np.median(vs)) if vs else None
@@ -384,11 +404,12 @@ def _do_scan(mode: str, refresh: bool = False) -> dict:
         'rows': raw_rows, 'groups': groups_summary, 'basket': basket,
         'subcats': subcats_catalog,
         'top4': top4, 'mode': mode,
+        'pool_scope': 'all' if include_watchlist else 'core',
         'benchmark': {'mom_3d': b3, 'mom_5d': b5, 'mom_10d': b10},
         'total': len(raw_rows),
         'last_updated': datetime.now().isoformat(timespec='seconds'),
     })
-    _write_cache(mode, result)
+    _write_cache(mode, result, 'all' if include_watchlist else 'core')
     return result
 
 
@@ -483,12 +504,15 @@ def get_astock_detail(code: str, days: int = 120) -> dict:
         if mom_5d is not None and b5 is not None:
             rs_5d = mom_5d - b5
     _, group_label = _au.theme_group_of(code)
+    pool_meta = _au.get_stock_meta(code)
     shares = df['shares'].iloc[-1] if 'shares' in df.columns else None
     market_cap = (last_close * float(shares) / 1e8) if (shares is not None and not pd.isna(shares)) else None
     tq = _trend_quality(df, n=20)
     info = {
         'name': _au.get_astock_names([code]).get(code, code),
         'group_label': group_label,
+        'pool_role': pool_meta['pool_role'],
+        'secondary_tags': pool_meta['secondary_tags'],
         'sw_industry': _au.sw3_industry_of(code),
         'ema_state': ema_state,
         'mom_5d': mom_5d, 'mom_20d': mom_20d,

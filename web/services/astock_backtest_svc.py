@@ -317,13 +317,19 @@ def run_backtest(
         raise ValueError(f'未知频率 {rebalance_freq}')
     if stop_loss not in ('none', 'ema21', 'fixed_pct'):
         raise ValueError(f'未知止损 {stop_loss}')
-    themes_cfg = _au.load_themes().get('groups', {})
+    themes_data = _au.load_themes()
+    themes_cfg = themes_data.get('groups', {})
     if groups:
         themes_cfg = {k: v for k, v in themes_cfg.items() if k in groups}
     sym_to_group: dict[str, str] = {}
     for gk, gv in themes_cfg.items():
         for code in gv.get('symbols', []):
-            sym_to_group[str(code).zfill(6)] = gk
+            code = str(code).zfill(6)
+            # 回测与默认动能扫描保持同一边界：只使用 core，
+            # watchlist 用于人工观察，exclude 不进入策略池。
+            if _au.get_stock_meta(code, themes_data)['pool_role'] != 'core':
+                continue
+            sym_to_group[code] = gk
     all_syms = list(sym_to_group.keys())
     if not all_syms:
         raise ValueError('股票池为空')

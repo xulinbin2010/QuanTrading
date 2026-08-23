@@ -108,7 +108,7 @@ _DEFAULT_THEMES = {
     }
 }
 
-# ── 板块(17):细分小分类向上归并的中类,用于 A 股动能页的板块卡/板块强度/筛选/分层。
+# ── 板块(19，含 other 兜底):细分小分类向上归并的中类；产业链主分层展示其中 18 个。
 #    细分(astock_themes.json 的 50+ groups)仍是股票归属与"股票后面跟的分类标签"的来源;
 #    板块只是聚合视图。新增细分 key 时记得在 SUBCAT_TO_BOARD 里补它归哪个板块。
 BOARDS = {
@@ -117,6 +117,7 @@ BOARDS = {
     'adv_substrate':     {'label': '先进封装/基板',   'color': '#7c3aed'},
     'semi_equip':        {'label': '半导体设备',     'color': '#f59e0b'},
     'chip_compute':      {'label': '算力/GPU芯片',   'color': '#ef4444'},
+    'network_chip':      {'label': '网络交换/PHY芯片', 'color': '#0891b2'},
     'storage':           {'label': '存储芯片',       'color': '#06b6d4'},
     'analog_power_chip': {'label': '模拟/功率芯片',   'color': '#a855f7'},
     'foundry_pkg':       {'label': '晶圆制造/封测',   'color': '#8b5cf6'},
@@ -143,19 +144,25 @@ SUBCAT_TO_BOARD = {
     'semi_equip_fab': 'semi_equip', 'semi_metrology': 'semi_equip',
     'semi_test': 'semi_equip', 'semi_parts': 'semi_equip', 'cleanroom': 'semi_equip',
     'equip_offtopic': 'other', 'semi_equip_review': 'other',
+    'optical_test': 'semi_equip', 'copper_foil_equip': 'ccl_material',
+    'pcb_chem': 'ccl_material',
     'chip_compute': 'chip_compute',
+    'edge_ai': 'chip_compute',
+    'network_chip': 'network_chip',
     'storage': 'storage',
     'analog_chip': 'analog_power_chip', 'power_semi': 'analog_power_chip',
     'foundry': 'foundry_pkg', 'packaging': 'foundry_pkg',
     'passive': 'passive',
-    'pcb': 'pcb',
+    'pcb': 'pcb', 'pcb_review': 'pcb',
     'optical': 'optical', 'fiber_cable': 'optical', 'ocs': 'optical', 'optical_chip': 'optical',
-    'connector': 'connector',
+    'connector': 'connector', 'connector_review': 'connector',
     'server': 'server',
-    'idc': 'idc', 'compute_lease': 'idc',
+    'server_chassis': 'server',
+    'idc': 'idc', 'compute_lease': 'idc', 'ai_cloud': 'idc',
     'cooling': 'cooling', 'diamond_cooling': 'cooling',
     'display_panel': 'display_panel',
     'power_supply': 'power', 'power_grid': 'power', 'gas_turbine': 'power', 'power_compute': 'power',
+    'adjacent_infra': 'other',
 }
 
 
@@ -178,6 +185,51 @@ def save_themes(data: dict):
     _THEMES_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(_THEMES_FILE, 'w', encoding='utf-8') as f:
         json.dump(data, f, ensure_ascii=False, indent=2)
+
+
+# ── 股票池角色与主题成员 ─────────────────────────────────────
+
+POOL_ROLES = {'core', 'watchlist', 'exclude'}
+
+
+def get_stock_meta(code: str, themes: dict | None = None) -> dict:
+    """返回股票池元数据；未标注的历史成员默认视为 core。"""
+    code = str(code).zfill(6)
+    themes = themes if themes is not None else load_themes()
+    raw = themes.get('stock_meta', {}).get(code, {})
+    if not isinstance(raw, dict):
+        raw = {}
+    role = raw.get('pool_role', 'core')
+    if role not in POOL_ROLES:
+        role = 'core'
+    tags = raw.get('secondary_tags', [])
+    if not isinstance(tags, list):
+        tags = []
+    return {
+        'primary_group': raw.get('primary_group'),
+        'secondary_tags': [str(t) for t in tags],
+        'pool_role': role,
+    }
+
+
+def get_theme_members(include_watchlist: bool = False,
+                      groups: list[str] | None = None) -> dict[str, str]:
+    """返回 {code: primary_group}；默认只返回 core，exclude 永不进入策略池。"""
+    themes = load_themes()
+    selected = set(groups) if groups else None
+    members: dict[str, str] = {}
+    for group, cfg in themes.get('groups', {}).items():
+        if selected is not None and group not in selected:
+            continue
+        for raw_code in cfg.get('symbols', []):
+            code = str(raw_code).zfill(6)
+            if code in members:
+                continue
+            role = get_stock_meta(code, themes)['pool_role']
+            if role == 'exclude' or (role == 'watchlist' and not include_watchlist):
+                continue
+            members[code] = group
+    return members
 
 
 # ── 加股票 + 自动板块分类（申万三级行业反查）────────────────────
@@ -268,6 +320,37 @@ def _build_sw3_reverse() -> dict:
 # 维护方式：在 UI 手动归过组的票可顺手补到这里，下次自动识别即命中。
 _CODE_TO_GROUP = {
     '301150': 'copper_foil',   # 中一科技：电解铜箔，名字无线索
+    '688200': 'semi_test',
+    '600171': 'analog_chip',
+    '688603': 'pcb_chem',
+    '688813': 'copper_foil_equip',
+    '688797': 'semi_parts',
+    '688808': 'optical_test',
+    '688802': 'chip_compute',
+    '688343': 'edge_ai',
+    '688702': 'network_chip',
+    '688515': 'network_chip',
+    '688820': 'packaging',
+    '688783': 'semi_substrate',
+    '688584': 'semi_substrate',
+    '688630': 'semi_equip_fab',
+    '688809': 'semi_parts',
+    '001339': 'server',
+    '603629': 'server_chassis',
+    '603220': 'idc',
+    '300757': 'semi_equip_review',
+    '000032': 'ai_cloud',
+    '600602': 'ai_cloud',
+    '600850': 'ai_cloud',
+    '300814': 'pcb_review',
+    '300739': 'pcb_review',
+    '605058': 'pcb_review',
+    '600601': 'pcb_review',
+    '002179': 'connector_review',
+    '002025': 'connector_review',
+    '300613': 'edge_ai',
+    '688591': 'edge_ai',
+    '688220': 'edge_ai',
 }
 
 
@@ -303,6 +386,12 @@ def add_theme_stock(code: str, group: str) -> dict:
             gv['symbols'] = [s for s in syms if s != code]
     groups[group]['symbols'] = [str(s).zfill(6) for s in groups[group].get('symbols', [])]
     groups[group]['symbols'].append(code)
+    meta = data.setdefault('stock_meta', {})
+    entry = dict(meta.get(code, {})) if isinstance(meta.get(code), dict) else {}
+    entry['primary_group'] = group
+    entry['secondary_tags'] = entry.get('secondary_tags', [])
+    entry['pool_role'] = 'core'
+    meta[code] = entry
     save_themes(data)
     return {'ok': True, 'code': code, 'group': group,
             'group_label': groups[group].get('label', group),
@@ -320,7 +409,11 @@ def remove_theme_stock(code: str) -> dict:
         if code in syms:
             gv['symbols'] = [s for s in syms if s != code]
             removed = True
-    if removed:
+    meta = data.get('stock_meta', {})
+    meta_removed = isinstance(meta, dict) and code in meta
+    if meta_removed:
+        meta.pop(code, None)
+    if removed or meta_removed:
         save_themes(data)
     return {'ok': removed, 'code': code}
 

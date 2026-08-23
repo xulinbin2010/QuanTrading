@@ -215,7 +215,7 @@ def generate_plan(force_scan: bool = False) -> dict:
 
     targets = [{'code': c, 'name': rmap.get(c, {}).get('name', c),
                 'composite': rmap.get(c, {}).get('composite'),
-                'group_label': rmap.get(c, {}).get('group_label'),       # 板块(17)
+                'group_label': rmap.get(c, {}).get('group_label'),       # 板块(19，含 other)
                 'subcat_label': rmap.get(c, {}).get('subcat_label'),     # 细分(50+),股票标签
                 'close': rmap.get(c, {}).get('close'),
                 'substitute': c not in primary_set}

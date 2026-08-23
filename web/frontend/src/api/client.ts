@@ -234,6 +234,12 @@ export const getEarningsCompare = (symbols: string[], force = false) =>
 // A 股动能扫描
 export const getAStockMomentum = (mode: 'theme' = 'theme', force = false) =>
   api.get('/astock/momentum', { params: { mode, force }, timeout: 180_000 }).then(r => r.data)
+export const getAStockFundamentals = (force = false) =>
+  api.get('/astock/fundamentals', { params: { force }, timeout: 180_000 }).then(r => r.data)
+export const getAStockFundamentalDetail = (code: string, force = false, pePeriod = '3y') =>
+  api.get(`/astock/fundamentals/${code}`, {
+    params: { force, pe_period: pePeriod }, timeout: 120_000,
+  }).then(r => r.data)
 export const getAStockDetail   = (code: string, days = 120) =>
   api.get(`/astock/stock/${code}`, { params: { days }, timeout: 60_000 }).then(r => r.data)
 export const classifyAStock    = (code: string) =>

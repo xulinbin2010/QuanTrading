@@ -10,6 +10,7 @@ import { getAStockMomentum, classifyAStock, addAStockTheme, removeAStockTheme } 
 import SymbolLink from '../components/SymbolLink'
 import LeaderBadge from '../components/LeaderBadge'
 import AStockRebalancePanel from '../components/AStockRebalancePanel'
+import AStockFundamentalResearch from '../components/AStockFundamentalResearch'
 import { ASTOCK_LEADERS } from '../data/astockLeaders'
 
 // ── 辅助函数 ──────────────────────────────────────────────────
@@ -177,7 +178,7 @@ function BasketFlowPanel({ basket }: { basket: any }) {
 
 export default function AStockTracker() {
   const qc = useQueryClient()
-  const [view, setView] = useState<'scan' | 'trade'>('scan')
+  const [view, setView] = useState<'scan' | 'fundamental' | 'trade'>('scan')
   const mode = 'theme'
   const [window, setWindow] = useState<'composite' | 'trend' | '3d' | '5d' | '10d'>('composite')
   const [groupFilter, setGroupFilter] = useState<string>('all')   // 大分类(板块,17)
@@ -203,12 +204,13 @@ export default function AStockTracker() {
   const { data, isLoading } = useQuery({
     queryKey: ['astock-momentum', mode],
     queryFn: () => getAStockMomentum(mode, false),
+    enabled: view === 'scan',
     staleTime: 30 * 60_000,
     // 每 5 分钟自动拉一次（force=false，命中调度保鲜的热缓存）：
     // 调度任务交易时段每 30 分钟刷新缓存，页面据此自动跟新，无需手动点刷新；
     // 盘后缓存过期时这次轮询会触发一次后台重扫，补上调度不覆盖的时段。
     // refetchIntervalInBackground 默认 false → tab 失焦时暂停，省请求。
-    refetchInterval: 5 * 60_000,
+    refetchInterval: view === 'scan' ? 5 * 60_000 : false,
     retry: false,
   })
 
@@ -347,17 +349,17 @@ export default function AStockTracker() {
           </p>
         </div>
         <div className="flex items-center gap-2 text-xs text-slate-500">
-          {data?.last_updated && <span>更新于 {data.last_updated.slice(0, 16)}</span>}
-          <button onClick={refresh} disabled={forcing || isLoading}
+          {view === 'scan' && data?.last_updated && <span>更新于 {data.last_updated.slice(0, 16)}</span>}
+          {view === 'scan' && <button onClick={refresh} disabled={forcing || isLoading}
             className="px-3 py-1.5 bg-slate-700 hover:bg-slate-600 disabled:opacity-50 rounded text-slate-300 transition-colors">
             {forcing ? '刷新中…' : '刷新'}
-          </button>
+          </button>}
         </div>
       </div>
 
-      {/* Tab 导航：动能扫描 / 半自动调仓（下划线式，与 AI 追踪页同款，避免被误读成操作按钮） */}
+      {/* Tab 导航：动能扫描 / 基本面研究 / 半自动调仓（下划线式，与 AI 追踪页同款） */}
       <div className="flex gap-0 border-b border-slate-700">
-        {([['scan', '📊 动能扫描'], ['trade', '🛒 半自动调仓']] as const).map(([k, l]) => (
+        {([['scan', '📊 动能扫描'], ['fundamental', '📚 基本面研究'], ['trade', '🛒 半自动调仓']] as const).map(([k, l]) => (
           <button key={k} onClick={() => setView(k)}
             className={`px-4 py-2 text-sm border-b-2 transition-colors ${
               view === k
@@ -369,6 +371,8 @@ export default function AStockTracker() {
       </div>
 
       {view === 'trade' && <AStockRebalancePanel />}
+
+      {view === 'fundamental' && <AStockFundamentalResearch />}
 
       {view === 'scan' && (<>
       {/* 添加股票（主题模式专用：输入代码→自动识别板块→确认加入） */}

@@ -52,6 +52,32 @@ def momentum(mode: str = Query('theme'), force: bool = Query(False)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.get('/fundamentals')
+def fundamentals(force: bool = Query(False)):
+    """当前 A 股主题股票池基本面摘要（估值快照 + 最近报告期）。"""
+    try:
+        from web.services.astock_fundamental_svc import get_fundamentals
+        return get_fundamentals(force=force)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get('/fundamentals/{code}')
+def fundamental_detail(
+    code: str,
+    force: bool = Query(False),
+    pe_period: str = Query('3y'),
+):
+    """单只主题 A 股基本面详情（报告期序列 + 历史 PE）。"""
+    try:
+        from web.services.astock_fundamental_svc import get_fundamental_detail
+        return get_fundamental_detail(code, force=force, pe_period=pe_period)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @router.get('/universe')
 def universe():
     """返回主题板块定义。"""
